@@ -32,7 +32,9 @@ export const metadata: Metadata = {
     description: "Snap your meals, chat naturally, get instant nutritional insights. Judgment-free wellness built for Indian households.",
   },
   twitter: { card: "summary_large_image" },
-  icons: { icon: "/icon.svg" },
+  icons: { icon: "/icon.svg", apple: "/icons/apple-touch-icon.png" },
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "ÖRZA", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

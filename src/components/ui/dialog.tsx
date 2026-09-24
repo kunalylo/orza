@@ -17,7 +17,7 @@ export function DialogContent({
   side = "center",
   hideClose,
   ...rest
-}: React.ComponentProps<typeof D.Content> & {
+}: Omit<React.ComponentProps<typeof D.Content>, "title"> & {
   title: React.ReactNode;
   description?: React.ReactNode;
   side?: "center" | "right";

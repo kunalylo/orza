@@ -132,7 +132,7 @@ export interface ChatMessage {
   user_id: string;
   role: "user" | "assistant";
   content: string;
-  meta?: { logged_meal_id?: string; ai?: boolean };
+  meta?: { logged_meal_id?: string; ai?: boolean; remembered?: string[] };
   created_at: string;
 }
 
@@ -192,5 +192,13 @@ export interface CreditTransaction {
   amount: number; // + grant, - spend
   reason: string;
   balance_after: number;
+  created_at: string;
+}
+
+export interface Lead {
+  id: string;
+  email: string;
+  source: string;
+  message?: string;
   created_at: string;
 }

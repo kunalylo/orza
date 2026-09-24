@@ -93,6 +93,7 @@ async function ensureIndexes(db: Db) {
     db.collection("recipes").createIndex({ user_id: 1, created_at: -1 }),
     db.collection("credit_transactions").createIndex({ user_id: 1, created_at: -1 }),
     db.collection("onboarding").createIndex({ user_id: 1 }, { unique: true }),
+    db.collection("leads").createIndex({ email: 1, source: 1 }, { unique: true }),
   ]);
 }
 

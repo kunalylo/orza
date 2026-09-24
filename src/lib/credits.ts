@@ -29,7 +29,7 @@ export async function spendCredits(userId: string, action: CreditAction, reason?
     { $inc: { credits: -cost } }
   );
   if (!u) {
-    throw new HttpError(402, "You're out of AI credits. Top up on the Credits page to keep using AI features.", "no_credits");
+    throw new HttpError(402, "You're out of AI credits. Request more on the Credits page — manual logging stays free.", "no_credits");
   }
   await record(userId, -cost, reason || action, u.credits);
   return u.credits;

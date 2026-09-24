@@ -2,8 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  // Meal photos are posted as base64 JSON to /api/meals/scan.
-  experimental: { serverActions: { bodySizeLimit: "8mb" } },
+  // Request-body limits for API routes are enforced in code (src/lib/http.ts → readBodyText / parseBody):
+  // Next's `serverActions.bodySizeLimit` only applies to Server Actions, which ÖRZA doesn't use.
+  // Also cap bodies at the reverse proxy (e.g. nginx `client_max_body_size 12m`).
   async headers() {
     return [
       {

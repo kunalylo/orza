@@ -1,6 +1,10 @@
 import type { FaqItem } from "@/components/pages/FaqAccordion";
+import { INITIAL_CREDITS } from "@/lib/credits";
 
-/** FAQ content (verbatim from the ÖRZA wellness app's FAQ page), grouped by category. */
+/**
+ * FAQ content from the ÖRZA wellness app's FAQ page, grouped by category. Answers about pricing, credits,
+ * devices and offline use describe this web app as it works today. Server-only: it reads the live credit grant.
+ */
 export type FaqCategory = { id: string; title: string; items: FaqItem[] };
 
 export const FAQ_CATEGORIES: FaqCategory[] = [
@@ -36,7 +40,7 @@ export const FAQ_CATEGORIES: FaqCategory[] = [
       },
       {
         q: "What if it doesn't recognize a dish?",
-        a: "You can manually correct it, and your edits help train the AI for future users.",
+        a: "You can correct it — edit any logged item, or search ÖRZA's food database and add the dish yourself.",
       },
     ],
   },
@@ -100,19 +104,19 @@ export const FAQ_CATEGORIES: FaqCategory[] = [
     items: [
       {
         q: "Is there a free plan?",
-        a: "Yes! Manual tracking, basic dashboard, 50 AI actions/month—free forever.",
+        a: `Yes! Manual tracking and the basic dashboard are free forever, and every new account gets ${INITIAL_CREDITS} AI credits.`,
       },
       {
         q: "What are AI actions?",
-        a: "Food scans, AI chat, recipe generation. Manual logging doesn't use credits.",
+        a: "Food scans, AI meal logging by text or voice, AI chat, recipe generation and rebalance plans. Manual logging doesn't use credits.",
       },
       {
         q: "Can I try Premium before paying?",
-        a: "We offer a 7-day trial (credit card required, cancel anytime).",
+        a: "Premium plans are launching soon, so there's nothing to pay for yet. Join a plan's waitlist on the Pricing page and we'll email you when it opens.",
       },
       {
         q: "Do credits expire?",
-        a: "Premium plans have unlimited monthly AI. Top-ups are valid 90 days.",
+        a: "Your sign-up credits don't expire. Premium plans will include unlimited monthly AI, and top-up packs will be valid for 90 days.",
       },
     ],
   },
@@ -140,11 +144,11 @@ export const FAQ_CATEGORIES: FaqCategory[] = [
     items: [
       {
         q: "Does it work offline?",
-        a: "Basic logging works offline. AI features require internet.",
+        a: "ÖRZA saves everything to your account, so logging needs an internet connection. AI features require internet too.",
       },
       {
         q: "Which devices are supported?",
-        a: "iOS 14+, Android 9+. Web dashboard coming soon.",
+        a: "ÖRZA runs in any modern browser — Chrome, Safari, Edge or Firefox — on your phone, tablet or computer. On your phone, add it to your home screen to open it like an app. Native iOS and Android apps are coming soon.",
       },
     ],
   },

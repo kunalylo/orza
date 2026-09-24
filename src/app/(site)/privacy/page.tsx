@@ -69,7 +69,7 @@ const SECTIONS: LegalSection[] = [
             workouts.
           </LegalLi>
           <LegalLi title="Messages to us:">
-            if you email us or join our updates list, your email address and what you send us.
+            if you email us, join our updates list or join a waitlist for a Premium plan, your email address and what you send us.
           </LegalLi>
         </LegalList>
 
@@ -239,7 +239,9 @@ const SECTIONS: LegalSection[] = [
           associated data — meals, scans, conversations, goals, plans, recipes and credit history — are permanently deleted. We may
           keep limited records where the law requires it (for example, billing records for paid plans).
         </LegalP>
-        <LegalP>If you joined our updates list, we keep your email address until you ask us to remove it.</LegalP>
+        <LegalP>
+          If you joined our updates list or a plan waitlist, we keep your email address until you ask us to remove it.
+        </LegalP>
       </>
     ),
   },

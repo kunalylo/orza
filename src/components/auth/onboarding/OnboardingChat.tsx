@@ -31,6 +31,15 @@ function promptItem(prompt: StepPrompt, instant = false): ChatItem {
   return { id: nextId(), role: "assistant", content: prompt.message, instant };
 }
 
+/** The browser's IANA timezone (saved with the profile so "today" follows the user's clock). */
+function deviceTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function historyItems(history: ChatLine[]): ChatItem[] {
   return history.map((h) => ({ id: nextId(), role: h.role, content: h.content, instant: true }));
 }
@@ -54,7 +63,12 @@ export function OnboardingChat({ name }: { name: string }) {
   const [restarting, setRestarting] = React.useState(false);
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const answerRef = React.useRef<HTMLDivElement>(null);
+  /** Keep the newest message pinned in view. Only the user's own scrolling turns this off. */
   const stick = React.useRef(true);
+  /** Last time the user scrolled by hand (wheel, touch, keys, scrollbar) — programmatic scrolls don't count. */
+  const userScrollAt = React.useRef(0);
+  const pointerDown = React.useRef(false);
   const inflight = React.useRef(false);
   const redirectTimer = React.useRef<number | null>(null);
 
@@ -108,7 +122,8 @@ export function OnboardingChat({ name }: { name: string }) {
     return () => window.cancelAnimationFrame(id);
   }, [items.length, busy, started, scrollToEnd]);
 
-  // The composer changes height between steps; stay pinned to the bottom if the user was there.
+  // The answer panel changes height between steps (and as chips are added), which resizes the log:
+  // stay pinned to the bottom unless the user scrolled up. (New messages scroll smoothly via the effect above.)
   React.useEffect(() => {
     const el = scrollRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -116,12 +131,32 @@ export function OnboardingChat({ name }: { name: string }) {
       if (stick.current) scrollToEnd(false);
     });
     ro.observe(el);
+    if (answerRef.current) ro.observe(answerRef.current);
     return () => ro.disconnect();
   }, [scrollToEnd, status, started]);
+
+  const markUserScroll = React.useCallback(() => {
+    userScrollAt.current = Date.now();
+  }, []);
+
+  // A scrollbar drag can end outside the log, so listen for the release on the window.
+  React.useEffect(() => {
+    const up = () => {
+      pointerDown.current = false;
+    };
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, []);
 
   function onScroll() {
     const el = scrollRef.current;
     if (!el) return;
+    // Smooth auto-scrolls pass through intermediate positions; only hand scrolling may unpin.
+    if (!pointerDown.current && Date.now() - userScrollAt.current > 700) return;
     stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   }
 
@@ -177,7 +212,7 @@ export function OnboardingChat({ name }: { name: string }) {
     setBusy(true);
     try {
       const [res] = await Promise.all([
-        api.post<OnboardingStepResult>("/onboarding/step", { step: prompt.step, answer: value }),
+        api.post<OnboardingStepResult>("/onboarding/step", { step: prompt.step, answer: value, timezone: deviceTimeZone() }),
         wait(reduce ? 0 : TYPING_MS),
       ]);
       applyResult(res);
@@ -308,11 +343,18 @@ export function OnboardingChat({ name }: { name: string }) {
               <div
                 ref={scrollRef}
                 onScroll={onScroll}
+                onWheel={markUserScroll}
+                onTouchMove={markUserScroll}
+                onKeyDown={markUserScroll}
+                onPointerDown={() => {
+                  pointerDown.current = true;
+                  markUserScroll();
+                }}
                 role="log"
                 aria-live="polite"
                 aria-relevant="additions"
                 aria-label="Conversation"
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-6 sm:px-0 sm:pt-8"
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-12 pt-6 sm:px-0 sm:pt-8"
               >
                 <div className="mx-auto flex max-w-[680px] flex-col gap-4">
                   {items.map((m) =>
@@ -343,7 +385,7 @@ export function OnboardingChat({ name }: { name: string }) {
               </div>
 
               {/* Answer area */}
-              <div className="relative shrink-0 px-4 pb-[max(16px,env(safe-area-inset-bottom))] sm:px-0 sm:pb-6">
+              <div ref={answerRef} className="relative shrink-0 px-4 pb-[max(16px,env(safe-area-inset-bottom))] sm:px-0 sm:pb-6">
                 <div
                   aria-hidden
                   className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-t from-[rgba(251,247,241,0.95)] to-[rgba(251,247,241,0)]"
@@ -366,7 +408,16 @@ export function OnboardingChat({ name }: { name: string }) {
                       </Button>
                     </motion.div>
                   ) : prompt ? (
-                    <AnimatePresence mode="wait" initial={false}>
+                    <AnimatePresence
+                      mode="wait"
+                      initial={false}
+                      onExitComplete={() => {
+                        // The next step's panel mounts now (often taller): re-pin once layout settles.
+                        window.requestAnimationFrame(() => {
+                          if (stick.current) scrollToEnd(false);
+                        });
+                      }}
+                    >
                       <motion.div
                         key={prompt.step}
                         initial={reduce ? false : { opacity: 0, y: 10 }}

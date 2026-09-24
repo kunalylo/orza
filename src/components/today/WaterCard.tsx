@@ -14,9 +14,10 @@ const MAX_GLASSES = 40;
 const MAX_SLOTS = 16;
 
 /**
- * Water tracker with optimistic updates. Each change posts the absolute count;
- * only the latest request's response is applied, and a failure rolls back to the
- * last confirmed value and asks the parent to re-sync.
+ * Water tracker with optimistic updates. Each change sets the day's absolute count, so writes
+ * are serialised: at most one request is in flight, and taps made meanwhile collapse into a
+ * single follow-up write of the latest value. The server therefore always ends on what the
+ * card shows. A failure rolls back to the last confirmed value and asks the parent to re-sync.
  */
 export function WaterCard({
   date,
@@ -33,35 +34,50 @@ export function WaterCard({
 }) {
   const [value, setValue] = React.useState(glasses);
   const confirmed = React.useRef(glasses);
-  const seq = React.useRef(0);
-  const inFlight = React.useRef(0);
+  const busy = React.useRef(false);
+  const queued = React.useRef<number | null>(null);
+  // Latest callbacks, so a write chain that outlives a render (or the card) reports to the current parent.
+  const callbacks = React.useRef({ onSaved, onResync });
+  React.useEffect(() => {
+    callbacks.current = { onSaved, onResync };
+  }, [onSaved, onResync]);
 
   React.useEffect(() => {
     confirmed.current = glasses;
-    if (inFlight.current === 0) setValue(glasses);
+    if (!busy.current) setValue(glasses);
   }, [glasses, date]);
+
+  const send = (n: number) => {
+    busy.current = true;
+    api
+      .post<TrackingResponse>("/track/water", { glasses: n, date })
+      .then(
+        (res) => {
+          confirmed.current = res.tracking.water_glasses;
+          if (queued.current == null) callbacks.current.onSaved(res.tracking);
+        },
+        (e) => {
+          // A newer value is about to be written; its outcome decides what the card shows.
+          if (queued.current != null) return;
+          setValue(confirmed.current);
+          toast.error(errorMessage(e));
+          callbacks.current.onResync();
+        }
+      )
+      .finally(() => {
+        const next = queued.current;
+        queued.current = null;
+        if (next != null) send(next);
+        else busy.current = false;
+      });
+  };
 
   const commit = (next: number) => {
     const n = clamp(Math.round(next), 0, MAX_GLASSES);
     if (n === value) return;
     setValue(n);
-    const s = ++seq.current;
-    inFlight.current++;
-    api
-      .post<TrackingResponse>("/track/water", { glasses: n, date })
-      .then((res) => {
-        confirmed.current = res.tracking.water_glasses;
-        if (s === seq.current) onSaved(res.tracking);
-      })
-      .catch((e) => {
-        if (s !== seq.current) return;
-        setValue(confirmed.current);
-        toast.error(errorMessage(e));
-        onResync();
-      })
-      .finally(() => {
-        inFlight.current--;
-      });
+    if (busy.current) queued.current = n;
+    else send(n);
   };
 
   const slots = Math.min(Math.max(target, value), MAX_SLOTS);

@@ -6,7 +6,7 @@ import { setTracking } from "@/lib/domain/tracking";
 import { badRequest, json, parseBody, route } from "@/lib/http";
 import type { Goal, Profile, User } from "@/lib/types";
 import { round } from "@/lib/utils";
-import { goalInputError, planGoal, signedRate } from "@/components/goals/goal-math";
+import { formatPace, goalInputError, isImperial, planGoal, signedRate } from "@/components/goals/goal-math";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +33,7 @@ export const POST = route(async (req: Request) => {
   const user = await requireUser();
   const body = await parseBody(req, Body);
   const today = dateInTz(user.profile?.timezone);
+  const imperial = isImperial(user.preferences?.units);
 
   const current = round(body.current_weight_kg, 1);
   if (body.goal !== "maintain" && body.target_weight_kg == null) throw badRequest("Enter your target weight.");
@@ -53,7 +54,7 @@ export const POST = route(async (req: Request) => {
     throw badRequest("Add your height and age so ÖRZA can personalise your plan.");
   }
 
-  const problem = goalInputError({ goal: body.goal, current, target, rate, heightCm: profile.height_cm });
+  const problem = goalInputError({ goal: body.goal, current, target, rate, heightCm: profile.height_cm, imperial });
   if (problem) throw badRequest(problem);
 
   const plan = planGoal({ profile, goal: body.goal, current, target, rate, today });
@@ -90,7 +91,7 @@ export const POST = route(async (req: Request) => {
   await setTracking(user.id, today, { weight_kg: current });
 
   const notice = plan.paceAdjusted
-    ? `To keep your daily calories at a safe level, ÖRZA set a gentler pace of ${Math.abs(plan.weeklyRate)} kg a week.`
+    ? `To keep your daily calories at a safe level, ÖRZA set a gentler pace of ${formatPace(plan.weeklyRate, imperial)} a week.`
     : undefined;
 
   return json({ goal, user: toPublicUser(updated || { ...user, targets: plan.targets, profile }), ...(notice ? { notice } : {}) });

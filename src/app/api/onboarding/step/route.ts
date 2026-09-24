@@ -11,7 +11,7 @@ import {
   progressOf,
   promptFor,
 } from "@/lib/onboarding";
-import { completeOnboarding, loadState, saveState, stepResponse } from "../_store";
+import { completeOnboarding, isTimeZone, loadState, saveState, stepResponse } from "../_store";
 
 export const dynamic = "force-dynamic";
 
@@ -22,16 +22,18 @@ const bodySchema = z.object({
     z.number().finite(),
     z.array(z.string().max(80)).max(20),
   ]),
+  /** The browser's IANA timezone; saved with the profile when onboarding completes (ignored if unknown). */
+  timezone: z.string().max(64).optional(),
 });
 
 /**
- * POST /api/onboarding/step {answer, step}
+ * POST /api/onboarding/step {answer, step, timezone?}
  * → {reply, step, options?, input, done, user?, prompt, progress, valid}
  * Invalid answers keep the user on the same step (`valid:false`, reply = friendly hint).
  */
 export const POST = route(async (req: Request) => {
   const user = await requireUser();
-  const { step, answer } = await parseBody(req, bodySchema);
+  const { step, answer, timezone } = await parseBody(req, bodySchema);
 
   if (user.onboarding_complete) {
     return json({
@@ -68,7 +70,7 @@ export const POST = route(async (req: Request) => {
       const error = "Tap “Looks good” to save your plan, or “Start over” to change your answers.";
       return json({ ...stepResponse({ ...prompt, message: error }, answers), valid: false, error });
     }
-    const done = await completeOnboarding(user, answers);
+    const done = await completeOnboarding(user, answers, isTimeZone(timezone) ? timezone : undefined);
     return json({
       reply: done.reply,
       step: "complete",

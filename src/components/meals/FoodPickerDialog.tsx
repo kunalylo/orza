@@ -3,6 +3,10 @@ import * as React from "react";
 import { toast } from "sonner";
 import { ArrowLeft, Minus, Plus, Search, UtensilsCrossed } from "lucide-react";
 import type { Meal, MealType } from "@/lib/types";
+import { conflictsWithAllergies } from "@/lib/allergens";
+import { dietAllowsFood } from "@/lib/nutrition/diet-rules";
+import { maxServingsFor } from "@/lib/nutrition/limits";
+import { useUser } from "@/components/app/UserProvider";
 import { api, errorMessage } from "@/lib/api-client";
 import { formatNumber, round } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -11,7 +15,25 @@ import { FieldHint, Input, Segmented, Skeleton } from "@/components/ui/form";
 import { ItemEditor, blankDraft, draftTotals, draftsValid, fromDraft, type DraftItem } from "./ItemEditor";
 import { MEAL_SINGULAR, MEAL_TYPES, fmtQty, type FoodDietMark, type FoodHit } from "./meal-utils";
 
-const QUICK_PICKS = ["Roti", "Dal", "Rice", "Poha", "Idli", "Dosa", "Paneer", "Chai", "Egg", "Banana"];
+/** Search shortcuts, in order of popularity; filtered by the user's diet and allergies before showing. */
+const QUICK_PICKS: { label: string; diet: FoodDietMark }[] = [
+  { label: "Roti", diet: "vegan" },
+  { label: "Dal", diet: "vegan" },
+  { label: "Rice", diet: "vegan" },
+  { label: "Poha", diet: "vegan" },
+  { label: "Idli", diet: "vegan" },
+  { label: "Dosa", diet: "vegan" },
+  { label: "Paneer", diet: "veg" },
+  { label: "Chai", diet: "veg" },
+  { label: "Egg", diet: "egg" },
+  { label: "Banana", diet: "vegan" },
+  { label: "Curd", diet: "veg" },
+  { label: "Upma", diet: "vegan" },
+  { label: "Oats", diet: "vegan" },
+  { label: "Sprouts", diet: "vegan" },
+  { label: "Apple", diet: "vegan" },
+];
+const QUICK_PICK_COUNT = 10;
 
 const DIET: Record<FoodDietMark, { color: string; label: string }> = {
   veg: { color: "#127A56", label: "Vegetarian" },
@@ -119,6 +141,7 @@ export function FoodPickerDialog({
   initialQuery?: string;
   onAdded: (meal: Meal) => void;
 }) {
+  const { user } = useUser();
   const [tab, setTab] = React.useState<"search" | "custom">("search");
   const [q, setQ] = React.useState("");
   const [results, setResults] = React.useState<FoodHit[]>([]);
@@ -176,6 +199,22 @@ export function FoodPickerDialog({
       clearTimeout(t);
     };
   }, [q, open, tab]);
+
+  const diet = user.profile?.diet;
+  const allergies = user.profile?.allergies;
+  const quickPicks = React.useMemo(
+    () =>
+      QUICK_PICKS.filter((p) => dietAllowsFood(diet, p.diet) && !conflictsWithAllergies(p.label, allergies))
+        .slice(0, QUICK_PICK_COUNT)
+        .map((p) => p.label),
+    [diet, allergies]
+  );
+
+  // One entry holds at most 20 servings, and never more than the per-item limits allow for rich dishes.
+  const maxQty = selected ? Math.max(0.5, Math.floor(maxServingsFor(selected, style === "restaurant") * 2) / 2) : 20;
+  React.useEffect(() => {
+    if (qty > maxQty) setQty(maxQty);
+  }, [qty, maxQty]);
 
   const preview = React.useMemo(() => {
     if (!selected) return null;
@@ -266,11 +305,11 @@ export function FoodPickerDialog({
               />
             </div>
 
-            {!q.trim() && (
+            {!q.trim() && quickPicks.length > 0 && (
               <div className="mt-4">
                 <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-orza-subtle">Popular</div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {QUICK_PICKS.map((p) => (
+                  {quickPicks.map((p) => (
                     <button
                       key={p}
                       type="button"
@@ -359,7 +398,7 @@ export function FoodPickerDialog({
               <div className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-3">
                 <div>
                   <span className="mb-1.5 block text-[13px] font-medium text-orza-strong">Servings</span>
-                  <Stepper value={qty} onChange={setQty} />
+                  <Stepper value={qty} onChange={setQty} max={maxQty} />
                 </div>
                 <div>
                   <span className="mb-1.5 block text-[13px] font-medium text-orza-strong">Cooked</span>
@@ -382,6 +421,11 @@ export function FoodPickerDialog({
                   ? "Restaurant versions use more oil, butter and cream — ÖRZA adds that to the estimate when you log it."
                   : "Home-cooked estimate (e.g. home dal ≈ 5 ml oil per katori)."}
               </FieldHint>
+              {qty >= maxQty && (
+                <FieldHint className="mt-1.5">
+                  One entry holds up to {fmtQty(maxQty)} servings of this — add more as another entry.
+                </FieldHint>
+              )}
             </div>
             <MealTypePicker value={mealType} onChange={setMealType} />
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

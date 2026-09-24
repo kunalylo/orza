@@ -7,12 +7,14 @@
  *                       suggests foods from FOODS, reports progress, handles special meals and medical questions.
  * - AI helpers:         system prompt, reply shape and output normalisation for the OpenAI path.
  */
+import { allergyKeywords, allergyList, avoidList, conflictsWithAllergies } from "@/lib/allergens";
 import { createMeal, dayTotals, guessMealType, listMeals, sumNutrients } from "@/lib/domain/meals";
 import { getTrackingDay, setTracking } from "@/lib/domain/tracking";
 import { DEFAULT_TARGETS } from "@/lib/domain/targets";
 import { FOODS, findFood, nutrientsFor, parseMealText, type FoodDiet, type FoodEntry } from "@/lib/nutrition";
 import { DEFAULT_TZ, addDays, dateInTz, hourInTz, isISODate, weekdayShort } from "@/lib/dates";
-import { formatNumber, round } from "@/lib/utils";
+import { memoryFacts } from "@/lib/onboarding";
+import { clamp, formatNumber, round } from "@/lib/utils";
 import type { ChatMessage, Diet, Meal, MealItem, MealType, Nutrients, Profile, PublicUser, Targets } from "@/lib/types";
 
 /**
@@ -42,6 +44,8 @@ export interface CoachContext {
   meals: Meal[];
   tracking: { water_glasses: number; steps: number; weight_kg?: number };
   memory: string[];
+  /** Everything ÖRZA must never suggest: profile allergies + avoid-facts learned in chat (see avoidList). */
+  avoid: string[];
   tone: "gentle" | "direct";
 }
 
@@ -101,6 +105,7 @@ export async function buildContext(user: CoachUser, date?: string): Promise<Coac
     meals,
     tracking: { water_glasses: tracking.water_glasses || 0, steps: tracking.steps || 0, weight_kg: tracking.weight_kg },
     memory: Array.isArray(user.memory) ? user.memory : [],
+    avoid: avoidList(user.profile?.allergies, user.memory),
     tone: user.preferences?.tone === "direct" ? "direct" : "gentle",
   };
 }

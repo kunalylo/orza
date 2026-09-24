@@ -17,20 +17,34 @@ function secretKey() {
   return new TextEncoder().encode(s);
 }
 
-export async function signSessionToken(userId: string) {
-  return new SignJWT({ sub: userId })
+export type SessionClaims = { userId: string; sessionId: string };
+
+/** Signs a session cookie for `userId`, bound to the server-side session record `sessionId`. */
+export async function signSessionToken(userId: string, sessionId: string) {
+  return new SignJWT({ sub: userId, sid: sessionId })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_MAX_AGE}s`)
     .sign(secretKey());
 }
 
-export async function verifySessionToken(token: string | undefined | null): Promise<string | null> {
+/**
+ * Verifies the signature and expiry only. Whether the session is still live (not signed out or
+ * revoked) is checked against the database by `getSessionUserId()` in src/lib/auth.ts — middleware
+ * uses this as a fast pre-check, never as the final word.
+ */
+export async function readSessionToken(token: string | undefined | null): Promise<SessionClaims | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secretKey(), { algorithms: ["HS256"] });
-    return typeof payload.sub === "string" ? payload.sub : null;
+    if (typeof payload.sub !== "string" || typeof payload.sid !== "string") return null;
+    return { userId: payload.sub, sessionId: payload.sid };
   } catch {
     return null;
   }
+}
+
+/** User id from a validly signed session token (signature + expiry only; see `readSessionToken`). */
+export async function verifySessionToken(token: string | undefined | null): Promise<string | null> {
+  return (await readSessionToken(token))?.userId ?? null;
 }

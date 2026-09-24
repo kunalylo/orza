@@ -2,7 +2,7 @@ import { hashPassword, startSession, toPublicUser, verifyPassword } from "@/lib/
 import { col } from "@/lib/db";
 import { json, route, unauthorized } from "@/lib/http";
 import type { User } from "@/lib/types";
-import { TEN_MINUTES, clearLimit, clientIp, hit, limited, loginSchema, parseAuthBody, tooManyRequests } from "../_lib";
+import { ONE_HOUR, TEN_MINUTES, clearLimit, clientIp, loginSchema, parseAuthBody, release, reserve, tooManyRequests } from "../_lib";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +19,18 @@ export const POST = route(async (req: Request) => {
   const { email, password } = parsed.data;
 
   const ip = clientIp(req);
-  const pairKey = `login:${ip}|${email}`; // 10 failed attempts / 10 min per IP + email
-  const ipKey = `login-ip:${ip}`; // 50 failed attempts / 10 min per IP (credential stuffing)
-  const wait = Math.max(limited(pairKey, 10, TEN_MINUTES), limited(ipKey, 50, TEN_MINUTES));
+  const pairKey = `login:${ip}|${email}`; // 10 attempts / 10 min per IP + email
+  const ipKey = `login-ip:${ip}`; // 50 attempts / 10 min per IP (credential stuffing)
+  // Per account, whatever the IP — holds even if the client IP can't be trusted or is rotated.
+  // Counted for unknown emails too, so a 429 never reveals whether an account exists.
+  const accountKey = `login-acct:${email}`;
+
+  // Reserve the attempt before any await, so a burst of parallel requests can't all pass the check.
+  const wait = reserve([
+    { key: pairKey, limit: 10, windowMs: TEN_MINUTES },
+    { key: ipKey, limit: 50, windowMs: TEN_MINUTES },
+    { key: accountKey, limit: 25, windowMs: ONE_HOUR },
+  ]);
   if (wait) return tooManyRequests(wait, "Too many sign-in attempts.");
 
   const user = await col<User>("users").findOne({ email });
@@ -29,13 +38,12 @@ export const POST = route(async (req: Request) => {
   if (user?.password_hash) ok = await verifyPassword(password, user.password_hash);
   else await verifyPassword(password, await getDummyHash());
 
-  if (!user || !ok) {
-    hit(pairKey, TEN_MINUTES);
-    hit(ipKey, TEN_MINUTES);
-    throw unauthorized(BAD_CREDENTIALS);
-  }
+  if (!user || !ok) throw unauthorized(BAD_CREDENTIALS);
 
+  // Successful sign-in: reset this person's failure budget and give the network its attempt back.
   clearLimit(pairKey);
+  clearLimit(accountKey);
+  release(ipKey);
   await startSession(user.id);
   return json({ user: toPublicUser(user) });
 });

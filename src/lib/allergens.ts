@@ -13,7 +13,7 @@ const ALLERGEN_KEYWORDS: Record<string, string[]> = {
   ],
   gluten: [
     "wheat", "atta", "maida", "roti", "chapati", "phulka", "paratha", "naan", "kulcha", "puri", "bhatura", "bread", "pav", "bun", "pasta",
-    "noodle", "noodles", "maggi", "semolina", "suji", "sooji", "rava", "upma", "barley", "jau", "rye", "seitan", "biscuit", "cake", "pizza", "burger", "samosa", "kachori", "dalia",
+    "noodle", "noodles", "maggi", "semolina", "suji", "sooji", "rava", "upma", "barley", "jau", "rye", "seitan", "biscuit", "cake", "pizza", "burger", "samosa", "kachori", "dalia", "toast", "rusk", "khakhra", "thepla",
   ],
   soy: ["soy", "soya", "tofu", "edamame", "tempeh", "soya chunks", "nutrela", "miso"],
   egg: ["egg", "eggs", "anda", "omelette", "omelet", "bhurji", "mayonnaise", "mayo", "meringue"],
@@ -25,11 +25,11 @@ const ALLERGEN_KEYWORDS: Record<string, string[]> = {
 
 const ALIASES: Array<[RegExp, string]> = [
   [/peanut|groundnut|moongphali/, "peanut"],
-  [/tree ?nut|almond|cashew|walnut|pista|nut/, "tree_nut"],
+  [/\btree ?nuts?\b|almond|cashew|walnut|pista|\bnuts?\b|dry ?fruit/, "tree_nut"],
   [/dairy|lactose|milk/, "dairy"],
   [/gluten|wheat|celiac|coeliac/, "gluten"],
   [/soy|soya/, "soy"],
-  [/egg/, "egg"],
+  [/\beggs?\b/, "egg"],
   [/shellfish|prawn|shrimp|crab|lobster/, "shellfish"],
   [/fish|seafood/, "fish"],
   [/sesame|til\b/, "sesame"],
@@ -77,4 +77,21 @@ export function conflictsWithAllergies(texts: string | string[], allergies: stri
 /** Human list for prompts / copy, e.g. "peanuts, dairy". */
 export function allergyList(allergies: string[] | undefined | null): string {
   return (allergies || []).filter((a) => a && !/^(none|no|nil)$/i.test(a.trim())).join(", ");
+}
+
+/**
+ * Everything ÖRZA must never suggest: profile allergies plus avoid-facts learned in chat
+ * ("Allergic to …", "Doesn't eat …", "Avoids …", "Dislikes …", "Is lactose/gluten intolerant").
+ */
+export function avoidList(allergies: string[] | undefined | null, memory: string[] | undefined | null): string[] {
+  const out = (Array.isArray(allergies) ? allergies : []).filter((a) => typeof a === "string" && a.trim());
+  for (const fact of Array.isArray(memory) ? memory : []) {
+    if (typeof fact !== "string") continue;
+    const f = fact.trim();
+    const m = f.match(/^(?:allergic to|(?:doesn't|does not|don't|do not|can't|cannot) eat|avoids|dislikes)\s+(.+)$/i);
+    if (m) out.push(m[1]);
+    const intolerant = f.match(/^is\s+(lactose|gluten)\s+intolerant\b/i);
+    if (intolerant) out.push(intolerant[1].toLowerCase());
+  }
+  return [...new Set(out)];
 }

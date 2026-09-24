@@ -7,7 +7,29 @@ import { HttpError } from "@/lib/http";
 
 export const aiEnabled = () => !!process.env.OPENAI_API_KEY;
 const TEXT_MODEL = () => process.env.OPENAI_MODEL || "gpt-4o-mini";
-const VISION_MODEL = () => process.env.OPENAI_VISION_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
+/** Needs image input, so it never silently falls back to OPENAI_MODEL (which may be text-only). */
+const VISION_MODEL = () => process.env.OPENAI_VISION_MODEL || "gpt-4o-mini";
+
+const REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high"]);
+const REASONING_EFFORT = () => {
+  const v = (process.env.OPENAI_REASONING_EFFORT || "").trim().toLowerCase();
+  return REASONING_EFFORTS.has(v) ? v : "low";
+};
+
+/**
+ * o-series and gpt-5 family models (apart from the `*-chat*` variants) are reasoning models: they
+ * reject any temperature other than the default, and their completion budget also pays for hidden
+ * reasoning tokens.
+ */
+export const isReasoningModel = (model: string) => /^(o\d|gpt-5)/i.test(model) && !/chat/i.test(model);
+
+/** Sampling / length parameters the chosen model accepts (`max_tokens` is rejected by reasoning models). */
+function generationParams(model: string, temperature: number, maxTokens: number): Record<string, unknown> {
+  if (isReasoningModel(model)) {
+    return { max_completion_tokens: Math.max(maxTokens * 4, 4000), reasoning_effort: REASONING_EFFORT() };
+  }
+  return { temperature, max_completion_tokens: maxTokens };
+}
 
 export type ChatTurn = { role: "system" | "user" | "assistant"; content: string };
 
@@ -31,7 +53,19 @@ async function callOpenAI(body: Record<string, unknown>, timeoutMs = 45000): Pro
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      console.error("[orza] OpenAI error", res.status, text.slice(0, 500));
+      let detail = text.slice(0, 500);
+      try {
+        detail = JSON.parse(text)?.error?.message || detail;
+      } catch {
+        /* not JSON — keep the raw text */
+      }
+      const hint =
+        res.status === 401
+          ? " — check OPENAI_API_KEY"
+          : res.status === 400 || res.status === 404
+            ? ` — check that model "${body.model}" exists for this key and supports this request (OPENAI_MODEL / OPENAI_VISION_MODEL)`
+            : "";
+      console.error(`[orza] OpenAI error ${res.status} (model ${body.model}): ${detail}${hint}`);
       if (res.status === 429) throw new HttpError(503, "ÖRZA's AI is busy right now. Please try again in a moment.", "ai_busy");
       throw new HttpError(502, "ÖRZA's AI couldn't process that. Please try again.", "ai_error");
     }
@@ -51,10 +85,10 @@ async function callOpenAI(body: Record<string, unknown>, timeoutMs = 45000): Pro
 
 /** Free-text completion. */
 export async function aiText(opts: { system: string; messages: ChatTurn[]; temperature?: number; maxTokens?: number }): Promise<string> {
+  const model = TEXT_MODEL();
   return callOpenAI({
-    model: TEXT_MODEL(),
-    temperature: opts.temperature ?? 0.6,
-    max_tokens: opts.maxTokens ?? 700,
+    model,
+    ...generationParams(model, opts.temperature ?? 0.6, opts.maxTokens ?? 700),
     messages: [{ role: "system", content: `${opts.system}\n\n${WELLNESS_GUARDRAIL}` }, ...opts.messages],
   });
 }
@@ -77,11 +111,11 @@ export async function aiJSON<T = any>(opts: {
         { type: "image_url", image_url: { url: opts.imageUrl, detail: "high" } },
       ]
     : opts.prompt;
+  const model = opts.imageUrl ? VISION_MODEL() : TEXT_MODEL();
   const raw = await callOpenAI(
     {
-      model: opts.imageUrl ? VISION_MODEL() : TEXT_MODEL(),
-      temperature: opts.temperature ?? 0.2,
-      max_tokens: opts.maxTokens ?? 1200,
+      model,
+      ...generationParams(model, opts.temperature ?? 0.2, opts.maxTokens ?? 1200),
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: `${opts.system}\n\n${WELLNESS_GUARDRAIL}\n\nRespond ONLY with a JSON object of this shape:\n${opts.shape}` },

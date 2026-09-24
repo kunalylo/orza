@@ -6,6 +6,7 @@
  * short acknowledgement in ÖRZA's voice (`ackFor`). The API routes persist
  * `{ step, answers }` in the `onboarding` collection and call into this module.
  */
+import { healthyFloorKg, planGoal } from "@/components/goals/goal-math";
 import { computeTargets } from "@/lib/domain/targets";
 import type { ActivityLevel, Diet, GoalType, HouseholdMode, Language, Profile, Sex, Targets } from "@/lib/types";
 import { formatNumber, round } from "@/lib/utils";
@@ -430,19 +431,24 @@ function parseAllergies(raw: Raw): string[] | "none" | null {
     .map((p) => norm(p).replace(/\s+/g, " ").trim())
     .filter(Boolean);
   if (!parts.length) return null;
-  const known = new Map(ALLERGY_OPTIONS.map((o) => [o.value, o.value]));
-  const synonyms: Record<string, string> = {
-    peanut: "peanuts", groundnut: "peanuts", groundnuts: "peanuts", moongphali: "peanuts",
-    nuts: "tree nuts", "tree nut": "tree nuts", almonds: "tree nuts", cashew: "tree nuts", cashews: "tree nuts", walnuts: "tree nuts",
-    milk: "dairy", lactose: "dairy", "dairy / lactose": "dairy", paneer: "dairy",
-    wheat: "gluten", egg: "eggs", prawns: "shellfish", prawn: "shellfish", shrimp: "shellfish", crab: "shellfish",
-    soya: "soy", til: "sesame",
+  const known = new Map(ALLERGY_OPTIONS.map((o) => [o.value, [o.value]]));
+  // Plain "nuts" usually means peanuts as well as tree nuts (peanuts are legumes), so it keeps both.
+  const synonyms: Record<string, string[]> = {
+    peanut: ["peanuts"], groundnut: ["peanuts"], groundnuts: ["peanuts"], moongphali: ["peanuts"],
+    nut: ["tree nuts", "peanuts"], nuts: ["tree nuts", "peanuts"], "all nuts": ["tree nuts", "peanuts"],
+    "tree nut": ["tree nuts"], almond: ["tree nuts"], almonds: ["tree nuts"], cashew: ["tree nuts"], cashews: ["tree nuts"],
+    walnut: ["tree nuts"], walnuts: ["tree nuts"],
+    milk: ["dairy"], lactose: ["dairy"], "dairy / lactose": ["dairy"], paneer: ["dairy"],
+    wheat: ["gluten"], egg: ["eggs"], prawns: ["shellfish"], prawn: ["shellfish"], shrimp: ["shellfish"], crab: ["shellfish"],
+    soya: ["soy"], til: ["sesame"],
   };
   const out: string[] = [];
   for (const p of parts) {
     if (SKIP_WORDS.test(words(p)) || p === "none") continue;
-    const v = known.get(p) || synonyms[p] || p.replace(/^allergic to\s+/, "").slice(0, 40);
-    if (v && !out.includes(v)) out.push(v);
+    // "allergic to nuts", "nut allergy", "peanut allergies" → the food itself
+    const food = p.replace(/^(?:i am |i'm |im )?allergic to\s+/, "").replace(/\s+(?:allerg(?:y|ies)|intolerance)$/, "").trim();
+    if (!food) continue;
+    for (const v of known.get(food) || synonyms[food] || [food.slice(0, 40)]) if (!out.includes(v)) out.push(v);
   }
   if (!out.length) return "none";
   return out.slice(0, 12);
@@ -451,6 +457,17 @@ function parseAllergies(raw: Raw): string[] | "none" | null {
 /* ───────────────────────────── Flow ───────────────────────────── */
 
 const needsTarget = (a: OnboardingAnswers) => a.goal === "lose" || a.goal === "gain";
+
+/**
+ * Already at (or under) the lowest healthy weight for their height (BMI 18.5), so no loss target would be
+ * safe — the Goals calculator refuses every one. ÖRZA plans balanced targets instead of a deficit.
+ */
+function isUnderweight(a: OnboardingAnswers): boolean {
+  return !!a.weight_kg && !!a.height_cm && a.weight_kg <= healthyFloorKg(a.height_cm);
+}
+
+/** The user asked to lose weight but is already under a healthy BMI, so the plan is balanced instead. */
+const lossHeldForBmi = (a: OnboardingAnswers) => a.goal_focus === "lose" && a.goal !== "lose" && isUnderweight(a);
 
 /** The ordered steps this user will see (target weight only for lose/gain). */
 export function sequenceFor(answers: OnboardingAnswers): QuestionStep[] {
@@ -536,7 +553,11 @@ export function ackFor(step: QuestionStep, a: OnboardingAnswers): string {
     case "height":
       return `${formatHeight(a.height_cm ?? 0, a.height_unit)} — got it.`;
     case "weight":
-      return `${formatWeight(a.weight_kg ?? 0, a.weight_unit)} — thanks. This stays private to you.`;
+      return join(
+        `${formatWeight(a.weight_kg ?? 0, a.weight_unit)} — thanks. This stays private to you.`,
+        lossHeldForBmi(a) &&
+          `You're already at the lower end of the healthy range for your height, so I won't plan a calorie deficit. I'll set balanced targets to keep you well nourished instead — and if you'd still like to lose weight, please check with your doctor first.`
+      );
     case "target_weight": {
       if (a.target_weight_kg == null) return "No problem — we can set a target later from Goals.";
       const diff = Math.abs((a.weight_kg ?? 0) - a.target_weight_kg);
@@ -702,6 +723,7 @@ export function applyAnswer(step: QuestionStep, raw: Raw, prev: OnboardingAnswer
       if (!focus) return err("I didn't quite catch that. Are you looking to lose, maintain or gain weight — or just eat healthier?");
       a.goal_focus = focus;
       a.goal = focus === "track" || focus === "healthier" ? "maintain" : focus;
+      if (a.goal === "lose" && isUnderweight(a)) a.goal = "maintain";
       if (!needsTarget(a)) delete a.target_weight_kg;
       return { ok: true, answers: a };
     }
@@ -737,6 +759,12 @@ export function applyAnswer(step: QuestionStep, raw: Raw, prev: OnboardingAnswer
       if (w.kg < 25 || w.kg > 300) return err("Please enter a weight between 25 and 300 kg (55–660 lb).");
       a.weight_kg = round(w.kg, 1);
       a.weight_unit = w.unit;
+      if (a.goal_focus === "lose") {
+        // Already under a healthy BMI: no deficit, whatever target they'd pick — plan balanced targets instead
+        // (the ack explains why). Otherwise make sure an earlier redirect doesn't stick after a corrected weight.
+        a.goal = isUnderweight(a) ? "maintain" : "lose";
+        if (a.goal === "maintain") delete a.target_weight_kg;
+      }
       return { ok: true, answers: a };
     }
     case "target_weight": {
@@ -753,10 +781,13 @@ export function applyAnswer(step: QuestionStep, raw: Raw, prev: OnboardingAnswer
         return err(`For a weight-loss goal, your target should be below your current ${formatKg(current)}. Want to try another number?`);
       if (a.goal === "gain" && target <= current)
         return err(`For a gain goal, your target should be above your current ${formatKg(current)}. Want to try another number?`);
-      if (a.height_cm) {
-        const bmi = target / (a.height_cm / 100) ** 2;
-        if (bmi < 17)
-          return err("That target sits below a healthy range for your height. Let's pick something a little higher — you can always adjust later.");
+      // Same floor as the Goals calculator: never plan a loss below a healthy BMI (18.5).
+      if (a.goal === "lose" && a.height_cm) {
+        const floor = healthyFloorKg(a.height_cm);
+        if (target < floor)
+          return err(
+            `That target sits below the healthy range for your height. Try ${formatWeight(floor, a.weight_unit)} or above — or check with your doctor first.`
+          );
       }
       a.target_weight_kg = target;
       return { ok: true, answers: a };
@@ -877,34 +908,115 @@ export function weeklyRateFor(goal: GoalType) {
   return goal === "lose" ? -0.5 : goal === "gain" ? 0.25 : 0;
 }
 
-export function targetsFor(answers: OnboardingAnswers) {
-  const profile = buildProfile(answers);
-  const goal = answers.goal || "maintain";
-  const t = computeTargets(profile, { goal, weeklyRateKg: weeklyRateFor(goal) });
-  const { bmr, tdee, ...targets } = t;
-  return { targets: targets as Targets, bmr, tdee, profile, goal };
+export interface OnboardingPlan {
+  /** The goal the plan is built for: "maintain" when a loss plan wouldn't be safe (see `held`). */
+  goal: GoalType;
+  targets: Targets;
+  bmr: number | null;
+  tdee: number | null;
+  /** Planned weekly change after the calorie floor (negative = loss). */
+  weeklyRate: number;
+  /** The 1200 kcal / BMR floor made the pace gentler than the default. */
+  paceAdjusted: boolean;
+  /** Target weight the plan works toward (null = none chosen, or not safe to plan). */
+  target: number | null;
+  weeks: number | null;
+  /** YYYY-MM-DD, only when `today` was given. */
+  targetDate: string | null;
+  /** Why a loss request became balanced targets: already under a healthy BMI, or no room above the calorie floor. */
+  held: "underweight" | "energy_floor" | null;
 }
 
-function goalLine(a: OnboardingAnswers): string {
+/**
+ * The plan behind the summary and the saved goal — built with the Goals calculator's own rules
+ * (`planGoal`: calorie floor, pace adjustment, no-deficit blocker; healthy-BMI floor for targets).
+ */
+export function planFor(a: OnboardingAnswers, today?: string): OnboardingPlan {
+  const profile = buildProfile(a);
+  const split = (t: ReturnType<typeof computeTargets>) => {
+    const { bmr, tdee, ...targets } = t;
+    return { targets: targets as Targets, bmr, tdee };
+  };
+  const balanced = (held: OnboardingPlan["held"]): OnboardingPlan => ({
+    goal: "maintain",
+    ...split(computeTargets(profile, { goal: "maintain", weeklyRateKg: 0 })),
+    weeklyRate: 0,
+    paceAdjusted: false,
+    target: null,
+    weeks: null,
+    targetDate: null,
+    held,
+  });
+
+  if (lossHeldForBmi(a) || (a.goal === "lose" && isUnderweight(a))) return balanced("underweight");
+
   const goal = a.goal || "maintain";
-  if ((goal === "lose" || goal === "gain") && a.target_weight_kg != null && a.weight_kg) {
-    const rate = Math.abs(weeklyRateFor(goal));
-    const weeks = Math.max(1, Math.ceil(Math.abs(a.weight_kg - a.target_weight_kg) / rate));
-    return `Aiming for ${formatKg(a.target_weight_kg)} at about ${rate} kg a week — roughly ${weeks} week${weeks === 1 ? "" : "s"}.`;
+  const current = a.weight_kg;
+  if ((goal !== "lose" && goal !== "gain") || !current) {
+    const weeklyRate = weeklyRateFor(goal);
+    const t = split(computeTargets(profile, { goal, weeklyRateKg: weeklyRate }));
+    return { goal, ...t, weeklyRate, paceAdjusted: false, target: null, weeks: null, targetDate: null, held: null };
   }
-  if (goal === "lose") return "A gentle deficit of about 0.5 kg a week.";
-  if (goal === "gain") return "A gentle surplus of about 0.25 kg a week.";
+
+  // A loss target under the healthy floor (only possible in answers saved before that check existed) is ignored.
+  let target = a.target_weight_kg ?? null;
+  if (target != null && goal === "lose" && a.height_cm && target < healthyFloorKg(a.height_cm)) target = null;
+
+  const plan = planGoal({ profile, goal, current, target: target ?? current, rate: weeklyRateFor(goal), today: today || "2000-01-01" });
+  if (plan.blocker) return balanced("energy_floor");
+  return {
+    goal,
+    targets: plan.targets,
+    bmr: plan.bmr,
+    tdee: plan.tdee,
+    weeklyRate: plan.weeklyRate,
+    paceAdjusted: plan.paceAdjusted,
+    target,
+    weeks: target != null ? plan.weeks : null,
+    targetDate: target != null && today ? plan.targetDate : null,
+    held: null,
+  };
+}
+
+export function targetsFor(answers: OnboardingAnswers) {
+  const plan = planFor(answers);
+  return { targets: plan.targets, bmr: plan.bmr, tdee: plan.tdee, goal: plan.goal };
+}
+
+/** "0.5", "0.25", "0.06" — kg per week without trailing zeros. */
+const kgPerWeek = (rate: number) => `${round(Math.abs(rate), 2)}`;
+
+/** "10 weeks", "5 months", "about 2 years". */
+function durationText(weeks: number): string {
+  if (weeks <= 26) return `${weeks} week${weeks === 1 ? "" : "s"}`;
+  const months = Math.round((weeks * 7) / 30.44);
+  if (months < 24) return `${months} months`;
+  return `about ${round(months / 12, 1)} years`;
+}
+
+function goalLine(a: OnboardingAnswers, plan: OnboardingPlan): string {
+  if (plan.held === "underweight")
+    return "You're already at the lower end of the healthy range for your height, so these are balanced targets rather than a deficit. If you'd still like to lose weight, please check with your doctor first.";
+  if (plan.held === "energy_floor")
+    return "Your daily energy needs are already close to the safe minimum, so I've set balanced targets instead of a deficit. A little more movement is a kinder place to start — or chat with a nutritionist.";
+  const floorNote = plan.paceAdjusted ? " I've kept the pace gentle so your daily energy never drops below a safe minimum — a little more movement will speed things up." : "";
+  if ((plan.goal === "lose" || plan.goal === "gain") && plan.target != null && plan.weeks) {
+    return `Aiming for ${formatWeight(plan.target, a.weight_unit)} at about ${kgPerWeek(plan.weeklyRate)} kg a week — roughly ${durationText(plan.weeks)}.${floorNote}`;
+  }
+  if (plan.goal === "lose") return `A gentle deficit of about ${kgPerWeek(plan.weeklyRate)} kg a week.${floorNote}`;
+  if (plan.goal === "gain") return `A gentle surplus of about ${kgPerWeek(plan.weeklyRate)} kg a week.`;
   if (a.goal_focus === "healthier") return "Balanced targets to help you eat a little better every day.";
   if (a.goal_focus === "track") return "Balanced targets to track against — no pressure.";
   return "Balanced targets to keep you steady.";
 }
 
 export function planSummary(a: OnboardingAnswers): PlanSummary {
-  const { targets, bmr, tdee, goal } = targetsFor(a);
+  const plan = planFor(a);
+  const { targets, bmr, tdee, goal } = plan;
   const facts = [
     a.age != null && a.sex ? { label: "You", value: `${labelOf(SEX_OPTIONS, a.sex).split(" /")[0]}, ${a.age}` } : null,
     a.height_cm ? { label: "Height", value: formatHeight(a.height_cm, a.height_unit) } : null,
-    a.weight_kg ? { label: "Weight", value: a.target_weight_kg != null ? `${formatKg(a.weight_kg)} → ${formatKg(a.target_weight_kg)}` : formatKg(a.weight_kg) } : null,
+    a.weight_kg ? { label: "Weight", value: plan.target != null ? `${formatKg(a.weight_kg)} → ${formatKg(plan.target)}` : formatKg(a.weight_kg) } : null,
     a.activity_level ? { label: "Activity", value: labelOf(ACTIVITY_OPTIONS, a.activity_level) } : null,
     a.diet ? { label: "Diet", value: labelOf(DIET_OPTIONS, a.diet) } : null,
     a.region ? { label: "Region", value: a.region } : null,
@@ -922,7 +1034,7 @@ export function planSummary(a: OnboardingAnswers): PlanSummary {
     bmr,
     tdee,
     goal,
-    goal_line: goalLine(a),
+    goal_line: goalLine(a, plan),
     facts,
   };
 }
@@ -942,11 +1054,20 @@ function summaryText(a: OnboardingAnswers, name: string): string {
   );
 }
 
-/** First durable facts for ÖRZA's memory (short, human-readable). */
-export function memoryFacts(a: OnboardingAnswers): string[] {
+/**
+ * First durable facts for ÖRZA's memory (short, human-readable). Pass the saved `plan` so a loss request
+ * that became balanced targets is remembered that way.
+ */
+export function memoryFacts(a: OnboardingAnswers, plan?: Pick<OnboardingPlan, "held" | "target">): string[] {
   const facts: string[] = [];
   const focus = a.goal_focus || a.goal;
-  if (focus) {
+  const held = plan?.held ?? (lossHeldForBmi(a) ? "underweight" : null);
+  const target = plan ? plan.target : a.target_weight_kg;
+  if (held === "underweight") {
+    facts.push("Goal: wanted to lose weight, but is already at the low end of a healthy BMI — balanced targets, no deficit");
+  } else if (held === "energy_floor") {
+    facts.push("Goal: wanted to lose weight, but energy needs are near the safe minimum — balanced targets, no deficit");
+  } else if (focus) {
     const goalText = {
       lose: "Goal: lose weight",
       gain: "Goal: gain weight or muscle",
@@ -954,7 +1075,7 @@ export function memoryFacts(a: OnboardingAnswers): string[] {
       track: "Goal: track what they eat",
       healthier: "Goal: eat healthier",
     }[focus];
-    facts.push(a.target_weight_kg != null ? `${goalText} (target ${formatKg(a.target_weight_kg)})` : goalText);
+    facts.push(target != null ? `${goalText} (target ${formatKg(target)})` : goalText);
   }
   if (a.diet) facts.push(`Diet: ${labelOf(DIET_OPTIONS, a.diet).toLowerCase()}`);
   if (a.allergies) facts.push(a.allergies.length ? `Allergies / avoids: ${a.allergies.join(", ")}` : "No food allergies");

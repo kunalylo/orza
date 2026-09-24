@@ -5,8 +5,10 @@
  * Pipeline: normalise → detect meal time + restaurant cues → split into phrases on commas/and/aur/with/+ →
  * drop filler words → read quantities & portions → match foods (longest alias first) → size each item.
  */
-import type { MealItem, MealType } from "@/lib/types";
+import type { Diet, MealItem, MealType } from "@/lib/types";
+import { resolveForDiet } from "./diet";
 import { FOOD_HINTS, FOODS } from "./foods";
+import { ITEM_LIMITS, maxServingsFor } from "./limits";
 import { canonToken, coverRun, exactFood, protectedLength, type FoodMatch } from "./matcher";
 import { nutrientsFor } from "./nutrients";
 import type { FoodEntry } from "./types";
@@ -34,8 +36,10 @@ import {
 const MAX_TEXT = 2000;
 const MAX_ITEMS = 20;
 const MAX_UNMATCHED = 10;
-const MAX_COUNT = 50;
-const MAX_GRAMS = 5000;
+const MAX_COUNT = 50; // pieces said ("30 pani puri"); servings are capped separately by maxServingsFor()
+const MAX_GRAMS = ITEM_LIMITS.grams;
+/** An item trimmed to fit one entry ("50 roti") is flagged as a guess so the user checks it. */
+const CAPPED_CONFIDENCE = 0.4;
 const ARTICLES = new Set(["a", "an", "the"]);
 const EAT_OUT_VERBS = new Set(["ate", "eat", "eating", "eaten", "dine", "dined", "dining", "went", "go", "going"]);
 const EGG_WORDS = new Set(["egg", "anda", "eggs"]);
@@ -211,10 +215,11 @@ interface Portion {
   quantity: number;
   unit: string;
   grams?: number; // omitted when the spoken unit has no fixed weight ("1 scoop whey")
+  capped: boolean; // trimmed to fit one meal item
 }
 
 /** Convert what was said ("half plate", "2 katori", "200 g", "3 egg") into servings of the food. */
-function portionFor(food: FoodEntry, q: Qty | undefined, firstWord: string | undefined): Portion {
+function portionFor(food: FoodEntry, q: Qty | undefined, firstWord: string | undefined, restaurant: boolean): Portion {
   const U = food.serving.unit;
   const uKind = UNIT_KIND[U] ?? "count";
   const hints = FOOD_HINTS.get(food.key) ?? {};
@@ -271,31 +276,44 @@ function portionFor(food: FoodEntry, q: Qty | undefined, firstWord: string | und
     if (grams != null) grams *= q.size;
     if (q.sizeWord) unit = `${q.sizeWord} ${unit}`;
   }
-  servings = clamp(servings, 0.05, MAX_COUNT);
+  servings = Math.max(0.05, servings);
+  // One item never holds more than MAX_SERVINGS or passes the item limits that edits are validated
+  // against ("50 roti" → 20 roti); the said amount scales down with it so the row stays consistent.
+  const maxServings = maxServingsFor(food, restaurant);
+  let capped = false;
+  if (servings > maxServings) {
+    const k = maxServings / servings;
+    servings = maxServings;
+    quantity *= k;
+    if (grams != null) grams *= k;
+    capped = true;
+  }
   return {
     servings,
-    quantity: clamp(round(quantity), 0.01, 100),
+    quantity: clamp(round(quantity), 0.01, ITEM_LIMITS.quantity),
     unit,
-    grams: knownWeight ? Math.round(grams ?? servings * food.serving.grams) : undefined,
+    grams: knownWeight ? Math.min(ITEM_LIMITS.grams, Math.round(grams ?? servings * food.serving.grams)) : undefined,
+    capped,
   };
 }
 
-function buildItem(m: FoodMatch, q: Qty | undefined, runWords: string[], restaurant: boolean): MealItem {
-  let food = m.food;
+function buildItem(m: FoodMatch, q: Qty | undefined, runWords: string[], ctx: Ctx): MealItem {
+  let food = resolveForDiet(m.food, m.alias.split(" "), ctx.diet);
   if (q?.portion && q.portion in WEIGHT_FACTOR && !m.name && WEIGHED_ALIAS[m.alias]) {
     food = FOOD_BY_KEY.get(WEIGHED_ALIAS[m.alias]) ?? food;
   }
-  const p = portionFor(food, q, runWords[m.start]);
-  const n = nutrientsFor(food, p.servings, restaurant);
-  const styled = restaurant && (food.restaurant_multiplier ?? 1) > 1;
+  const p = portionFor(food, q, runWords[m.start], ctx.restaurant);
+  const n = nutrientsFor(food, p.servings, ctx.restaurant);
+  const styled = ctx.restaurant && (food.restaurant_multiplier ?? 1) > 1;
   const base = m.name ?? food.name;
+  const confidence = round(CONFIDENCE[m.kind] - (styled ? 0.05 : 0));
   return {
     name: styled ? `${base} (restaurant)` : base,
     quantity: p.quantity,
     unit: p.unit,
     grams: p.grams,
     ...n,
-    confidence: round(CONFIDENCE[m.kind] - (styled ? 0.05 : 0)),
+    confidence: p.capped ? Math.min(confidence, CAPPED_CONFIDENCE) : confidence,
   };
 }
 
@@ -306,7 +324,12 @@ function unmatchedPhrase(words: string[], q?: Qty): string | null {
 }
 
 /** Items for one phrase ("2 roti", "chicken biryani full plate", "idli vada sambar"). */
-function parsePhrase(tokens: string[], restaurant: boolean): { items: MealItem[]; unmatched: string[] } {
+interface Ctx {
+  restaurant: boolean;
+  diet?: Diet | null;
+}
+
+function parsePhrase(tokens: string[], ctx: Ctx): { items: MealItem[]; unmatched: string[] } {
   const els = toElements(tokens);
   const items: MealItem[] = [];
   const unmatched: string[] = [];
@@ -348,7 +371,7 @@ function parsePhrase(tokens: string[], restaurant: boolean): { items: MealItem[]
 
   for (const el of els) {
     if (el.kind !== "run") continue;
-    for (const m of el.matches) items.push(buildItem(m, qtyOf.get(m), el.words, restaurant));
+    for (const m of el.matches) items.push(buildItem(m, qtyOf.get(m), el.words, ctx));
   }
   return { items, unmatched };
 }
@@ -358,8 +381,14 @@ function parsePhrase(tokens: string[], restaurant: boolean): { items: MealItem[]
  * "had a masala dosa from a restaurant" into items. Understands English/Hindi/Hinglish numbers
  * (ek/do/teen/aadha/dedh/half/one/two/2/1.5/1/2), Indian portions (katori/bowl/plate/half plate/glass/piece/cup/tbsp),
  * meal words (breakfast/nashta, lunch, dinner/raat, snack) and restaurant cues (restaurant/hotel/dhaba/outside/order).
+ *
+ * Pass the user's `diet` so ambiguous dish words resolve to what they actually eat: for a vegetarian,
+ * vegan, Jain or eggetarian profile "biryani" is Veg Biryani, not Chicken Biryani.
  */
-export function parseMealText(text: string): {
+export function parseMealText(
+  text: string,
+  opts: { diet?: Diet | null } = {}
+): {
   items: MealItem[];
   unmatched: string[];
   mealType?: MealType;
@@ -422,7 +451,7 @@ export function parseMealText(text: string): {
   const items: MealItem[] = [];
   const unmatched: string[] = [];
   for (const toks of merged) {
-    const r = parsePhrase(toks, restaurant);
+    const r = parsePhrase(toks, { restaurant, diet: opts?.diet });
     items.push(...r.items);
     unmatched.push(...r.unmatched);
   }

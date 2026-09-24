@@ -1,11 +1,10 @@
 "use client";
 import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Check, Heart, Lock, Shield, User, Users, type LucideIcon } from "lucide-react";
+import { Check, Clock, Eye, Heart, Lock, Shield, User, Users, type LucideIcon } from "lucide-react";
 import { GlassCard, IconTile, Section, SectionHeader } from "@/components/orza/primitives";
 import { cn } from "@/lib/utils";
 
-type Access = "private" | "permission" | "shared";
 type Mode = {
   id: string;
   label: string;
@@ -13,7 +12,6 @@ type Mode = {
   desc: string;
   detail: string;
   includes: string[];
-  access: [string, Access][];
 };
 
 const MODES: Mode[] = [
@@ -24,12 +22,6 @@ const MODES: Mode[] = [
     desc: "Personal AI wellness coach tailored to your goals",
     detail: "A personal AI wellness coach tailored to your goals. Your profile stays private unless you explicitly choose to share it.",
     includes: ["Voice meal logging (3 languages)", "Camera food scanning", "Advanced AI chat", "Recipe generation"],
-    access: [
-      ["Meals", "private"],
-      ["Progress", "private"],
-      ["Goals", "private"],
-      ["Health reports", "private"],
-    ],
   },
   {
     id: "couple",
@@ -38,12 +30,6 @@ const MODES: Mode[] = [
     desc: "Shared meals, coordinated planning, partner notifications",
     detail: "Two linked accounts can log shared meals, see each other’s progress (with permission), and coordinate household planning.",
     includes: ["Shared meal logging", "Partner notifications", "Household meal planning", "Coordinated goals"],
-    access: [
-      ["Meals", "shared"],
-      ["Progress", "permission"],
-      ["Goals", "shared"],
-      ["Health reports", "private"],
-    ],
   },
   {
     id: "caregiver",
@@ -52,12 +38,6 @@ const MODES: Mode[] = [
     desc: "Log for dependents, medication reminders, support routing",
     detail: "Made for managing an elderly parent’s nutrition. The caregiver can log meals, track meds, and manage health reports for the dependent.",
     includes: ["Log for 1 dependent", "Medication reminders", "Health report tracking", "Support routing"],
-    access: [
-      ["Meals", "permission"],
-      ["Progress", "permission"],
-      ["Goals", "private"],
-      ["Health reports", "permission"],
-    ],
   },
   {
     id: "family",
@@ -66,23 +46,19 @@ const MODES: Mode[] = [
     desc: "Multi-profile, family meals, household health dashboard",
     detail: "Separate profiles plus shared planning — for households managing the nutrition of three or more people, from kids to parents.",
     includes: ["Separate profiles", "Family dashboard", "Shared pantry", "Family reports", "Parental controls"],
-    access: [
-      ["Meals", "shared"],
-      ["Progress", "permission"],
-      ["Goals", "private"],
-      ["Health reports", "permission"],
-    ],
   },
 ];
 
-const ACCESS_STYLE: Record<Access, { label: string; className: string }> = {
-  private: { label: "Private", className: "bg-orza-violet-50 text-[#5630A8] border-[rgba(135,87,242,0.22)]" },
-  permission: { label: "By permission", className: "bg-orza-cyan-50 text-orza-cyan-700 border-[rgba(11,190,220,0.28)]" },
-  shared: { label: "Shared", className: "bg-[#FFF1EA] text-[#C2410C] border-[rgba(255,122,106,0.30)]" },
-};
+/** Household sharing rules (the Trust & Safety page's "Household Sharing" list) — the same in every mode. */
+const SHARING_RULES = [
+  "Permission-based only",
+  "You control what's shared",
+  "Revoke access anytime",
+  "Each profile remains private unless explicitly shared",
+];
 
 export function HomeHousehold() {
-  const [active, setActive] = React.useState(1); // Couple: the mode that best shows selective sharing
+  const [active, setActive] = React.useState(0); // Individual: the mode every account starts in
   const reduce = useReducedMotion();
   const tabRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
   const mode = MODES[active];
@@ -208,22 +184,15 @@ export function HomeHousehold() {
                   </ul>
                 </div>
                 <div>
-                  <h4 className="font-mono text-[11px] uppercase tracking-[0.14em] text-orza-subtle">What&apos;s shared</h4>
+                  <h4 className="font-mono text-[11px] uppercase tracking-[0.14em] text-orza-subtle">How sharing works</h4>
                   <ul className="mt-3 grid gap-2">
-                    {mode.access.map(([label, access]) => (
+                    {SHARING_RULES.map((rule) => (
                       <li
-                        key={label}
-                        className="flex items-center justify-between gap-3 rounded-orza-sm border border-[rgba(20,20,20,0.08)] bg-white/55 px-3 py-2"
+                        key={rule}
+                        className="flex items-start gap-2 rounded-orza-sm border border-[rgba(20,20,20,0.08)] bg-white/55 px-3 py-2 text-[13px] leading-snug text-orza-strong"
                       >
-                        <span className="text-[13px] text-orza-strong">{label}</span>
-                        <span
-                          className={cn(
-                            "rounded-full border px-2 py-[1px] font-mono text-[10px] uppercase tracking-[0.12em]",
-                            ACCESS_STYLE[access].className
-                          )}
-                        >
-                          {ACCESS_STYLE[access].label}
-                        </span>
+                        <Eye size={14} strokeWidth={1.75} className="mt-[2px] shrink-0 text-orza-cyan-600" aria-hidden />
+                        <span>{rule}</span>
                       </li>
                     ))}
                   </ul>
@@ -231,8 +200,16 @@ export function HomeHousehold() {
               </div>
 
               <p className="mt-7 flex items-start gap-2 border-t border-[rgba(20,20,20,0.08)] pt-4 text-[13px] leading-relaxed text-orza-muted">
-                <Lock size={14} strokeWidth={1.75} className="mt-[3px] shrink-0 text-orza-cyan-600" aria-hidden />
-                <span>Household modes require explicit permission. You control what&apos;s shared, always — and can revoke access anytime.</span>
+                {mode.id === "individual" ? (
+                  <Lock size={14} strokeWidth={1.75} className="mt-[3px] shrink-0 text-orza-cyan-600" aria-hidden />
+                ) : (
+                  <Clock size={14} strokeWidth={1.75} className="mt-[3px] shrink-0 text-orza-cyan-600" aria-hidden />
+                )}
+                <span>
+                  {mode.id === "individual"
+                    ? "Every ÖRZA account starts here, private to you."
+                    : `${mode.label} mode arrives with the Premium ${mode.label} plan, launching soon. Until then, each ÖRZA account is a private Individual profile.`}
+                </span>
               </p>
             </motion.div>
           </AnimatePresence>

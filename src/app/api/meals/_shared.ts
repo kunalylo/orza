@@ -3,6 +3,7 @@ import { z } from "zod";
 import { col } from "@/lib/db";
 import { addDays, dateInTz, DEFAULT_TZ, isISODate } from "@/lib/dates";
 import { badRequest } from "@/lib/http";
+import { ITEM_LIMITS } from "@/lib/nutrition/limits";
 import type { MealType, User } from "@/lib/types";
 
 export const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const satisfies readonly MealType[];
@@ -17,17 +18,24 @@ const amount = (label: string, max: number) =>
     .min(0, `${label} can't be negative`)
     .max(max, `${label} looks too high`);
 
-/** A meal item as sent by clients (manual entry, edits, scan confirmation). */
+/**
+ * A meal item as sent by clients (manual entry, edits, scan confirmation). The limits are the same
+ * ITEM_LIMITS every creation path is held to, so anything ÖRZA logs can be edited and saved again.
+ */
 export const itemSchema = z.object({
   name: z.string().trim().min(1, "Every item needs a name").max(80),
-  quantity: z.number({ invalid_type_error: "Quantity must be a number" }).finite().positive("Quantity must be more than 0").max(100),
+  quantity: z
+    .number({ invalid_type_error: "Quantity must be a number" })
+    .finite()
+    .positive("Quantity must be more than 0")
+    .max(ITEM_LIMITS.quantity, "Quantity looks too high"),
   unit: z.string().trim().max(24).optional(),
-  grams: amount("Grams", 5000).optional(),
-  calories: amount("Calories", 5000),
-  protein_g: amount("Protein", 500).optional(),
-  carbs_g: amount("Carbs", 1000).optional(),
-  fat_g: amount("Fat", 500).optional(),
-  fiber_g: amount("Fibre", 200).optional(),
+  grams: amount("Grams", ITEM_LIMITS.grams).optional(),
+  calories: amount("Calories", ITEM_LIMITS.calories),
+  protein_g: amount("Protein", ITEM_LIMITS.protein_g).optional(),
+  carbs_g: amount("Carbs", ITEM_LIMITS.carbs_g).optional(),
+  fat_g: amount("Fat", ITEM_LIMITS.fat_g).optional(),
+  fiber_g: amount("Fibre", ITEM_LIMITS.fiber_g).optional(),
   confidence: z.number().min(0).max(1).optional(),
 });
 

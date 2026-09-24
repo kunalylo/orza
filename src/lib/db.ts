@@ -16,6 +16,7 @@ import { MongoClient, type Db } from "mongodb";
 
 export type CollectionName =
   | "users"
+  | "sessions"
   | "meals"
   | "scans"
   | "tracking"
@@ -90,6 +91,8 @@ async function ensureIndexes(db: Db) {
   await Promise.all([
     db.collection("users").createIndex({ id: 1 }, { unique: true }),
     db.collection("users").createIndex({ email: 1 }, { unique: true }),
+    db.collection("sessions").createIndex({ id: 1 }, { unique: true }),
+    db.collection("sessions").createIndex({ user_id: 1 }),
     db.collection("meals").createIndex({ user_id: 1, date: 1 }),
     db.collection("meals").createIndex({ id: 1 }, { unique: true }),
     db.collection("scans").createIndex({ id: 1 }, { unique: true }),

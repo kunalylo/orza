@@ -7,7 +7,7 @@ import { DEFAULT_TARGETS } from "@/lib/domain/targets";
 import { badRequest, json, route } from "@/lib/http";
 import type { Goal, Meal, Targets, TrackingDay } from "@/lib/types";
 import { round } from "@/lib/utils";
-import { buildInsight } from "../_lib/insight";
+import { avoidList, buildInsight } from "../_lib/insight";
 import { computeStreak, isRealDay, STREAK_LOOKBACK_DAYS } from "../_lib/streak";
 
 export const dynamic = "force-dynamic";
@@ -75,6 +75,7 @@ export const GET = route(async (req: Request) => {
     targets,
     water: tracking.water_glasses || 0,
     diet: user.profile?.diet,
+    allergies: avoidList(user.profile?.allergies, user.memory),
   });
 
   const lw = lastWeight[0];

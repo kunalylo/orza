@@ -25,7 +25,8 @@ import { cn, formatNumber } from "@/lib/utils";
 import { BrandMark } from "@/components/orza/primitives";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useUser } from "@/components/app/UserProvider";
-import { api } from "@/lib/api-client";
+import { toast } from "sonner";
+import { ApiError, api, errorMessage } from "@/lib/api-client";
 import { AlarmWatcher } from "@/components/care/AlarmWatcher";
 
 export const APP_NAV = [
@@ -97,22 +98,41 @@ function CreditsPill({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Signs out, then leaves the app. Only the server can clear the httpOnly session cookie and revoke
+ * the session, so if that request fails the user stays put and is told — never shown the home page
+ * while still signed in (shared / family phones).
+ */
 function useSignOut() {
   const router = useRouter();
-  return React.useCallback(async () => {
+  const [signingOut, setSigningOut] = React.useState(false);
+  const busy = React.useRef(false);
+  const signOut = React.useCallback(async () => {
+    if (busy.current) return;
+    busy.current = true;
+    setSigningOut(true);
     try {
       await api.post("/auth/logout");
-    } finally {
-      router.replace("/");
-      router.refresh();
+    } catch (e) {
+      busy.current = false;
+      setSigningOut(false);
+      toast.error(
+        e instanceof ApiError && e.code === "network"
+          ? "Couldn't sign you out — check your connection and try again."
+          : `Couldn't sign you out. ${errorMessage(e)}`
+      );
+      return;
     }
+    router.replace("/");
+    router.refresh();
   }, [router]);
+  return { signOut, signingOut };
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user } = useUser();
   const pathname = usePathname();
-  const signOut = useSignOut();
+  const { signOut, signingOut } = useSignOut();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const initials = (user.name || user.email).trim().slice(0, 1).toUpperCase();
 
@@ -136,8 +156,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="truncate text-sm font-medium text-orza-strong">{user.name || "You"}</div>
               <div className="truncate text-xs text-orza-subtle">{user.email}</div>
             </div>
-            <button type="button" onClick={signOut} aria-label="Sign out" className="rounded-full p-2 text-orza-muted hover:bg-white/70 hover:text-orza-strong">
-              <LogOut size={16} strokeWidth={1.75} />
+            <button
+              type="button"
+              onClick={signOut}
+              disabled={signingOut}
+              aria-label={signingOut ? "Signing out" : "Sign out"}
+              aria-busy={signingOut}
+              title="Sign out"
+              className="rounded-full p-2 text-orza-muted hover:bg-white/70 hover:text-orza-strong disabled:cursor-wait disabled:opacity-60"
+            >
+              <LogOut size={16} strokeWidth={1.75} aria-hidden />
             </button>
           </div>
         </div>
@@ -166,9 +194,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={signOut}
-            className="mt-6 flex w-full items-center gap-3 rounded-orza-sm px-3 py-2.5 text-[14px] text-orza-muted hover:bg-white/60 hover:text-orza-strong"
+            disabled={signingOut}
+            aria-busy={signingOut}
+            className="mt-6 flex w-full items-center gap-3 rounded-orza-sm px-3 py-2.5 text-[14px] text-orza-muted hover:bg-white/60 hover:text-orza-strong disabled:cursor-wait disabled:opacity-60"
           >
-            <LogOut size={17} strokeWidth={1.75} /> Sign out
+            <LogOut size={17} strokeWidth={1.75} aria-hidden /> {signingOut ? "Signing out…" : "Sign out"}
           </button>
         </DialogContent>
       </Dialog>

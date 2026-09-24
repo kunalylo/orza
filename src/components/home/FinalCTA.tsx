@@ -2,10 +2,11 @@ import { ArrowRight, Gift, MapPin, ShieldCheck, Sparkles, type LucideIcon } from
 import { Eyebrow, GlassCard, Section } from "@/components/orza/primitives";
 import { Reveal } from "@/components/orza/Reveal";
 import { ButtonLink } from "@/components/ui/button";
+import { INITIAL_CREDITS } from "@/lib/credits";
 
 const PROMISES: { icon: LucideIcon; k: string; v: string }[] = [
   { icon: Sparkles, k: "Free forever", v: "Manual tracking & basic dashboard" },
-  { icon: Gift, k: "100 AI credits", v: "Included when you sign up" },
+  { icon: Gift, k: `${INITIAL_CREDITS} AI credits`, v: "Included when you sign up" },
   { icon: ShieldCheck, k: "Private by design", v: "Never sold to third parties" },
   { icon: MapPin, k: "India-first depth", v: "State-wise dishes & portions" },
 ];
@@ -41,7 +42,7 @@ export function HomeFinalCTA() {
                 Ready to feel better about <em className="orza-energy-text pr-1 italic">food</em>?
               </h2>
               <p className="mt-5 max-w-xl text-base leading-relaxed text-orza-muted sm:text-lg">
-                Start free. No credit card. 100 AI credits included.
+                Start free. No credit card. {INITIAL_CREDITS} AI credits included.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <ButtonLink href="/login?mode=signup" size="lg" className="px-7">

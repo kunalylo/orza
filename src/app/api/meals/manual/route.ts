@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { createMeal, guessMealType } from "@/lib/domain/meals";
-import { json, notFound, parseBody, route } from "@/lib/http";
-import { FOODS, nutrientsFor } from "@/lib/nutrition";
+import { badRequest, json, notFound, parseBody, route } from "@/lib/http";
+import { FOODS, MAX_SERVINGS, maxServingsFor, nutrientsFor } from "@/lib/nutrition";
 import type { MealItem } from "@/lib/types";
 import { round } from "@/lib/utils";
 import { itemsSchema, mealTypeSchema, optionalDate, resolveDate, userTz } from "../_shared";
@@ -16,7 +16,7 @@ const ByFood = Base.extend({
     .number({ required_error: "Choose how many servings", invalid_type_error: "Servings must be a number" })
     .finite()
     .positive("Servings must be more than 0")
-    .max(20, "That's a lot of servings — up to 20 at a time"),
+    .max(MAX_SERVINGS, `That's a lot of servings — up to ${MAX_SERVINGS} at a time`),
   restaurant: z.boolean().optional(),
 });
 
@@ -37,6 +37,12 @@ export const POST = route(async (req: Request) => {
     const food = FOODS.find((f) => f.key === body.food_key);
     if (!food) throw notFound("That food isn't in ÖRZA's list — please search again.");
     const restaurant = !!body.restaurant;
+    const maxServings = maxServingsFor(food, restaurant);
+    if (body.quantity > maxServings) {
+      throw badRequest(
+        `That's more ${food.name} than one entry can hold — up to ${fmtQty(maxServings)} servings. Add the rest as another entry.`
+      );
+    }
     const name = restaurant ? `${food.name} (restaurant)` : food.name;
     const item: Partial<MealItem> = {
       name,

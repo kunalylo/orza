@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Segmented } from "@/components/ui/form";
 import { GlassCard } from "@/components/orza/primitives";
+import { SIGNED_IN_HINT_COOKIE } from "@/lib/cookie-names";
 import { SITE } from "@/lib/site";
 import type { PublicUser } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,15 @@ function validate(mode: AuthMode, v: Values): FieldErrors {
   else if (mode === "signup" && v.password.length < 8) e.password = "Password must be at least 8 characters";
   else if (v.password.length > 128) e.password = "Password must be 128 characters or fewer";
   return e;
+}
+
+/** True when the non-secret `orza_signed_in=1` hint cookie is set (never trusted for auth — just avoids a pointless request). */
+function hasSignedInHint(): boolean {
+  try {
+    return document.cookie.split(";").some((c) => c.trim() === `${SIGNED_IN_HINT_COOKIE}=1`);
+  } catch {
+    return false;
+  }
 }
 
 type AuthResult =
@@ -88,17 +98,28 @@ export function AuthForm({ initialMode, next }: { initialMode: AuthMode; next: s
     password: React.useRef<HTMLInputElement>(null),
   };
 
-  // Already signed in (e.g. page restored from history)? Skip the form.
+  // Already signed in (e.g. page restored from history)? Skip the form. Only ask the server when the
+  // JS-readable sign-in hint is present, so signed-out visitors never trigger a 401.
   React.useEffect(() => {
     let cancelled = false;
-    fetch("/api/auth/me", { credentials: "same-origin", cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!cancelled && d?.user) router.replace(destinationFor(d.user, next));
-      })
-      .catch(() => {});
+    const check = () => {
+      if (!hasSignedInHint()) return;
+      fetch("/api/auth/me", { credentials: "same-origin", cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!cancelled && d?.user) router.replace(destinationFor(d.user, next));
+        })
+        .catch(() => {});
+    };
+    // Back/forward cache restores don't re-run effects; `pageshow` with `persisted` catches them.
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) check();
+    };
+    check();
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       cancelled = true;
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, [router, next]);
 

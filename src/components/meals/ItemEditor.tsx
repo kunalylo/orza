@@ -2,6 +2,7 @@
 import * as React from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { MealItem, Nutrients } from "@/lib/types";
+import { ITEM_LIMITS } from "@/lib/nutrition/limits";
 import { cn, round } from "@/lib/utils";
 import { Input } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
@@ -90,11 +91,11 @@ export function rowErrors(d: DraftItem): RowErrors {
   const macro = (s: string, max: number) => s.trim() !== "" && !(toNum(s) >= 0 && toNum(s) <= max);
   const e: RowErrors = {};
   if (!d.name.trim()) e.name = true;
-  if (!(q > 0 && q <= 100)) e.quantity = true;
-  if (!(kcal >= 0 && kcal <= 5000)) e.calories = true;
-  if (macro(d.protein_g, 500)) e.protein_g = true;
-  if (macro(d.carbs_g, 1000)) e.carbs_g = true;
-  if (macro(d.fat_g, 500)) e.fat_g = true;
+  if (!(q > 0 && q <= ITEM_LIMITS.quantity)) e.quantity = true;
+  if (!(kcal >= 0 && kcal <= ITEM_LIMITS.calories)) e.calories = true;
+  if (macro(d.protein_g, ITEM_LIMITS.protein_g)) e.protein_g = true;
+  if (macro(d.carbs_g, ITEM_LIMITS.carbs_g)) e.carbs_g = true;
+  if (macro(d.fat_g, ITEM_LIMITS.fat_g)) e.fat_g = true;
   return e;
 }
 
@@ -107,12 +108,13 @@ export function fromDraft(d: DraftItem): MealItem {
     name: d.name.trim(),
     quantity: round(toNum(d.quantity), 2),
     unit: d.unit.trim() || "serving",
-    grams: d.grams != null ? Math.min(5000, Math.round(d.grams)) : undefined,
+    // Grams and fibre aren't editable here; keep what a quantity change scaled them to within the item limits.
+    grams: d.grams != null ? Math.min(ITEM_LIMITS.grams, Math.round(d.grams)) : undefined,
     calories: Math.round(n(d.calories)),
     protein_g: round(n(d.protein_g), 1),
     carbs_g: round(n(d.carbs_g), 1),
     fat_g: round(n(d.fat_g), 1),
-    fiber_g: round(d.fiber_g || 0, 1),
+    fiber_g: Math.min(ITEM_LIMITS.fiber_g, round(d.fiber_g || 0, 1)),
     confidence: d.confidence,
   };
 }

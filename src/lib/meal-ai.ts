@@ -8,7 +8,7 @@
  */
 import { aiJSON } from "@/lib/ai";
 import { cleanItem } from "@/lib/domain/meals";
-import { findFood, nutrientsFor } from "@/lib/nutrition";
+import { clampToItemLimits, findFood, maxServingsFor, nutrientsFor } from "@/lib/nutrition";
 import type { MealItem, MealType, Profile } from "@/lib/types";
 import { clamp, round } from "@/lib/utils";
 
@@ -210,7 +210,7 @@ function fillGaps(item: MealItem): MealItem {
   else if (item.grams && food.serving.grams > 0) servings = item.grams / food.serving.grams;
   let ref;
   try {
-    ref = nutrientsFor(food, clamp(servings, 0.1, 20));
+    ref = nutrientsFor(food, clamp(servings, 0.1, maxServingsFor(food)));
   } catch {
     return item;
   }
@@ -251,7 +251,8 @@ function sanitiseItems(raw: unknown): MealItem[] {
       fiber_g: bounded(o.fiber_g, 100),
       confidence: toConfidence(o.confidence, 0.6),
     });
-    out.push(fillGaps(item));
+    // Filled-in macros are scaled from the food list, so re-check them against the item limits.
+    out.push(clampToItemLimits(fillGaps(item)));
     if (out.length >= MAX_AI_ITEMS) break;
   }
   return out;

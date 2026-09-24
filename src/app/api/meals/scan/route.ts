@@ -5,8 +5,9 @@ import { withCredits } from "@/lib/credits";
 import { col, newId, nowISO } from "@/lib/db";
 import { sumNutrients } from "@/lib/domain/meals";
 import { HttpError, json, parseBody, route } from "@/lib/http";
-import { aiScanImage } from "@/lib/meal-ai";
+import { aiScanImage, type MealAIResult } from "@/lib/meal-ai";
 import type { Scan } from "@/lib/types";
+import { MEAL_AI, emptyResultCreditNote, rateLimited, refundEmptyResult, reserveMealAi } from "../_ai-guard";
 import { currentCredits } from "../_shared";
 
 /** ≈ 6 MB of image bytes once base64-encoded (4/3 overhead) plus the data-URL prefix. */
@@ -22,7 +23,8 @@ const Body = z.object({
 });
 
 /**
- * POST /api/meals/scan — Snap & Know. Costs 2 credits (refunded if the AI fails or sees no food).
+ * POST /api/meals/scan — Snap & Know. Costs 2 credits: refunded if the AI fails, and refunded for
+ * photos with no food up to a daily allowance (see _ai-guard). Rate-limited per user (429).
  * The photo is only sent to the AI; it is never stored. Returns an unconfirmed Scan to review.
  */
 export const POST = route(async (req: Request) => {
@@ -36,22 +38,22 @@ export const POST = route(async (req: Request) => {
   }
   const body = await parseBody(req, Body);
 
-  const result = await withCredits(
-    user.id,
-    "scan",
-    async () => {
-      const r = await aiScanImage(body.image, body.note, user.profile);
-      if (!r.items.length) {
-        throw new HttpError(
-          422,
-          r.notes || "ÖRZA couldn't spot any food in that photo. Try a clear, well-lit shot of the whole plate.",
-          "no_food"
-        );
-      }
-      return r;
-    },
-    "Snap & Know scan"
-  );
+  const release = await reserveMealAi(user.id, "scan");
+  if (!release) throw rateLimited();
+  let result: MealAIResult;
+  try {
+    // Only AI failures throw in here, so only they are refunded by withCredits.
+    result = await withCredits(user.id, "scan", () => aiScanImage(body.image, body.note, user.profile), MEAL_AI.scan.reason);
+  } finally {
+    release();
+  }
+
+  if (!result.items.length) {
+    // The AI did look at the photo (and was paid for) — refund within the daily allowance only.
+    const refunded = await refundEmptyResult(user.id, "scan");
+    const why = result.notes || "ÖRZA couldn't spot any food in that photo. Try a clear, well-lit shot of the whole plate.";
+    throw new HttpError(422, `${why} ${emptyResultCreditNote("scan", refunded)}`, "no_food");
+  }
 
   const scan: Scan = {
     id: newId(),

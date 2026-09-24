@@ -9,7 +9,7 @@ import { ScrollSpyNav } from "@/components/pages/ScrollSpyNav";
 import { SupportEmail } from "./prose";
 
 /** Shared "last updated" stamp for the policy pages. */
-export const LEGAL_UPDATED = { label: "23 September 2026", iso: "2026-09-23" };
+export const LEGAL_UPDATED = { label: "24 September 2026", iso: "2026-09-24" };
 
 export type LegalSection = { id: string; title: string; content: React.ReactNode };
 export type LegalHighlight = { icon: LucideIcon; title: string; body: string };

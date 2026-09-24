@@ -198,6 +198,17 @@ export interface CreditTransaction {
   created_at: string;
 }
 
+/**
+ * A signed-in browser. The session cookie (a signed JWT) carries this id; deleting the document
+ * revokes that cookie immediately, even if a copy of it is still within its 30-day lifetime.
+ */
+export interface Session {
+  id: string;
+  user_id: string;
+  created_at: string;
+  expires_at: string; // ISO; matches the cookie's expiry
+}
+
 export interface Lead {
   id: string;
   email: string;

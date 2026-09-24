@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isAdminEmail, requireAdmin } from "@/lib/auth";
+import { isAdmin, requireAdmin } from "@/lib/auth";
 import { col } from "@/lib/db";
 import { json, route } from "@/lib/http";
 import type { User } from "@/lib/types";
@@ -37,7 +37,7 @@ export const GET = route(async (req: Request) => {
     credits: u.credits ?? 0,
     onboarding_complete: !!u.onboarding_complete,
     created_at: u.created_at,
-    is_admin: !!u.is_admin || isAdminEmail(u.email || ""),
+    is_admin: isAdmin(u),
   }));
 
   return json({ users, total: matched.length }, { headers: { "Cache-Control": "no-store" } });

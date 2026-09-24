@@ -51,21 +51,83 @@ export function healthyFloorKg(heightCm: number): number {
   return Math.ceil(HEALTHY_BMI_FLOOR * m * m * 2) / 2;
 }
 
-/** Friendly validation message, or null when the goal is safe and consistent. */
-export function goalInputError(i: { goal: GoalType; current: number; target: number; rate: number; heightCm?: number }): string | null {
+/* ───────────────────────────── units ─────────────────────────────
+ * Weights are always stored in kg and heights in cm; these helpers show and read them in the
+ * user's unit preference (Settings → Units), using the same conversion as the Today screen. */
+
+export const KG_PER_LB = 0.45359237;
+export const CM_PER_IN = 2.54;
+export const MIN_WEIGHT_KG = 25;
+export const MAX_WEIGHT_KG = 350;
+export const MIN_HEIGHT_CM = 100;
+export const MAX_HEIGHT_CM = 250;
+
+export const isImperial = (units?: string | null) => units === "imperial";
+export const weightUnit = (imperial: boolean) => (imperial ? "lb" : "kg");
+
+/** kg → the number shown to the user (kg or lb, 0.1 precision). */
+export function kgToUnit(kg: number, imperial: boolean): number {
+  return imperial ? round(kg / KG_PER_LB, 1) : round(kg, 1);
+}
+
+/** A number typed in the user's unit → kg (0.1 precision). */
+export function unitToKg(value: number, imperial: boolean): number {
+  return imperial ? round(value * KG_PER_LB, 1) : round(value, 1);
+}
+
+/** "70.4 kg" / "155.2 lb". */
+export function formatWeight(kg: number, imperial: boolean): string {
+  return `${kgToUnit(kg, imperial).toLocaleString("en-IN", { maximumFractionDigits: 1 })} ${weightUnit(imperial)}`;
+}
+
+/** A weekly pace in the user's unit, e.g. "0.5 kg" / "1.1 lb" (unsigned). */
+export function formatPace(kgPerWeek: number, imperial: boolean): string {
+  const v = Math.abs(kgPerWeek);
+  return imperial ? `${round(v / KG_PER_LB, 1)} lb` : `${round(v, 2)} kg`;
+}
+
+/** Accepted weight range in the user's unit (whole numbers that stay inside 25–350 kg). */
+export function weightRange(imperial: boolean): { min: number; max: number } {
+  return imperial
+    ? { min: Math.ceil(MIN_WEIGHT_KG / KG_PER_LB), max: Math.floor(MAX_WEIGHT_KG / KG_PER_LB) }
+    : { min: MIN_WEIGHT_KG, max: MAX_WEIGHT_KG };
+}
+
+export function cmToFeetInches(cm: number): { ft: number; inches: number } {
+  const total = cm / CM_PER_IN;
+  let ft = Math.floor(total / 12);
+  let inches = Math.round(total - ft * 12);
+  if (inches === 12) {
+    ft += 1;
+    inches = 0;
+  }
+  return { ft, inches };
+}
+
+export function feetInchesToCm(ft: number, inches: number): number {
+  return round((ft * 12 + inches) * CM_PER_IN, 1);
+}
+
+/** Friendly validation message, or null when the goal is safe and consistent. Weights are kg; `imperial` only changes the wording. */
+export function goalInputError(i: { goal: GoalType; current: number; target: number; rate: number; heightCm?: number; imperial?: boolean }): string | null {
   const { goal, current, target, rate, heightCm } = i;
-  if (!(current >= 25 && current <= 350)) return "Enter a current weight between 25 and 350 kg.";
-  if (!(target >= 25 && target <= 350)) return "Enter a target weight between 25 and 350 kg.";
+  const imperial = !!i.imperial;
+  const range = weightRange(imperial);
+  const unit = weightUnit(imperial);
+  if (!(current >= MIN_WEIGHT_KG && current <= MAX_WEIGHT_KG)) return `Enter a current weight between ${range.min} and ${range.max} ${unit}.`;
+  if (!(target >= MIN_WEIGHT_KG && target <= MAX_WEIGHT_KG)) return `Enter a target weight between ${range.min} and ${range.max} ${unit}.`;
   if (goal === "lose") {
     if (target >= current) return "For weight loss, your target should be below your current weight.";
-    if (rate < -MAX_LOSS_PER_WEEK) return "To keep things safe, ÖRZA plans weight loss at 1 kg a week or less.";
+    if (rate < -MAX_LOSS_PER_WEEK) return `To keep things safe, ÖRZA plans weight loss at ${imperial ? "about 2.2 lb" : "1 kg"} a week or less.`;
     if (heightCm && target < healthyFloorKg(heightCm)) {
-      return `That target sits below the healthy range for your height. Try ${healthyFloorKg(heightCm)} kg or above — or check with your doctor first.`;
+      const floor = healthyFloorKg(heightCm);
+      const shown = imperial ? `${Math.ceil(floor / KG_PER_LB)} lb` : `${floor} kg`;
+      return `That target sits below the healthy range for your height. Try ${shown} or above — or check with your doctor first.`;
     }
   }
   if (goal === "gain") {
     if (target <= current) return "For weight gain, your target should be above your current weight.";
-    if (rate > MAX_GAIN_PER_WEEK) return "To keep things safe, ÖRZA plans weight gain at 0.5 kg a week or less.";
+    if (rate > MAX_GAIN_PER_WEEK) return `To keep things safe, ÖRZA plans weight gain at ${imperial ? "about 1.1 lb" : "0.5 kg"} a week or less.`;
   }
   return null;
 }

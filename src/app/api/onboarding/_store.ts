@@ -3,18 +3,18 @@
  * The conversation logic itself lives in `@/lib/onboarding` (pure).
  */
 import { toPublicUser } from "@/lib/auth";
-import { addDays, dateInTz, DEFAULT_TZ } from "@/lib/dates";
+import { dateInTz, DEFAULT_TZ } from "@/lib/dates";
 import { col, newId, nowISO } from "@/lib/db";
 import { setTracking } from "@/lib/domain/tracking";
 import {
+  OUTSIDE_INDIA,
   buildProfile,
   conversationFor,
   memoryFacts,
   mergeMemory,
+  planFor,
   progressOf,
   sequenceFor,
-  targetsFor,
-  weeklyRateFor,
   type OnboardingAnswers,
   type OnboardingState,
   type StepId,
@@ -76,14 +76,47 @@ export function statePayload(user: User, state: OnboardingState) {
   return { step: state.step, answers: state.answers, done, prompt, history, progress: progressOf(state.step, state.answers) };
 }
 
+/** A real IANA zone name (e.g. "America/New_York", "UTC"). */
+export function isTimeZone(tz: unknown): tz is string {
+  if (typeof tz !== "string" || !tz || tz.length > 64 || !/^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/.test(tz)) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The timezone to save: the device's zone when the browser reported one, so "today", meal types and
+ * reminders follow the user's clock (vital outside India) — unless they already chose one in Settings.
+ */
+function timezoneFor(user: User, answers: OnboardingAnswers, deviceTz?: string): string {
+  const saved = user.profile?.timezone;
+  if (saved && saved !== DEFAULT_TZ) return saved; // changed from the sign-up default on purpose
+  if (deviceTz && isTimeZone(deviceTz)) {
+    // An India-based user on a device set to another zone is most likely travelling: keep IST unless they live abroad.
+    if (answers.region && answers.region !== OUTSIDE_INDIA && !/^Asia\/(Kolkata|Calcutta)$/.test(deviceTz)) return DEFAULT_TZ;
+    return deviceTz;
+  }
+  return saved || DEFAULT_TZ;
+}
+
 /**
  * Finish onboarding: save profile + targets + first memory facts, mark complete,
- * record the starting weight and (for lose/gain with a target) an active goal.
+ * record the starting weight and (for lose/gain with a safe target) an active goal.
+ * `deviceTz` is the browser's IANA timezone, validated before use.
  */
-export async function completeOnboarding(user: User, answers: OnboardingAnswers) {
-  const tz = user.profile?.timezone || DEFAULT_TZ;
-  const { targets, bmr, tdee, goal } = targetsFor(answers);
-  const profile = buildProfile(answers, user.profile || {}, tz);
+export async function completeOnboarding(user: User, answers: OnboardingAnswers, deviceTz?: string) {
+  const tz = timezoneFor(user, answers, deviceTz);
+  const today = dateInTz(tz);
+  const plan = planFor(answers, today);
+  const { targets, bmr, tdee, goal } = plan;
+  const profile = buildProfile(answers, { ...(user.profile || {}), timezone: tz }, tz);
+  // Save the goal the plan was built for (a loss request can become balanced targets for safety).
+  profile.goal = goal;
+  if (plan.target != null) profile.target_weight_kg = plan.target;
+  else delete profile.target_weight_kg;
   const preferences: Preferences = {
     units: answers.weight_unit === "lb" ? "imperial" : user.preferences?.units ?? "metric",
     reminders: user.preferences?.reminders ?? true,
@@ -99,7 +132,7 @@ export async function completeOnboarding(user: User, answers: OnboardingAnswers)
         profile,
         targets,
         preferences,
-        memory: mergeMemory(user.memory || [], memoryFacts(answers)),
+        memory: mergeMemory(user.memory || [], memoryFacts(answers, plan)),
         onboarding_complete: true,
         updated_at: now,
       },
@@ -108,25 +141,23 @@ export async function completeOnboarding(user: User, answers: OnboardingAnswers)
   if (!updated) throw new Error("User disappeared during onboarding");
 
   // Nice-to-haves for day one; never block completion on them.
-  const today = dateInTz(tz);
   try {
     if (answers.weight_kg) await setTracking(user.id, today, { weight_kg: answers.weight_kg });
-    if ((goal === "lose" || goal === "gain") && answers.target_weight_kg != null && answers.weight_kg) {
+    if ((goal === "lose" || goal === "gain") && plan.target != null && plan.targetDate && answers.weight_kg) {
       const goals = col<Goal>("goals");
       for (const g of await goals.find({ user_id: user.id, active: true })) {
         await goals.updateOne({ id: g.id, user_id: user.id }, { $set: { active: false } });
       }
-      const rate = weeklyRateFor(goal);
-      const weeks = Math.ceil(Math.abs(answers.weight_kg - answers.target_weight_kg) / Math.abs(rate));
+      // Same pace and date the summary showed (calorie floor applied), like /api/goals/calculate.
       await goals.insertOne({
         id: newId(),
         user_id: user.id,
         active: true,
         goal,
         current_weight_kg: answers.weight_kg,
-        target_weight_kg: answers.target_weight_kg,
-        weekly_rate_kg: rate,
-        target_date: addDays(today, weeks * 7),
+        target_weight_kg: plan.target,
+        weekly_rate_kg: plan.weeklyRate,
+        target_date: plan.targetDate,
         bmr: bmr ?? 0,
         tdee: tdee ?? 0,
         targets,

@@ -5,7 +5,7 @@ import { col, newId, nowISO } from "@/lib/db";
 import { DEFAULT_TARGETS } from "@/lib/domain/targets";
 import { HttpError, json, route } from "@/lib/http";
 import type { CreditTransaction, User } from "@/lib/types";
-import { TEN_MINUTES, clientIp, hit, limited, parseAuthBody, registerSchema, tooManyRequests } from "../_lib";
+import { TEN_MINUTES, assertSameOriginJson, clientIp, parseAuthBody, registerSchema, reserve, tooManyRequests } from "../_lib";
 
 export const dynamic = "force-dynamic";
 
@@ -13,11 +13,11 @@ const emailTaken = () => new HttpError(409, "An account with this email already 
 
 /** POST /api/auth/register {name, email, password} → {user} + session cookie. */
 export const POST = route(async (req: Request) => {
+  // Cross-site / non-JSON posts are refused before they can use up the network's sign-up budget.
+  assertSameOriginJson(req);
   // Loose per-IP cap on sign-ups (counts every attempt; generous for shared office/campus networks).
-  const ipKey = `register:${clientIp(req)}`;
-  const wait = limited(ipKey, 20, TEN_MINUTES);
+  const wait = reserve([{ key: `register:${clientIp(req)}`, limit: 20, windowMs: TEN_MINUTES }]);
   if (wait) return tooManyRequests(wait, "Too many sign-up attempts from this network.");
-  hit(ipKey, TEN_MINUTES);
 
   const parsed = await parseAuthBody(req, registerSchema);
   if (parsed.error) return parsed.error;

@@ -1,12 +1,13 @@
 "use client";
 import * as React from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowUpRight, Check, Sparkles, X } from "lucide-react";
+import { ArrowUpRight, BellRing, Check, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Eyebrow, GlassCard, IconTile } from "@/components/orza/primitives";
+import { Eyebrow, GlassCard, IconTile, Tag } from "@/components/orza/primitives";
 import { Reveal } from "@/components/orza/Reveal";
-import { ButtonLink } from "@/components/ui/button";
-import { MAX_ANNUAL_SAVING, PLANS, annualSaving, inr, type Plan } from "./plans";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { annualSaving, buildPlans, inr, maxAnnualSaving, type CreditFacts, type Plan } from "./plans";
+import { WaitlistDialog } from "./WaitlistDialog";
 
 type Billing = "monthly" | "annual";
 
@@ -16,7 +17,7 @@ const BILLING_OPTIONS: { value: Billing; label: string }[] = [
 ];
 
 /** Monthly / annual switch — a radiogroup with a sliding pill (arrow keys move the selection). */
-function BillingToggle({ value, onChange }: { value: Billing; onChange: (v: Billing) => void }) {
+function BillingToggle({ value, onChange, maxSaving }: { value: Billing; onChange: (v: Billing) => void; maxSaving: number }) {
   const reduce = useReducedMotion();
   const refs = React.useRef<Record<Billing, HTMLButtonElement | null>>({ monthly: null, annual: null });
 
@@ -61,14 +62,14 @@ function BillingToggle({ value, onChange }: { value: Billing; onChange: (v: Bill
             <span className={cn("transition-colors duration-150", on ? "text-orza-bg-0" : "text-orza-muted hover:text-orza-strong")}>
               {o.label}
             </span>
-            {o.value === "annual" && MAX_ANNUAL_SAVING > 0 && (
+            {o.value === "annual" && maxSaving > 0 && (
               <span
                 className={cn(
                   "rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors duration-150",
                   on ? "bg-white/15 text-orza-cream" : "bg-[#FFF1EA] text-[#C2410C]"
                 )}
               >
-                Save up to {MAX_ANNUAL_SAVING}%
+                Save up to {maxSaving}%
               </span>
             )}
           </button>
@@ -111,7 +112,20 @@ function PlanPrice({ plan, billing }: { plan: Plan; billing: Billing }) {
 }
 
 /** `featureCols`: "two" splits the feature list from sm up; "tablet" only while the card spans two columns (sm–md). */
-function PlanCard({ plan, billing, featureCols = "one" }: { plan: Plan; billing: Billing; featureCols?: "one" | "two" | "tablet" }) {
+function PlanCard({
+  plan,
+  billing,
+  featureCols = "one",
+  joined,
+  onJoin,
+}: {
+  plan: Plan;
+  billing: Billing;
+  featureCols?: "one" | "two" | "tablet";
+  /** True once this visitor has joined the plan's waitlist in this visit. */
+  joined: boolean;
+  onJoin: (plan: Plan) => void;
+}) {
   const wide = featureCols !== "one";
   const Icon = plan.icon;
   return (
@@ -136,7 +150,7 @@ function PlanCard({ plan, billing, featureCols = "one" }: { plan: Plan; billing:
           </div>
           <span className="absolute -top-3 left-6 inline-flex items-center gap-1.5 rounded-full bg-orza-energy px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_24px_rgba(255,122,106,0.35)]">
             <Sparkles size={12} strokeWidth={2} aria-hidden />
-            Most Popular
+            Recommended
           </span>
         </>
       )}
@@ -148,6 +162,11 @@ function PlanCard({ plan, billing, featureCols = "one" }: { plan: Plan; billing:
         <div className="min-w-0">
           <h3 className="font-editorial text-[22px] font-semibold leading-tight tracking-[-0.01em] text-orza-strong">{plan.name}</h3>
           <p className="mt-1 text-sm text-orza-muted">{plan.desc}</p>
+          {!plan.available && (
+            <Tag tone="violet" size="sm" className="mt-2.5">
+              Launching soon
+            </Tag>
+          )}
         </div>
       </div>
 
@@ -155,15 +174,37 @@ function PlanCard({ plan, billing, featureCols = "one" }: { plan: Plan; billing:
         <PlanPrice plan={plan} billing={billing} />
       </div>
 
-      <ButtonLink
-        href="/login?mode=signup"
-        variant={plan.highlight ? "primary" : "secondary"}
-        size="lg"
-        className="relative mt-6 w-full"
-        aria-label={`${plan.cta} — ${plan.name}`}
-      >
-        {plan.cta} <ArrowUpRight size={14} strokeWidth={1.75} aria-hidden />
-      </ButtonLink>
+      {plan.available ? (
+        <ButtonLink
+          href="/login?mode=signup"
+          variant={plan.highlight ? "primary" : "secondary"}
+          size="lg"
+          className="relative mt-6 w-full"
+          aria-label={`${plan.cta} — ${plan.name}`}
+        >
+          {plan.cta} <ArrowUpRight size={14} strokeWidth={1.75} aria-hidden />
+        </ButtonLink>
+      ) : (
+        <Button
+          type="button"
+          variant={plan.highlight ? "primary" : "secondary"}
+          size="lg"
+          className="relative mt-6 w-full"
+          onClick={() => onJoin(plan)}
+          disabled={joined}
+          aria-label={joined ? `On the ${plan.name} waitlist` : `${plan.cta} — ${plan.name}`}
+        >
+          {joined ? (
+            <>
+              <Check size={15} strokeWidth={2} aria-hidden /> You&rsquo;re on the waitlist
+            </>
+          ) : (
+            <>
+              <BellRing size={14} strokeWidth={1.75} aria-hidden /> {plan.cta}
+            </>
+          )}
+        </Button>
+      )}
 
       <div aria-hidden className="relative mt-7 h-px bg-[rgba(20,20,20,0.08)]" />
 
@@ -210,12 +251,19 @@ function PlanCard({ plan, billing, featureCols = "one" }: { plan: Plan; billing:
   );
 }
 
-/** Billing toggle + all plans: Free & Individual first, then the household plans. */
-export function PricingPlans() {
+/**
+ * Billing toggle + all plans: Free & Individual first, then the household plans.
+ * `credits` carries the live sign-up grant and per-action costs from the server (the credit module is server-only).
+ */
+export function PricingPlans({ credits }: { credits: CreditFacts }) {
   const [billing, setBilling] = React.useState<Billing>("monthly");
   const [announce, setAnnounce] = React.useState("");
-  const core = PLANS.filter((p) => p.group === "core");
-  const household = PLANS.filter((p) => p.group === "household");
+  const [waitlistPlan, setWaitlistPlan] = React.useState<Plan | null>(null);
+  const [joined, setJoined] = React.useState<Set<string>>(() => new Set());
+  const plans = React.useMemo(() => buildPlans(credits), [credits]);
+  const maxSaving = maxAnnualSaving(plans);
+  const core = plans.filter((p) => p.group === "core");
+  const household = plans.filter((p) => p.group === "household");
   const oddLast = household.length % 2 === 1;
 
   function changeBilling(v: Billing) {
@@ -226,8 +274,11 @@ export function PricingPlans() {
   return (
     <div>
       <Reveal className="flex flex-col items-center gap-3 text-center">
-        <BillingToggle value={billing} onChange={changeBilling} />
-        <p className="text-[13px] text-orza-subtle">Prices in Indian Rupees. Cancel anytime.</p>
+        <BillingToggle value={billing} onChange={changeBilling} maxSaving={maxSaving} />
+        <p className="max-w-md text-[13px] text-orza-subtle">
+          Prices in Indian Rupees. Premium plans are launching soon — join a waitlist and we&rsquo;ll tell you when they open.
+          Nothing is charged today.
+        </p>
       </Reveal>
       <p role="status" className="sr-only">
         {announce}
@@ -236,7 +287,7 @@ export function PricingPlans() {
       <div className="mt-12 grid gap-6 lg:grid-cols-2">
         {core.map((plan, i) => (
           <Reveal key={plan.id} delay={0.06 * i} className="h-full">
-            <PlanCard plan={plan} billing={billing} featureCols="two" />
+            <PlanCard plan={plan} billing={billing} featureCols="two" joined={joined.has(plan.id)} onJoin={setWaitlistPlan} />
           </Reveal>
         ))}
       </div>
@@ -255,10 +306,22 @@ export function PricingPlans() {
             delay={0.06 * i}
             className={cn("h-full", oddLast && i === household.length - 1 && "sm:col-span-2 lg:col-span-1")}
           >
-            <PlanCard plan={plan} billing={billing} featureCols={oddLast && i === household.length - 1 ? "tablet" : "one"} />
+            <PlanCard
+              plan={plan}
+              billing={billing}
+              featureCols={oddLast && i === household.length - 1 ? "tablet" : "one"}
+              joined={joined.has(plan.id)}
+              onJoin={setWaitlistPlan}
+            />
           </Reveal>
         ))}
       </div>
+
+      <WaitlistDialog
+        plan={waitlistPlan}
+        onOpenChange={(open) => !open && setWaitlistPlan(null)}
+        onJoined={(id) => setJoined((prev) => new Set(prev).add(id))}
+      />
     </div>
   );
 }

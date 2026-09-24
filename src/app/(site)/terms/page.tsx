@@ -9,7 +9,7 @@ import { creditActionRows, creditsLabel } from "@/components/pages/pricing/credi
 export const metadata: Metadata = {
   title: "Terms of Service",
   description:
-    "The terms for using ÖRZA: wellness guidance (not medical advice), your account, AI features and credits, plans and billing, household modes, and your rights.",
+    "The terms for using ÖRZA: wellness guidance (not medical advice), your account, AI features and credits, plans and payments, household modes, and your rights.",
   alternates: { canonical: "/terms" },
   openGraph: {
     title: "ÖRZA Terms of Service",
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 const HIGHLIGHTS: LegalHighlight[] = [
   { icon: Stethoscope, title: "Not medical advice", body: "ÖRZA offers wellness guidance. Always consult your doctor for medical concerns." },
   { icon: Coins, title: `${INITIAL_CREDITS} free AI credits`, body: "Every new account starts with free credits for AI features." },
-  { icon: XCircle, title: "Cancel anytime", body: "No hidden fees. Upgrade, downgrade or cancel whenever you like." },
+  { icon: XCircle, title: "No surprise charges", body: "ÖRZA doesn't take payments yet. Paid plans will always be your choice to start." },
   { icon: Trash2, title: "Leave anytime", body: "Delete your account from Settings and your data is permanently deleted." },
 ];
 
@@ -170,32 +170,27 @@ const SECTIONS: LegalSection[] = [
   },
   {
     id: "plans-billing",
-    title: "Plans, trials and billing",
+    title: "Plans and payments",
     content: (
       <>
         <LegalList>
           <LegalLi title="Free Forever:">
-            manual tracking, a basic dashboard and goal setting stay free. See <InlineLink href="/pricing">Pricing</InlineLink> for
-            what each plan includes.
+            manual tracking, a basic dashboard and goal setting stay free, and every new account gets {INITIAL_CREDITS} AI
+            credits. See <InlineLink href="/pricing">Pricing</InlineLink> for what each plan includes.
           </LegalLi>
-          <LegalLi title="Premium plans:">
-            Individual, Couple, Caregiver and Family plans are billed monthly or annually in Indian Rupees at the prices shown on
-            our Pricing page. Applicable taxes may apply.
+          <LegalLi title="Premium plans are launching soon:">
+            the Individual, Couple, Caregiver and Family plans and AI top-up packs on our Pricing page are a preview. They
+            can&apos;t be bought yet, and ÖRZA doesn&apos;t take payments or ask for card details today. Joining a waitlist
+            doesn&apos;t commit you to anything.
           </LegalLi>
-          <LegalLi title="7-day trial:">
-            Premium plans offer a 7-day trial (credit card required, cancel anytime). If you don&apos;t cancel before the trial
-            ends, your plan starts and you will be billed.
+          <LegalLi title="Before you’re ever charged:">
+            when a paid plan launches, its price, billing period, any trial, renewal and cancellation terms will be shown to you
+            before you buy, and you&apos;ll only be charged for a plan you choose to start. We&apos;ll update these Terms at the
+            same time.
           </LegalLi>
-          <LegalLi title="Changing plans:">
-            upgrade or downgrade anytime in Settings. The price difference is prorated.
-          </LegalLi>
-          <LegalLi title="Cancelling:">
-            cancel anytime, with no hidden fees. Cancellation stops future renewals and takes effect at the end of your current
-            billing period.
-          </LegalLi>
-          <LegalLi title="AI top-ups:">top-up packs are valid for 90 days from purchase.</LegalLi>
-          <LegalLi title="Price changes:">
-            we will tell you before a price change affects your plan, so you can decide whether to continue.
+          <LegalLi title="More credits in the meantime:">
+            if you run low, you can ask for more from the Credits page in the app. Credits we add follow the same rules as the
+            rest of your credits.
           </LegalLi>
         </LegalList>
       </>

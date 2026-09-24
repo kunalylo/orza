@@ -110,7 +110,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-orza-bg-0 orza-canvas-grain">
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col border-r border-[rgba(20,20,20,0.08)] bg-orza-bg-1/80 backdrop-blur-orza lg:flex">
+      <aside className="print:hidden fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col border-r border-[rgba(20,20,20,0.08)] bg-orza-bg-1/80 backdrop-blur-orza lg:flex">
         <div className="flex h-16 items-center px-5">
           <Link href="/dashboard" aria-label="ÖRZA home">
             <BrandMark className="text-orza-strong" />
@@ -135,7 +135,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Mobile top bar */}
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[rgba(20,20,20,0.08)] bg-[rgba(251,247,241,0.85)] px-4 backdrop-blur-orza lg:hidden">
+      <header className="print:hidden sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[rgba(20,20,20,0.08)] bg-[rgba(251,247,241,0.85)] px-4 backdrop-blur-orza lg:hidden">
         <Link href="/dashboard" aria-label="ÖRZA home">
           <BrandMark className="text-orza-strong" showPronunciation={false} />
         </Link>
@@ -164,14 +164,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </DialogContent>
       </Dialog>
 
-      <main className="lg:pl-[248px]">
+      <main className="lg:pl-[248px] print:pl-0">
         <div className="mx-auto w-full max-w-[1120px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-10">{children}</div>
       </main>
 
       {/* Mobile bottom tabs */}
       <nav
         aria-label="Quick"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-[rgba(20,20,20,0.08)] bg-[rgba(251,247,241,0.92)] pb-[env(safe-area-inset-bottom)] backdrop-blur-orza lg:hidden"
+        className="print:hidden fixed inset-x-0 bottom-0 z-30 border-t border-[rgba(20,20,20,0.08)] bg-[rgba(251,247,241,0.92)] pb-[env(safe-area-inset-bottom)] backdrop-blur-orza lg:hidden"
       >
         <div className="grid grid-cols-5">
           {MOBILE_TABS.map((href) => {

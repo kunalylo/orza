@@ -1,12 +1,11 @@
 import { SiteNav } from "@/components/orza/SiteNav";
 import { SiteFooter } from "@/components/orza/SiteFooter";
-import { getSessionUserId } from "@/lib/auth";
 
-export default async function SiteLayout({ children }: { children: React.ReactNode }) {
-  const signedIn = !!(await getSessionUserId());
+// No cookie reads here, so marketing pages stay static; SiteNav detects sign-in on the client.
+export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <SiteNav signedIn={signedIn} />
+      <SiteNav />
       <main>{children}</main>
       <SiteFooter />
     </>

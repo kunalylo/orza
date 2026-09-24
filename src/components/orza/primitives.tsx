@@ -106,14 +106,16 @@ export function Heading({
   className,
   tone = "light",
   as: Comp = "h2",
+  ...rest
 }: {
   children: React.ReactNode;
   className?: string;
   tone?: "light" | "dark";
   as?: React.ElementType;
-}) {
+} & Omit<React.HTMLAttributes<HTMLHeadingElement>, "children" | "className">) {
   return (
     <Comp
+      {...rest}
       className={cn(
         "font-editorial font-semibold tracking-[-0.02em]",
         "text-[32px] leading-[40px] sm:text-[40px] sm:leading-[48px] lg:text-[44px] lg:leading-[52px]",

@@ -1,7 +1,7 @@
 /** Edge-safe JWT helpers (used by middleware and server code). */
 import { SignJWT, jwtVerify } from "jose";
+export { SESSION_COOKIE, SIGNED_IN_HINT_COOKIE } from "@/lib/cookie-names";
 
-export const SESSION_COOKIE = "orza_session";
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
 const DEV_SECRET = "orza-dev-only-secret-change-me-in-production-please";

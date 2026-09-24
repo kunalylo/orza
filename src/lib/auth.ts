@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { col } from "@/lib/db";
 import { forbidden, unauthorized } from "@/lib/http";
-import { SESSION_COOKIE, SESSION_MAX_AGE, signSessionToken, verifySessionToken } from "@/lib/session-token";
+import { SESSION_COOKIE, SESSION_MAX_AGE, SIGNED_IN_HINT_COOKIE, signSessionToken, verifySessionToken } from "@/lib/session-token";
 import type { PublicUser, User } from "@/lib/types";
 
 export const hashPassword = (pw: string) => bcrypt.hash(pw, 10);
@@ -11,17 +11,16 @@ export const verifyPassword = (pw: string, hash: string) => bcrypt.compare(pw, h
 
 export async function startSession(userId: string) {
   const token = await signSessionToken(userId);
-  (await cookies()).set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: SESSION_MAX_AGE,
-  });
+  const jar = await cookies();
+  const secure = process.env.NODE_ENV === "production";
+  jar.set(SESSION_COOKIE, token, { httpOnly: true, sameSite: "lax", secure, path: "/", maxAge: SESSION_MAX_AGE });
+  jar.set(SIGNED_IN_HINT_COOKIE, "1", { sameSite: "lax", secure, path: "/", maxAge: SESSION_MAX_AGE });
 }
 
 export async function endSession() {
-  (await cookies()).set(SESSION_COOKIE, "", { httpOnly: true, path: "/", maxAge: 0 });
+  const jar = await cookies();
+  jar.set(SESSION_COOKIE, "", { httpOnly: true, path: "/", maxAge: 0 });
+  jar.set(SIGNED_IN_HINT_COOKIE, "", { path: "/", maxAge: 0 });
 }
 
 export async function getSessionUserId(): Promise<string | null> {

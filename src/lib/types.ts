@@ -46,6 +46,8 @@ export interface Preferences {
   reminders: boolean;
   weekly_report: boolean;
   tone: "gentle" | "direct";
+  /** When true, the user's data is excluded from any future model-improvement use (see the Trust page). */
+  ai_training_opt_out?: boolean;
 }
 
 export interface User {

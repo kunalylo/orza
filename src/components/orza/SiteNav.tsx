@@ -7,6 +7,7 @@ import { ArrowUpRight, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/orza/primitives";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { SIGNED_IN_HINT_COOKIE } from "@/lib/cookie-names";
 
 export const NAV_LINKS = [
   { label: "Features", href: "/#features" },
@@ -21,11 +22,17 @@ export const NAV_LINKS = [
  * Floating glass pill nav. On the home page it starts transparent over the dark hero
  * and turns into frosted glass after 24px of scroll.
  */
-export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
+export function SiteNav() {
   const pathname = usePathname();
   const reduce = useReducedMotion();
   const [scrolled, setScrolled] = React.useState(false);
   const [open, setOpen] = React.useState(false);
+  const [signedIn, setSignedIn] = React.useState(false);
+
+  // JS-readable hint cookie set alongside the httpOnly session (display only, never trusted).
+  React.useEffect(() => {
+    setSignedIn(document.cookie.split("; ").some((c) => c === `${SIGNED_IN_HINT_COOKIE}=1`));
+  }, []);
 
   React.useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -40,12 +47,14 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
 
   return (
     <>
+      {/* Centering lives on this wrapper: framer-motion's inline transform would override a translate class on the header. */}
+      <div className="pointer-events-none fixed inset-x-0 top-3 z-40 flex justify-center px-3">
       <motion.header
         initial={reduce ? false : { y: -12, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.5, ease: [0.2, 0.8, 0.2, 1] }}
         className={cn(
-          "fixed left-1/2 top-3 z-40 w-[min(1200px,calc(100%-24px))] -translate-x-1/2 rounded-full",
+          "pointer-events-auto w-full max-w-[1200px] rounded-full",
           "transition-[background-color,box-shadow,border-color,color] duration-220 ease-orza",
           dark
             ? "border border-transparent bg-transparent text-white/90"
@@ -162,6 +171,7 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
           </div>
         </div>
       </motion.header>
+      </div>
       {!isHome && <div className="h-20 sm:h-24" aria-hidden />}
     </>
   );

@@ -164,7 +164,7 @@ export function DailyReportView({
           <GlassCard padded={false} className="mt-5 p-5 sm:p-7">
             <div className="flex items-end justify-between gap-3">
               <CardTitle eyebrow={`Meals · ${r.meals.length}`} title={r.is_today ? "Logged today" : "Logged that day"} />
-              <ButtonLink href="/dashboard/meals" variant="ghost" size="sm" className="shrink-0">
+              <ButtonLink href={`/dashboard/meals${r.is_today ? "" : `?date=${r.date}`}`} variant="ghost" size="sm" className="shrink-0">
                 Meal log <ArrowRight size={14} strokeWidth={1.9} aria-hidden />
               </ButtonLink>
             </div>

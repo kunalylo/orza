@@ -40,12 +40,29 @@ const CHIPS: { icon: LucideIcon; value: string; label: string; iconClass: string
   },
 ];
 
+/** True from the `sm` breakpoint up. False on the server and first client render, so markup always matches. */
+function useFromSm() {
+  const [matches, setMatches] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia("(min-width: 640px)");
+    const sync = () => setMatches(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return matches;
+}
+
 export function HomeHero() {
   const reduce = useReducedMotion();
+  const fromSm = useFromSm();
   const ref = React.useRef<HTMLElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
-  const sceneY = useTransform(scrollYProgress, [0, 1], [0, 90]);
+  // Parallax travel stays below the gap between the chips and the cream fade (64px at `sm`, more from `md`),
+  // and is off on phones, where the chips sit in a row right above the fade.
+  const sceneY = useTransform(scrollYProgress, [0, 1], [0, 56]);
   const sceneOpacity = useTransform(scrollYProgress, [0, 0.9], [1, 0.4]);
+  const parallax = fromSm && !reduce;
 
   const rise = (delay: number) =>
     reduce
@@ -81,7 +98,8 @@ export function HomeHero() {
       {/* Grain */}
       <div aria-hidden className="orza-hero-grain pointer-events-none absolute inset-0 opacity-[0.06] mix-blend-overlay" />
 
-      <div className="relative mx-auto w-full max-w-[1200px] px-4 pb-32 pt-28 sm:px-6 sm:pb-40 sm:pt-32 lg:px-8 lg:pt-40">
+      {/* z-10 keeps the content above the cream fade; bottom padding is 64px taller than the fade so the chips clear it. */}
+      <div className="relative z-10 mx-auto w-full max-w-[1200px] px-4 pb-40 pt-28 sm:px-6 sm:pb-48 sm:pt-32 lg:px-8 lg:pt-40">
         <div className="grid items-center gap-10 lg:grid-cols-[1.05fr_1fr] lg:gap-10">
           {/* Left: editorial copy */}
           <div className="relative z-10">
@@ -145,7 +163,7 @@ export function HomeHero() {
 
           {/* Right: convergence orb with floating glass chips */}
           <motion.div
-            style={reduce ? undefined : { y: sceneY, opacity: sceneOpacity }}
+            style={parallax ? { y: sceneY, opacity: sceneOpacity } : { y: 0, opacity: 1 }}
             className="relative mx-auto w-full max-w-[340px] sm:max-w-[480px] lg:max-w-[560px]"
           >
             <HeroScene />
@@ -207,7 +225,7 @@ export function HomeHero() {
       {/* Dark → cream fade into the next section */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-32 sm:h-40"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-24 sm:h-32"
         style={{ background: "linear-gradient(to bottom, rgba(7,9,12,0), #FBF7F1)" }}
       />
     </section>

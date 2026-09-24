@@ -109,7 +109,10 @@ const SECTIONS: LegalSection[] = [
             about your account, the reminders and weekly reports you&apos;ve opted into, and replies to your questions. You can
             change reminder and report preferences in Settings.
           </LegalLi>
-          <LegalLi title="To improve ÖRZA:">using information that has been anonymized so it no longer identifies you.</LegalLi>
+          <LegalLi title="To improve ÖRZA:">
+            using information that has been anonymized so it no longer identifies you — unless you opt out (see{" "}
+            <InlineLink href="#ai-processing">AI processing</InlineLink>).
+          </LegalLi>
         </LegalList>
         <LegalP>
           <B>We never sell your personal information</B>, and we don&apos;t use your health data for advertising.
@@ -142,8 +145,10 @@ const SECTIONS: LegalSection[] = [
         </LegalList>
         <LegalP>
           As described on our <InlineLink href="/trust">Trust &amp; Safety</InlineLink> page, conversations may help improve
-          ÖRZA&apos;s AI only after they are anonymized, and no personal health data is ever sold. You can opt out at any time by
-          writing to <SupportEmail subject="AI training opt-out" />.
+          ÖRZA&apos;s AI only after they are anonymized, and no personal health data is ever sold. You can opt out at any time in{" "}
+          <B>Settings → Preferences</B>, or by writing to <SupportEmail subject="AI training opt-out" />. Your choice is saved
+          to your account and keeps your conversations and logs out of any work to improve ÖRZA&apos;s AI. Opting out
+          doesn&apos;t change how AI features work for you.
         </LegalP>
       </>
     ),
@@ -180,12 +185,25 @@ const SECTIONS: LegalSection[] = [
     content: (
       <>
         <LegalP>
-          ÖRZA uses a single, essential cookie to keep you signed in. It is set when you sign in, can&apos;t be read by scripts on
-          the page, and expires after 30 days or as soon as you sign out.
+          ÖRZA uses two essential cookies. Both are set when you sign in and removed when you sign out, or after 30 days:
+        </LegalP>
+        <LegalList>
+          <LegalLi title="Session cookie:">
+            keeps you signed in. It holds a signed sign-in token and can&apos;t be read by scripts on the page.
+          </LegalLi>
+          <LegalLi title="Signed-in hint:">
+            contains only the value &ldquo;1&rdquo;, so our public pages can show &ldquo;Open ÖRZA&rdquo; instead of &ldquo;Sign
+            In&rdquo;. Scripts on the page can read it, but it holds no personal information and is never used to sign you in or
+            to identify you.
+          </LegalLi>
+        </LegalList>
+        <LegalP>
+          The web app also remembers a few conveniences, such as the language you last picked for voice input, in your
+          browser&apos;s local storage. That stays on your device.
         </LegalP>
         <LegalP>
-          We don&apos;t use advertising, tracking or third-party analytics cookies. Because the only cookie is strictly necessary
-          for signing in, there are no optional cookies to manage.
+          We don&apos;t use advertising, tracking or third-party analytics cookies. Because both cookies exist only to support
+          signing in, there are no optional cookies to manage.
         </LegalP>
       </>
     ),
@@ -240,6 +258,9 @@ const SECTIONS: LegalSection[] = [
           </LegalLi>
           <LegalLi title="Sharing:">grant or revoke household sharing permissions at any time.</LegalLi>
           <LegalLi title="Communications:">turn reminders and weekly reports on or off in Settings.</LegalLi>
+          <LegalLi title="AI improvement:">
+            opt out of your anonymized data being used to improve ÖRZA&apos;s AI in Settings → Preferences, or by email.
+          </LegalLi>
         </LegalList>
         <LegalP>
           You may have further rights under applicable data protection law, including India&apos;s Digital Personal Data

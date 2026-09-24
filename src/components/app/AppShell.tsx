@@ -4,7 +4,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
+  Bell,
+  CalendarDays,
   Camera,
+  HeartPulse,
+  Pill,
   ChefHat,
   HeartHandshake,
   LogOut,
@@ -22,12 +26,17 @@ import { BrandMark } from "@/components/orza/primitives";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useUser } from "@/components/app/UserProvider";
 import { api } from "@/lib/api-client";
+import { AlarmWatcher } from "@/components/care/AlarmWatcher";
 
 export const APP_NAV = [
   { href: "/dashboard", label: "Today", icon: Sun },
   { href: "/dashboard/chat", label: "Ask ÖRZA", icon: MessageCircle },
   { href: "/dashboard/scan", label: "Snap & Know", icon: Camera },
   { href: "/dashboard/meals", label: "Meal log", icon: UtensilsCrossed },
+  { href: "/dashboard/medicines", label: "Medicines", icon: Pill },
+  { href: "/dashboard/reminders", label: "Reminders", icon: Bell },
+  { href: "/dashboard/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/dashboard/health", label: "Health sync", icon: HeartPulse },
   { href: "/dashboard/goals", label: "Goals", icon: Target },
   { href: "/dashboard/recipes", label: "Recipes", icon: ChefHat },
   { href: "/dashboard/compensation", label: "Rebalance", icon: HeartHandshake },
@@ -36,7 +45,7 @@ export const APP_NAV = [
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ] as const;
 
-const MOBILE_TABS = ["/dashboard", "/dashboard/scan", "/dashboard/chat", "/dashboard/meals"];
+const MOBILE_TABS = ["/dashboard", "/dashboard/meals", "/dashboard/scan", "/dashboard/medicines"];
 
 function isActive(pathname: string, href: string) {
   return href === "/dashboard" ? pathname === "/dashboard" : pathname === href || pathname.startsWith(href + "/");
@@ -163,6 +172,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </DialogContent>
       </Dialog>
+
+      <AlarmWatcher />
 
       <main className="lg:pl-[248px] print:pl-0">
         <div className="mx-auto w-full max-w-[1120px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-10">{children}</div>

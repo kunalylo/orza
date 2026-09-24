@@ -102,3 +102,81 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 - `GET/PUT /api/profile` → `{user}`; `PUT /api/settings/preferences`, `PUT /api/settings/targets`, `PUT /api/settings/memory {memory}` → `{user}`.
 - `GET /api/account/export` → JSON attachment of all the user's data; `DELETE /api/account {confirm:"DELETE"}` → deletes the user and all their data, ends session.
 - Admin (requireAdmin): `GET /api/admin/stats`, `GET /api/admin/users?q=`, `POST /api/admin/credits/[userId]/adjust {amount, reason}`.
+
+## Care module (medicines, reminders, calendar, health sync)
+
+CEO requirements: track food/calories; connect Android/iOS health apps; reminders (push + WhatsApp); calendar connectivity;
+photo access (camera + gallery); medicine reminders; **auto alarms from prescriptions**; **every alarm shows the medicine's
+photos, not just its name**.
+
+Platform truth (reflect it honestly in UI copy): a web app cannot read Apple HealthKit / Android Health Connect directly or
+ring native OS alarms. ÖRZA therefore uses Web Push notifications (image + actions) via a service worker, an in-app
+full-screen alarm whenever an ÖRZA tab is open, WhatsApp messages, and a calendar feed (ICS with VALARM) that phone calendars
+ring natively. Health data arrives via Apple Health export import, automation apps / Shortcuts posting to ÖRZA's sync API,
+CSV import, and (future) the ÖRZA mobile companion app, which will use the same sync API.
+
+### Foundation (already written — use it, don't re-implement)
+- Types in `src/lib/types.ts`: `Media`, `Medication`, `Schedule`, `MedForm`, `DoseTiming`, `ExtractedMedicine`, `Prescription`,
+  `DoseLog`, `DoseStatus`, `Reminder`, `ReminderKind`, `ReminderChannels`, `PushSubscriptionDoc`, `Dispatch`, `HealthDay`,
+  `HealthSource`, `Integrations` (on `User.integrations`).
+- Collections: `media`, `medications`, `prescriptions`, `dose_logs`, `reminders`, `push_subscriptions`, `dispatches`, `health_days`.
+- `src/lib/dates.ts`: `zonedToUtc(date, "HH:MM", tz)`, `utcToZoned(instant, tz)`, `tzOffsetMinutes`, `daysBetween`, `isHHMM`.
+- `src/lib/care/schedule.ts` (unit-tested): `activeOnDate`, `occurrencesOnDate`, `occurrencesBetween`, `nextOccurrence`,
+  `normalizeTimes`, `timesForPattern("1-0-1" | "BD" | "TDS" | "HS" …)`, `DEFAULT_SLOT_TIMES`.
+- `src/lib/media.ts`: `saveImage(userId, dataUrl, kind)` (JPEG/PNG/WebP ≤1.5 MB), `getOwnedMedia`, `deleteMedia`,
+  `mediaUrl(id, signedForSeconds?)`, `verifyMediaSignature`; route `GET /api/media/[id]` (owner or signed URL).
+  Client photo prep: `preparePhoto(file)` in `src/components/meals/image.ts` (downscales to 1280px JPEG).
+- `src/lib/allergens.ts` for any food suggestion.
+- AppShell already links `/dashboard/medicines`, `/dashboard/reminders`, `/dashboard/calendar`, `/dashboard/health` and mounts
+  `<AlarmWatcher />` from `src/components/care/AlarmWatcher.tsx` (stub — implement it).
+- Env (in `.env.local`): `VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `CRON_SECRET`;
+  optional `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE_NAME`, `WHATSAPP_TEMPLATE_LANG`. Packages: `web-push`, `fflate`.
+
+### Medicines & prescriptions — `/dashboard/medicines`, `/dashboard/medicines/prescriptions`, `/dashboard/alarm`
+- `GET /api/meds` → `{medications}` (active first); `POST /api/meds {name, strength?, form, dose, timing, instructions?, schedule, as_needed?, stock?, for_person?, photos?: dataUrl[] (≤4)}` → `{medication}`;
+  `PATCH /api/meds/[id]` (partial) → `{medication}`; `DELETE /api/meds/[id]` → `{ok}` (also deletes its photos and dose logs).
+- `POST /api/meds/[id]/photos {image: dataUrl}` → `{medication}`; `DELETE /api/meds/[id]/photos/[mediaId]` → `{medication}`.
+  Every medication in a response carries `photo_urls: string[]` (owner URLs via `mediaUrl(id)`).
+- `GET /api/meds/today?date=` → `{date, doses: [{medication_id, name, strength, dose, timing, form, photo_urls, scheduled_for, local_time, status: "due"|"upcoming"|"taken"|"skipped"|"snoozed"|"missed", for_person}]}`
+  (a dose is "missed" if unacted 60 min after its time). `POST /api/meds/doses {medication_id, scheduled_for, action: "take"|"skip"|"snooze", snooze_minutes?: 5–60}` → `{dose}`
+  (upserts `dose_logs` id `${medication_id}:${scheduled_for}`; "take" decrements `stock.count` when set). `GET /api/meds/adherence?days=7|30` → per-day and per-medicine taken/total.
+- `POST /api/prescriptions/scan {image: dataUrl}` → `{prescription, credits}` (AI vision via `withCredits(…, "scan")`; stores the photo as media kind
+  "prescription"; normalises Indian notation 1-0-1 / BD / TDS / OD / HS / SOS / AC / PC / "x 5 days" via `timesForPattern`; status "review").
+  AI disabled → 503 `ai_disabled` and the UI offers manual entry. `GET /api/prescriptions` → `{prescriptions}`;
+  `POST /api/prescriptions/[id]/apply {medicines: ExtractedMedicine[] (user-edited), start_date?}` → `{medications}` (creates meds with schedules:
+  times, end_date from duration_days; the prescription photo is attached as a fallback photo until the user adds pill photos).
+- `/dashboard/alarm?med=<id>&at=<iso>` (opened from notifications too): full-screen alarm with **large medicine photo(s)**, name, strength,
+  dose, timing; Take / Snooze 10 min / Skip; lists other doses due at the same time.
+
+### Reminders & notifications — `/dashboard/reminders`
+- `GET/POST /api/reminders`, `PATCH/DELETE /api/reminders/[id]` (kinds meal/water/weight/custom; `schedule`; `channels {push, whatsapp, calendar}`).
+- `POST /api/push/subscribe {endpoint, keys:{p256dh, auth}}`, `POST /api/push/unsubscribe {endpoint}`, `POST /api/push/test` (uses a medicine photo if one exists).
+- `PUT /api/integrations/whatsapp {phone (E.164), opt_in}`, `POST /api/integrations/whatsapp/test`; `PUT /api/integrations/quiet-hours {start, end} | null`;
+  `GET /api/integrations` → `{push: {configured, subscriptions}, whatsapp: {configured, phone, opt_in}, calendar: {feed_url | null, external_url_set}, health: {token_preview | null, last_sync | null}, quiet_hours}`.
+- `GET|POST /api/cron/dispatch` (auth: `Authorization: Bearer ${CRON_SECRET}` or `?secret=`): for each user, find medication + reminder occurrences in
+  (now−10 min, now], skip those already in `dispatches` (idempotent id) or already acted on, respect quiet hours and snoozes (a snoozed dose re-fires at
+  `snooze_until`), send Web Push (title, body, `image` = signed URL of the medicine's first photo valid 24 h, `data.url` = alarm page, actions take/snooze)
+  and WhatsApp (session text, or the template outside the 24 h window), record the dispatch. Also once-a-day low-stock refill alerts. `vercel.json` runs it every minute.
+- `public/sw.js`: `push` → `showNotification` with image/icon/badge/actions/tag/`requireInteraction`; `notificationclick` → action "take"/"snooze" POSTs
+  to `/api/meds/doses` (same-origin, credentials) else focuses or opens `data.url`.
+- `GET /api/alarms/due` → `{alarms: [{kind: "medication"|"reminder", id, title, body, photo_urls, scheduled_for, url}]}` (due within the last 30 min,
+  unacted) — polled every 30 s by `<AlarmWatcher />`, which plays a chime (Web Audio), vibrates and shows the full-screen alarm with photos.
+
+### Calendar — `/dashboard/calendar`
+- `GET /api/calendar/feed/[token]` (public; token = `integrations.calendar_token`; serve `text/calendar`): medication doses for the next 30 days
+  (each with VALARM, name + dose, and the photo alarm URL) plus reminders with `channels.calendar`. `POST /api/calendar/token` creates/rotates; `DELETE` revokes.
+- `PUT /api/calendar/external {url}` (https only — Google "Secret address in iCal format", iCloud public calendar, Outlook ICS); `DELETE` removes;
+  `GET /api/calendar/events?from&to` → `{events}` merging external events (server fetch with SSRF guards: https, no private/loopback IPs, 5 s timeout,
+  ≤2 MB; RRULE DAILY/WEEKLY with COUNT/UNTIL/BYDAY) + medication doses + reminders + logged meals.
+- Page: month + agenda views, "Add to Google / Apple / Outlook" steps with copy button and `webcal://` link, busy-day insight.
+
+### Health sync — `/dashboard/health`
+- `POST /api/health/sync` (auth: `Authorization: Bearer <health token>`, no cookies): accepts (a) ÖRZA JSON
+  `{source, days:[{date, steps?, active_kcal?, distance_km?, sleep_minutes?, resting_hr?, avg_hr?, weight_kg?, water_ml?}]}` and (b) the "Health Auto Export"
+  iOS app REST format `{data:{metrics:[{name, units, data:[{date, qty | Avg | …}]}]}}`; aggregates per day; upserts `health_days`; mirrors steps (max) and
+  weight into `tracking`. `POST /api/health/token` → `{token}` (shown once; store sha256 + preview); `DELETE` revokes.
+- `POST /api/health/import {source: "apple_health" | "csv", days:[…]}` (session). Apple Health `export.zip` is parsed **in the browser** (fflate unzip +
+  streaming scan of `export.xml` for StepCount, ActiveEnergyBurned, DistanceWalkingRunning, SleepAnalysis, RestingHeartRate, HeartRate, BodyMass,
+  DietaryWater); only daily aggregates are uploaded. CSV import maps a date column + metric columns.
+- `GET /api/health/days?from&to` → `{days}` merged per date. Page: connect cards (iPhone: export import + Health Auto Export / Shortcuts steps with the sync
+  URL and token; Android: Health Connect via automation apps posting to the same API, plus CSV; ÖRZA mobile app "coming soon"), charts, last sync.

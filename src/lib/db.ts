@@ -26,7 +26,15 @@ export type CollectionName =
   | "recipes"
   | "credit_transactions"
   | "onboarding"
-  | "leads";
+  | "leads"
+  | "media"
+  | "medications"
+  | "prescriptions"
+  | "dose_logs"
+  | "reminders"
+  | "push_subscriptions"
+  | "dispatches"
+  | "health_days";
 
 export type Filter = Record<string, any>;
 export type Update = {
@@ -94,6 +102,19 @@ async function ensureIndexes(db: Db) {
     db.collection("credit_transactions").createIndex({ user_id: 1, created_at: -1 }),
     db.collection("onboarding").createIndex({ user_id: 1 }, { unique: true }),
     db.collection("leads").createIndex({ email: 1, source: 1 }, { unique: true }),
+    db.collection("media").createIndex({ id: 1 }, { unique: true }),
+    db.collection("medications").createIndex({ user_id: 1, active: 1 }),
+    db.collection("prescriptions").createIndex({ user_id: 1, created_at: -1 }),
+    db.collection("dose_logs").createIndex({ id: 1 }, { unique: true }),
+    db.collection("dose_logs").createIndex({ user_id: 1, local_date: 1 }),
+    db.collection("reminders").createIndex({ user_id: 1, active: 1 }),
+    db.collection("push_subscriptions").createIndex({ endpoint: 1 }, { unique: true }),
+    db.collection("push_subscriptions").createIndex({ user_id: 1 }),
+    db.collection("dispatches").createIndex({ id: 1 }, { unique: true }),
+    db.collection("dispatches").createIndex({ created_at: 1 }),
+    db.collection("health_days").createIndex({ user_id: 1, date: 1, source: 1 }, { unique: true }),
+    db.collection("users").createIndex({ "integrations.calendar_token": 1 }, { sparse: true }),
+    db.collection("users").createIndex({ "integrations.health_token_hash": 1 }, { sparse: true }),
   ]);
 }
 

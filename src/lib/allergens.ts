@@ -41,7 +41,9 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9ऀ-ॿ\s]/g, " ").
 /** Expand free-text allergies into lowercase keywords to avoid. Unknown entries ("mushrooms") are used as-is. */
 export function allergyKeywords(allergies: string[] | undefined | null): string[] {
   const out = new Set<string>();
-  for (const raw of allergies || []) {
+  // "tree nuts, kiwi" / "dairy and eggs" → separate entries so nothing typed by the user is dropped
+  const entries = (allergies || []).flatMap((raw) => String(raw).split(/,|;|\/|\band\b|&|\+/i));
+  for (const raw of entries) {
     const a = norm(String(raw));
     if (!a || a === "none" || a === "no" || a === "nil") continue;
     let matched = false;
@@ -65,8 +67,11 @@ export function allergyKeywords(allergies: string[] | undefined | null): string[
 export function conflictsWithAllergies(texts: string | string[], allergies: string[] | undefined | null): boolean {
   const keywords = allergyKeywords(allergies);
   if (!keywords.length) return false;
-  const hay = ` ${norm(Array.isArray(texts) ? texts.join(" ") : texts)} `;
-  return keywords.some((k) => hay.includes(` ${k} `) || (k.includes(" ") && hay.includes(k)));
+  const words = norm(Array.isArray(texts) ? texts.join(" ") : texts).split(" ").filter(Boolean);
+  // add singular forms so "almonds" / "cashews" / "tomatoes" match "almond" / "cashew" / "tomato"
+  const singular = words.map((w) => (w.length > 4 && w.endsWith("es") ? w.slice(0, -2) : w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w));
+  const hay = ` ${words.join(" ")} ${singular.join(" ")} `;
+  return keywords.some((k) => hay.includes(` ${k} `));
 }
 
 /** Human list for prompts / copy, e.g. "peanuts, dairy". */

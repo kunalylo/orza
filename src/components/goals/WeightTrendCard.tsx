@@ -6,24 +6,27 @@ import { Eyebrow, GlassCard } from "@/components/orza/primitives";
 import { Segmented } from "@/components/ui/form";
 import { LogWeightForm } from "@/components/goals/LogWeightForm";
 import { WeightChart, WeightTable } from "@/components/goals/WeightChart";
-import { formatKg, formatShortDate } from "@/components/goals/goal-math";
+import { formatShortDate, formatWeight, kgToUnit, weightUnit } from "@/components/goals/goal-math";
 import type { WeightPoint } from "@/components/goals/types";
 
 /** Weight trend (last 120 days) with a chart/table toggle and inline "log today's weight". */
 export function WeightTrendCard({
   points,
   target,
+  imperial = false,
   onLogged,
 }: {
   points: WeightPoint[];
   target?: number | null;
+  /** Show and read weights in lb (Settings → Units); everything stays kg underneath. */
+  imperial?: boolean;
   onLogged: (weightKg: number, tracking?: TrackingDay, user?: PublicUser) => void;
 }) {
   const [view, setView] = React.useState<"chart" | "table">("chart");
   const n = points.length;
   const first = points[0];
   const last = points[n - 1];
-  const change = n > 1 ? Math.round((last.weight_kg - first.weight_kg) * 10) / 10 : null;
+  const change = n > 1 ? Math.round((kgToUnit(last.weight_kg, imperial) - kgToUnit(first.weight_kg, imperial)) * 10) / 10 : null;
 
   return (
     <GlassCard variant="strong" className="flex h-full flex-col">
@@ -32,13 +35,13 @@ export function WeightTrendCard({
           <Eyebrow>Weight trend</Eyebrow>
           {last ? (
             <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <span className="font-editorial text-[28px] font-semibold leading-none tracking-[-0.02em] text-orza-strong tabular-nums">{formatKg(last.weight_kg)}</span>
+              <span className="font-editorial text-[28px] font-semibold leading-none tracking-[-0.02em] text-orza-strong tabular-nums">{formatWeight(last.weight_kg, imperial)}</span>
               <span className="text-[13px] text-orza-muted">
                 {change == null
                   ? `on ${formatShortDate(last.date)}`
                   : change === 0
                     ? `steady since ${formatShortDate(first.date)}`
-                    : `${change > 0 ? "+" : "−"}${Math.abs(change)} kg since ${formatShortDate(first.date)}`}
+                    : `${change > 0 ? "+" : "−"}${Math.abs(change)} ${weightUnit(imperial)} since ${formatShortDate(first.date)}`}
               </span>
             </div>
           ) : (
@@ -68,17 +71,17 @@ export function WeightTrendCard({
             <p className="mt-1 max-w-xs text-[13px] text-orza-muted">Log your first one below — your trend line starts building from there.</p>
           </div>
         ) : view === "table" && n > 1 ? (
-          <WeightTable points={points} />
+          <WeightTable points={points} imperial={imperial} />
         ) : (
           <>
-            <WeightChart points={points} target={target} />
+            <WeightChart points={points} target={target} imperial={imperial} />
             {n === 1 && <p className="mt-2 text-center text-[12px] text-orza-subtle">One weigh-in so far — log another in a few days to see your trend.</p>}
           </>
         )}
       </div>
 
       <div className="mt-5 border-t border-[rgba(20,20,20,0.08)] pt-5">
-        <LogWeightForm placeholder={last?.weight_kg} onLogged={onLogged} />
+        <LogWeightForm placeholderKg={last?.weight_kg} imperial={imperial} onLogged={onLogged} />
       </div>
     </GlassCard>
   );

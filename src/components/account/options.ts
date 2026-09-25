@@ -109,7 +109,18 @@ export const TARGET_FIELDS: { key: TargetKey; label: string; unit: string; min: 
 export const UNITS = ["metric", "imperial"] as const satisfies readonly Preferences["units"][];
 export const TONES = ["gentle", "direct"] as const satisfies readonly Preferences["tone"][];
 
-export const DEFAULT_PREFERENCES: Preferences = { units: "metric", reminders: true, weekly_report: true, tone: "gentle" };
+export const DEFAULT_PREFERENCES: Preferences = {
+  units: "metric",
+  reminders: true,
+  weekly_report: true,
+  tone: "gentle",
+  ai_training_opt_out: false,
+};
+
+/* ───────────────────────────── Credit requests ───────────────────────────── */
+
+/** Longest note a member can add to a "Request more credits" message. */
+export const CREDIT_REQUEST_MESSAGE_MAX = 800;
 
 /* ───────────────────────────── Memory ───────────────────────────── */
 

@@ -42,10 +42,28 @@ function parseBlocks(src: string): Block[] {
 // 1: bold · 2,3: link text + href · 4: italic · 5: code
 const INLINE = /\*\*([^\n]+?)\*\*|\[([^\]\n]+)\]\(([^)\s]+)\)|\*([^*\s](?:[^*\n]*?[^*\s])?)\*|`([^`\n]+)`/g;
 
+const SAME_ORIGIN = "https://orza.invalid";
+
+/**
+ * Only same-site paths and plain https URLs become links. Backslashes and control characters are refused
+ * outright ("/\evil.example" resolves off-site in browsers), and an internal path must still resolve to
+ * this origin; the rendered href is the normalised path, never the raw model text.
+ */
 function safeHref(href: string): { internal: boolean; href: string } | null {
-  if (/^\/(?!\/)/.test(href)) return { internal: true, href };
-  if (/^https:\/\/[^\s]+$/i.test(href)) return { internal: false, href };
-  return null;
+  if (!href || /[\\\u0000-\u001f\u007f]/.test(href)) return null;
+  try {
+    if (href.startsWith("/")) {
+      if (href.startsWith("//")) return null;
+      const u = new URL(href, SAME_ORIGIN);
+      if (u.origin !== SAME_ORIGIN) return null;
+      return { internal: true, href: `${u.pathname}${u.search}${u.hash}` };
+    }
+    const u = new URL(href);
+    if (u.protocol !== "https:" || !u.hostname || u.username || u.password) return null;
+    return { internal: false, href: u.toString() };
+  } catch {
+    return null;
+  }
 }
 
 const linkClass =

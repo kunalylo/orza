@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { daysBetween, formatDayDate, formatShortDate } from "@/components/goals/goal-math";
+import { KG_PER_LB, daysBetween, formatDayDate, formatShortDate, kgToUnit, weightUnit } from "@/components/goals/goal-math";
 import type { WeightPoint } from "@/components/goals/types";
 
 const M = { top: 18, right: 60, bottom: 30, left: 40 };
@@ -23,7 +23,7 @@ function useWidth<T extends HTMLElement>() {
   return [ref, width] as const;
 }
 
-/** Clean y-axis ticks (0.5 / 1 / 2 / 5 / 10 kg steps). */
+/** Clean y-axis ticks (0.5 / 1 / 2 / 5 / 10 / 20 steps, in the display unit). */
 function yScaleFor(values: number[]) {
   const lo = Math.min(...values);
   const hi = Math.max(...values);
@@ -37,17 +37,39 @@ function yScaleFor(values: number[]) {
   return { min, max, ticks };
 }
 
-const kg = (n: number) => `${n.toLocaleString("en-IN", { maximumFractionDigits: 1 })} kg`;
+/** "70.4 kg" / "155.2 lb" for a value already in the display unit. */
+const labelFor = (imperial: boolean) => (n: number) => `${n.toLocaleString("en-IN", { maximumFractionDigits: 1 })} ${weightUnit(imperial)}`;
+
+/** Signed change between two display values, e.g. "+0.4" / "−1.2" / "0". */
+const signed = (d: number) => (d === 0 ? "0" : `${d > 0 ? "+" : "−"}${Math.abs(d)}`);
 
 /**
  * Weight trend line (single series): 2px energy-gradient line with a soft wash,
  * target reference line, end label, and a crosshair + tooltip on hover/keyboard.
  */
-export function WeightChart({ points, target, height = 230, className }: { points: WeightPoint[]; target?: number | null; height?: number; className?: string }) {
+export function WeightChart({
+  points: kgPoints,
+  target: targetKg,
+  imperial = false,
+  height = 230,
+  className,
+}: {
+  points: WeightPoint[];
+  target?: number | null;
+  /** Show weights in lb (Settings → Units). Points and target are always kg. */
+  imperial?: boolean;
+  height?: number;
+  className?: string;
+}) {
   const [wrapRef, width] = useWidth<HTMLDivElement>();
   const [active, setActive] = React.useState<number | null>(null);
   const gid = React.useId().replace(/[^a-zA-Z0-9_-]/g, "");
 
+  const kg = labelFor(imperial);
+  const unit = weightUnit(imperial);
+  // Plot in the display unit so ticks, labels and deltas read naturally (lb or kg).
+  const points = React.useMemo(() => kgPoints.map((p) => ({ date: p.date, weight_kg: kgToUnit(p.weight_kg, imperial) })), [kgPoints, imperial]);
+  const target = targetKg != null ? kgToUnit(targetKg, imperial) : null;
   const n = points.length;
   const first = points[0]?.date;
   const last = points[n - 1]?.date;
@@ -57,7 +79,8 @@ export function WeightChart({ points, target, height = 230, className }: { point
   const values = points.map((p) => p.weight_kg);
   const dataLo = Math.min(...values);
   const dataHi = Math.max(...values);
-  const targetInView = target != null && n > 0 && target >= dataLo - 6 && target <= dataHi + 6;
+  const near = imperial ? 6 / KG_PER_LB : 6;
+  const targetInView = target != null && n > 0 && target >= dataLo - near && target <= dataHi + near;
   const y = yScaleFor(targetInView ? [...values, target as number] : values);
 
   const innerW = Math.max(0, width - M.left - M.right);
@@ -212,7 +235,7 @@ export function WeightChart({ points, target, height = 230, className }: { point
           <div className="text-[12px] text-orza-muted">{formatDayDate(a.p.date)}</div>
           {delta != null && (
             <div className="mt-0.5 text-[11px] text-orza-subtle tabular-nums">
-              {delta === 0 ? "Same as previous weigh-in" : `${delta > 0 ? "+" : "−"}${Math.abs(delta)} kg since previous`}
+              {delta === 0 ? "Same as previous weigh-in" : `${signed(delta)} ${unit} since previous`}
             </div>
           )}
         </div>
@@ -226,8 +249,9 @@ export function WeightChart({ points, target, height = 230, className }: { point
 }
 
 /** Accessible table view of the same weigh-ins (newest first). */
-export function WeightTable({ points }: { points: WeightPoint[] }) {
-  const rows = [...points].reverse();
+export function WeightTable({ points, imperial = false }: { points: WeightPoint[]; imperial?: boolean }) {
+  const kg = labelFor(imperial);
+  const rows = points.map((p) => ({ date: p.date, weight_kg: kgToUnit(p.weight_kg, imperial) })).reverse();
   return (
     <div className="max-h-[230px] overflow-y-auto rounded-orza-sm border border-[rgba(20,20,20,0.08)] bg-white/50">
       <table className="w-full text-left text-[13px]">
@@ -236,7 +260,7 @@ export function WeightTable({ points }: { points: WeightPoint[] }) {
           <tr>
             <th scope="col" className="px-4 py-2 font-mono text-[11px] font-normal uppercase tracking-[0.14em] text-orza-subtle">Date</th>
             <th scope="col" className="px-4 py-2 text-right font-mono text-[11px] font-normal uppercase tracking-[0.14em] text-orza-subtle">Weight</th>
-            <th scope="col" className="px-4 py-2 text-right font-mono text-[11px] font-normal uppercase tracking-[0.14em] text-orza-subtle">Change</th>
+            <th scope="col" className="px-4 py-2 text-right font-mono text-[11px] font-normal uppercase tracking-[0.14em] text-orza-subtle">Change ({weightUnit(imperial)})</th>
           </tr>
         </thead>
         <tbody>
@@ -247,7 +271,7 @@ export function WeightTable({ points }: { points: WeightPoint[] }) {
               <tr key={r.date} className="border-t border-[rgba(20,20,20,0.06)]">
                 <td className="px-4 py-2 text-orza-strong">{formatDayDate(r.date)}</td>
                 <td className="px-4 py-2 text-right tabular-nums text-orza-strong">{kg(r.weight_kg)}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-orza-muted">{d == null ? "—" : d === 0 ? "0" : `${d > 0 ? "+" : "−"}${Math.abs(d)}`}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-orza-muted">{d == null ? "—" : signed(d)}</td>
               </tr>
             );
           })}

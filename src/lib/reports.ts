@@ -7,6 +7,8 @@ import { listMeals, listMealsInRange, sumNutrients } from "@/lib/domain/meals";
 import { getTrackingDay, trackingInRange } from "@/lib/domain/tracking";
 import { DEFAULT_TARGETS } from "@/lib/domain/targets";
 import { addDays, dateRange, isISODate } from "@/lib/dates";
+import { avoidList, conflictsWithAllergies } from "@/lib/allergens";
+import { memoryDiets } from "@/lib/recipes-library";
 import { formatNumber, round } from "@/lib/utils";
 import type { Diet, Meal, Nutrients, Targets, TrackingDay, User } from "@/lib/types";
 
@@ -138,14 +140,86 @@ export function scoreDay(totals: Nutrients, tracking: DayTracking, targets: Targ
   return { score: Math.max(0, Math.min(100, parts.reduce((s, p) => s + p.points, 0))), parts };
 }
 
-const PROTEIN_SOURCES: Record<Diet | "any", string> = {
-  vegan: "Tofu, soya chunks, chana or sprouts",
-  jain: "Paneer, curd, moong dal or chana",
-  vegetarian: "Dal, paneer, curd or sprouts",
-  eggetarian: "Eggs, paneer, curd or dal",
-  non_vegetarian: "Eggs, chicken, fish or dal",
-  any: "Dal, paneer, curd, eggs or sprouts",
+/* ─────────────────────── Food suggestions (diet + allergy aware) ─────────────────────── */
+
+type DietClass = "vegan" | "vegetarian" | "eggetarian" | "non_vegetarian";
+
+/** Every diet the person follows (profile + learned in chat) and everything they avoid. */
+export interface FoodPrefs {
+  diets: Diet[];
+  avoid: string[];
+}
+
+interface ProteinSource {
+  name: string;
+  /** Words checked against allergies ("chickpeas" catches a chickpea allergy on "chana"). */
+  words: string[];
+  diet: DietClass;
+  /** Fine for Jain diets (no root vegetables, sprouts, onion or garlic). */
+  jain: boolean;
+}
+
+const PROTEIN: Record<string, ProteinSource> = {
+  dal: { name: "dal", words: ["dal", "lentils", "toor dal", "moong dal", "legumes", "pulses"], diet: "vegan", jain: true },
+  moong_dal: { name: "moong dal", words: ["moong dal", "lentils", "moong", "legumes", "pulses"], diet: "vegan", jain: true },
+  chana: { name: "chana", words: ["chana", "chickpeas", "chole", "legumes", "pulses"], diet: "vegan", jain: true },
+  rajma: { name: "rajma", words: ["rajma", "kidney beans", "beans", "legumes", "pulses"], diet: "vegan", jain: true },
+  sprouts: { name: "sprouts", words: ["moong sprouts", "sprouts", "moong", "legumes", "pulses"], diet: "vegan", jain: false },
+  tofu: { name: "tofu", words: ["tofu", "soy", "legumes", "pulses"], diet: "vegan", jain: true },
+  soya: { name: "soya chunks", words: ["soya chunks", "soya", "soy", "legumes", "pulses"], diet: "vegan", jain: true },
+  peanuts: { name: "roasted peanuts", words: ["roasted peanuts", "peanut", "legumes", "pulses"], diet: "vegan", jain: true },
+  paneer: { name: "paneer", words: ["paneer"], diet: "vegetarian", jain: true },
+  curd: { name: "curd", words: ["curd", "dahi"], diet: "vegetarian", jain: true },
+  eggs: { name: "eggs", words: ["eggs"], diet: "eggetarian", jain: false },
+  chicken: { name: "chicken", words: ["chicken"], diet: "non_vegetarian", jain: false },
+  fish: { name: "fish", words: ["fish"], diet: "non_vegetarian", jain: false },
 };
+
+/** Preferred order per diet; the fallback list tops up when allergies rule some out. */
+const PROTEIN_ORDER: Record<Diet | "any", string[]> = {
+  vegan: ["tofu", "soya", "chana", "sprouts", "dal", "rajma", "peanuts"],
+  jain: ["paneer", "curd", "moong_dal", "chana", "rajma", "tofu"],
+  vegetarian: ["dal", "paneer", "curd", "sprouts", "chana", "rajma", "tofu"],
+  eggetarian: ["eggs", "paneer", "curd", "dal", "chana", "sprouts"],
+  non_vegetarian: ["eggs", "chicken", "fish", "dal", "paneer", "chana"],
+  any: ["dal", "paneer", "curd", "eggs", "sprouts", "chana"],
+};
+const PROTEIN_FALLBACK = ["dal", "chana", "rajma", "moong_dal", "sprouts", "tofu", "soya", "paneer", "curd", "eggs", "chicken", "fish"];
+
+const DIET_RANK: Record<DietClass, number> = { vegan: 0, vegetarian: 1, eggetarian: 2, non_vegetarian: 3 };
+const DIET_MAX: Record<Diet, number> = { vegan: 0, jain: 1, vegetarian: 1, eggetarian: 2, non_vegetarian: 3 };
+
+/** Fits every diet the person follows and none of their allergies. */
+function proteinFits(src: ProteinSource, prefs: FoodPrefs): boolean {
+  for (const d of prefs.diets) {
+    if (DIET_RANK[src.diet] > DIET_MAX[d]) return false;
+    if (d === "jain" && !src.jain) return false;
+  }
+  return !conflictsWithAllergies(src.words, prefs.avoid);
+}
+
+const joinOr = (list: string[]) => (list.length <= 1 ? list.join("") : `${list.slice(0, -1).join(", ")} or ${list[list.length - 1]}`);
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** "Tofu, soya chunks, chana or sprouts" — up to four protein foods this person can eat. */
+export function proteinSuggestion(prefs: FoodPrefs): string {
+  // The strictest diet leads the order (vegan before vegetarian before non-veg).
+  const lead = [...prefs.diets].sort((a, b) => DIET_MAX[a] - DIET_MAX[b] || (a === "jain" ? -1 : 1))[0];
+  const order = [...new Set([...PROTEIN_ORDER[lead || "any"], ...PROTEIN_FALLBACK])];
+  const picks = order
+    .map((k) => PROTEIN[k])
+    .filter((src) => proteinFits(src, prefs))
+    .filter((src, _, all) => !(src === PROTEIN.moong_dal && all.includes(PROTEIN.dal)))
+    .slice(0, 4)
+    .map((src) => src.name);
+  return picks.length ? capitalise(joinOr(picks)) : "A protein-rich food you can eat safely";
+}
+
+/** First phrasing whose foods are all safe for this person (the last option names no food). */
+function firstSafe(options: Array<{ text: string; foods: string[] }>, prefs: FoodPrefs): string {
+  const hit = options.find((o) => !o.foods.length || !conflictsWithAllergies(o.foods, prefs.avoid));
+  return (hit || options[options.length - 1]).text;
+}
 
 const trackingOf = (d: Pick<TrackingDay, "water_glasses" | "steps" | "weight_kg"> | null | undefined): DayTracking => ({
   water_glasses: Math.max(0, Number(d?.water_glasses) || 0),
@@ -181,7 +255,7 @@ function dailyHighlights(totals: Nutrients, tracking: DayTracking, t: Targets, m
 }
 
 /** Gentle, practical next steps (max 3), most useful first. */
-function dailySuggestions(totals: Nutrients, tracking: DayTracking, t: Targets, mealsCount: number, today: boolean, diet?: Diet): string[] {
+function dailySuggestions(totals: Nutrients, tracking: DayTracking, t: Targets, mealsCount: number, today: boolean, prefs: FoodPrefs): string[] {
   const out: string[] = [];
   const is = today ? "is" : "was";
 
@@ -194,10 +268,27 @@ function dailySuggestions(totals: Nutrients, tracking: DayTracking, t: Targets, 
   } else if (t.calories > 0) {
     const gap = Math.round(Math.abs(totals.calories - t.calories));
     if (totals.calories < t.calories * 0.9) {
+      const plate = firstSafe(
+        [
+          { text: "dal, sabzi and a roti or rice", foods: ["dal", "sabzi", "roti", "rice"] },
+          { text: "dal, sabzi and rice", foods: ["dal", "sabzi", "rice"] },
+          { text: "sabzi with rice or a millet roti", foods: ["sabzi", "rice", "millet"] },
+          { text: "a protein, a vegetable and a grain you can eat", foods: [] },
+        ],
+        prefs
+      );
+      const snack = firstSafe(
+        [
+          { text: "roasted chana or a fruit", foods: ["roasted chana", "chickpeas", "fruit"] },
+          { text: "a fruit", foods: ["fruit"] },
+          { text: "a small snack you can eat safely", foods: [] },
+        ],
+        prefs
+      );
       out.push(
         today
-          ? `About ${fmt(gap)} kcal left for today. A balanced plate — dal, sabzi and a roti or rice — fits comfortably.`
-          : `Calories were about ${fmt(gap)} kcal below target. If energy felt low, a balanced snack like roasted chana or a fruit helps.`
+          ? `About ${fmt(gap)} kcal left for today. A balanced plate — ${plate} — fits comfortably.`
+          : `Calories were about ${fmt(gap)} kcal below target. If energy felt low, a balanced snack like ${snack} helps.`
       );
     } else if (totals.calories > t.calories * 1.1) {
       out.push(
@@ -211,7 +302,7 @@ function dailySuggestions(totals: Nutrients, tracking: DayTracking, t: Targets, 
 
   if (mealsCount && t.protein_g > 0 && totals.protein_g < t.protein_g * 0.9) {
     const pct = Math.round((totals.protein_g / t.protein_g) * 100);
-    out.push(`Protein ${is} at ${pct}% of your ${fmt(t.protein_g)} g goal. ${PROTEIN_SOURCES[diet || "any"]} in ${today ? "your next meal can" : "a meal would"} close the gap.`);
+    out.push(`Protein ${is} at ${pct}% of your ${fmt(t.protein_g)} g goal. ${proteinSuggestion(prefs)} in ${today ? "your next meal can" : "a meal would"} close the gap.`);
   }
   if (t.water_glasses > 0 && tracking.water_glasses < t.water_glasses) {
     const need = t.water_glasses - tracking.water_glasses;
@@ -226,12 +317,32 @@ function dailySuggestions(totals: Nutrients, tracking: DayTracking, t: Targets, 
     }
   }
   if (mealsCount && t.fiber_g > 0 && totals.fiber_g < t.fiber_g * 0.7) {
-    out.push(`Fibre ${is} ${fmt(totals.fiber_g)} g of ${fmt(t.fiber_g)} g — whole grains, fruit, salads and dals add more.`);
+    const fibre = firstSafe(
+      [
+        { text: "whole grains, fruit, salads and dals", foods: ["whole grains", "fruit", "salads", "dal"] },
+        { text: "fruit, salads and dals", foods: ["fruit", "salads", "dal"] },
+        { text: "fruit, salads and vegetables", foods: ["fruit", "salads", "vegetables"] },
+        { text: "vegetables and other fibre-rich foods you can eat", foods: [] },
+      ],
+      prefs
+    );
+    out.push(`Fibre ${is} ${fmt(totals.fiber_g)} g of ${fmt(t.fiber_g)} g — ${fibre} add more.`);
   }
   if (t.steps > 0 && tracking.steps < t.steps * 0.7) {
     out.push("An easy 10-minute walk after a meal adds roughly 1,000 steps.");
   }
   return out.slice(0, 3);
+}
+
+/** Profile diet + diets learned in chat, and profile allergies + avoided foods learned in chat. */
+export function foodPrefs(user: Pick<User, "profile" | "memory">): FoodPrefs {
+  const diet = user.profile?.diet;
+  const strictness: Record<Diet, number> = { vegan: 0, jain: 1, vegetarian: 2, eggetarian: 3, non_vegetarian: 4 };
+  return {
+    // strictest first, so a single label ("Vegan") describes the lead diet
+    diets: [...new Set<Diet>([...(diet ? [diet] : []), ...memoryDiets(user.memory)])].sort((a, b) => strictness[a] - strictness[b]),
+    avoid: avoidList(user.profile?.allergies, user.memory).filter((a) => !/^(none|no|nil)$/i.test(a.trim())),
+  };
 }
 
 export async function buildDailyReport(user: User, date: string, today: string): Promise<DailyReport> {
@@ -251,7 +362,7 @@ export async function buildDailyReport(user: User, date: string, today: string):
     score,
     score_parts: parts,
     highlights: dailyHighlights(totals, tracking, targets, meals.length, isToday),
-    suggestions: dailySuggestions(totals, tracking, targets, meals.length, isToday, user.profile?.diet),
+    suggestions: dailySuggestions(totals, tracking, targets, meals.length, isToday, foodPrefs(user)),
   };
 }
 

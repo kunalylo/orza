@@ -13,11 +13,13 @@ const Body = z
     reminders: z.boolean({ invalid_type_error: "Reminders must be on or off" }),
     weekly_report: z.boolean({ invalid_type_error: "Weekly report must be on or off" }),
     tone: z.enum(TONES, { errorMap: () => ({ message: "Coach tone must be gentle or direct" }) }),
+    /** true = keep this account's data out of any work to improve ÖRZA's AI (Trust + Privacy pages). */
+    ai_training_opt_out: z.boolean({ invalid_type_error: "AI improvement choice must be on or off" }),
   })
   .partial()
   .refine((p) => Object.values(p).some((v) => v !== undefined), "Nothing to update");
 
-/** PUT /api/settings/preferences {units?, reminders?, weekly_report?, tone?} → {user} */
+/** PUT /api/settings/preferences {units?, reminders?, weekly_report?, tone?, ai_training_opt_out?} → {user} */
 export const PUT = route(async (req: Request) => {
   const user = await requireUser();
   const prefs = await parseBody(req, Body);

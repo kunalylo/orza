@@ -1,10 +1,10 @@
 "use client";
 import * as React from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { PenLine, Sparkles } from "lucide-react";
 import { Eyebrow } from "@/components/orza/primitives";
 import { OrzaOrb } from "./OrzaOrb";
-import { QUICK_ACTIONS, STARTER_PROMPTS, type QuickAction } from "./prompts";
+import { QUICK_ACTIONS, STARTER_PROMPTS, type QuickAction, type StarterPrompt } from "./prompts";
 
 /** Welcome screen for a fresh conversation: the landing-page prompts as chips, plus the app's quick actions. */
 export function ChatEmptyState({
@@ -14,7 +14,8 @@ export function ChatEmptyState({
   disabled,
 }: {
   firstName?: string;
-  onPick: (prompt: string) => void;
+  /** Sends a question, or fills the composer with a meal example (see StarterPrompt.send). */
+  onPick: (prompt: StarterPrompt) => void;
   onQuickAction?: (action: QuickAction) => void;
   disabled?: boolean;
 }) {
@@ -39,15 +40,21 @@ export function ChatEmptyState({
       </motion.div>
       <motion.ul {...rise(0.14)} className="mt-8 flex max-w-2xl flex-wrap justify-center gap-2" aria-label="Try asking">
         {STARTER_PROMPTS.map((p) => (
-          <li key={p}>
+          <li key={p.text}>
             <button
               type="button"
-              disabled={disabled}
+              disabled={disabled && p.send}
               onClick={() => onPick(p)}
+              title={p.send ? "Ask ÖRZA" : "Add to your message to edit before sending"}
+              aria-label={p.send ? `Ask: ${p.text}` : `Write: ${p.text} (edit before sending)`}
               className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-[rgba(20,20,20,0.10)] bg-white/60 px-4 py-2 text-left text-sm text-orza-strong transition-[background-color,border-color,transform] duration-220 ease-orza hover:-translate-y-[1px] hover:bg-white/85 disabled:pointer-events-none disabled:opacity-60"
             >
-              <Sparkles size={12} strokeWidth={1.75} className="shrink-0 text-[#0B8FA6]" aria-hidden />
-              {p}
+              {p.send ? (
+                <Sparkles size={12} strokeWidth={1.75} className="shrink-0 text-[#0B8FA6]" aria-hidden />
+              ) : (
+                <PenLine size={12} strokeWidth={1.75} className="shrink-0 text-[#0B8FA6]" aria-hidden />
+              )}
+              {p.text}
             </button>
           </li>
         ))}

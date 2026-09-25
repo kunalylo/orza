@@ -19,8 +19,8 @@ import { setTracking, trackingInRange } from "@/lib/domain/tracking";
 import type { HealthDay, HealthSource, TrackingDay, User } from "@/lib/types";
 import {
   DayAggregator,
+  dayBucketOf,
   isRealDate,
-  localDateOf,
   localDater,
   parseHealthTimestamp,
   shiftDate,
@@ -157,7 +157,7 @@ export interface NormalisedDays {
 
 /**
  * Validates and cleans posted days: real dates (a timestamp with an offset is converted to the user's
- * local day), not in the future (one day of slack for devices in another timezone), known metrics
+ * local day unless it's a midnight day bucket), not in the future (one day of slack for devices in another timezone), known metrics
  * only, sane ranges (out-of-range values are dropped, never clamped). Repeated dates merge, the later
  * entry winning per metric. Keeps the most recent `maxDays` days, oldest first.
  */
@@ -175,7 +175,7 @@ export function normaliseDays(input: readonly unknown[], opts: { tz: string; tod
     }
     const r = raw as Record<string, unknown>;
     const ts = parseHealthTimestamp(r.date);
-    const date = ts ? localDateOf(ts, dater) : null;
+    const date = ts ? dayBucketOf(ts, dater) : null;
     if (!date || date > latest || date < "2000-01-01") {
       skipped++;
       continue;
@@ -236,7 +236,7 @@ export function parseHealthAutoExport(body: unknown, tz: string): HealthDayInput
   const dater = localDater(tz);
   const dayOf = (v: unknown) => {
     const ts = parseHealthTimestamp(v);
-    return ts ? localDateOf(ts, dater) : null;
+    return ts ? dayBucketOf(ts, dater) : null;
   };
 
   for (const metric of metrics) {
@@ -276,7 +276,7 @@ export function parseHealthAutoExport(body: unknown, tz: string): HealthDayInput
           const ts = parseHealthTimestamp(e.date);
           const qty = toNumber(e.qty);
           if (!ts || qty == null) break;
-          agg.setWeight(localDateOf(ts, dater), ts.epoch ?? order, toKg(qty, units));
+          agg.setWeight(dayBucketOf(ts, dater), ts.epoch ?? order, toKg(qty, units));
           break;
         }
         case "sleep_analysis": {

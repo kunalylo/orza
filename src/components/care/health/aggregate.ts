@@ -32,6 +32,8 @@ export interface HealthTimestamp {
   wallDate: string;
   /** UTC epoch ms when the value carries an offset (or Z); null for date-only or offset-less values. */
   epoch: number | null;
+  /** True when the wall-clock time is exactly 00:00:00 — how apps stamp a whole-day total. */
+  midnight: boolean;
 }
 
 // "2026-09-24", "2026-09-24 07:30:00 +0530", "2026-09-24T07:30:00.000+05:30", "2026-09-24T02:00:00Z"
@@ -44,12 +46,14 @@ export function parseHealthTimestamp(input: unknown): HealthTimestamp | null {
   const [, y, mo, d, hh, mi, ss, frac, off] = m;
   const wallDate = `${y}-${mo}-${d}`;
   if (!isRealDate(wallDate)) return null;
-  if (hh === undefined) return { wallDate, epoch: null };
+  if (hh === undefined) return { wallDate, epoch: null, midnight: false };
   const H = Number(hh);
   const M = Number(mi);
   const S = ss ? Number(ss) : 0;
   if (H > 23 || M > 59 || S > 60) return null;
-  if (off === undefined) return { wallDate, epoch: null };
+  const ms = frac ? Math.round(Number(`0.${frac}`) * 1000) : 0;
+  const midnight = H === 0 && M === 0 && S === 0 && ms === 0;
+  if (off === undefined) return { wallDate, epoch: null, midnight };
   let offMin = 0;
   if (off.toUpperCase() !== "Z") {
     const sign = off[0] === "-" ? -1 : 1;
@@ -59,8 +63,7 @@ export function parseHealthTimestamp(input: unknown): HealthTimestamp | null {
     if (oh > 18 || om > 59) return null;
     offMin = sign * (oh * 60 + om);
   }
-  const ms = frac ? Math.round(Number(`0.${frac}`) * 1000) : 0;
-  return { wallDate, epoch: Date.UTC(Number(y), Number(mo) - 1, Number(d), H, M, S, ms) - offMin * 60_000 };
+  return { wallDate, epoch: Date.UTC(Number(y), Number(mo) - 1, Number(d), H, M, S, ms) - offMin * 60_000, midnight };
 }
 
 const OFFSET_BUCKET_MS = 15 * 60_000; // every real-world offset change lands on a 15-minute boundary
@@ -102,6 +105,15 @@ export function localDater(tz: string): (epoch: number) => string {
 /** Local day of a parsed timestamp: instants are converted into the user's timezone, wall-clock values kept as written. */
 export function localDateOf(ts: HealthTimestamp, dater: (epoch: number) => string): string {
   return ts.epoch != null ? dater(ts.epoch) : ts.wallDate;
+}
+
+/**
+ * Local day for a daily value. A total stamped at exactly midnight ("2026-09-24 00:00:00 +0900", as
+ * Health Auto Export and most CSV exports write day buckets) is that calendar day wherever the phone
+ * was; any other instant is converted into the user's timezone.
+ */
+export function dayBucketOf(ts: HealthTimestamp, dater: (epoch: number) => string): string {
+  return ts.midnight ? ts.wallDate : localDateOf(ts, dater);
 }
 
 /* ───────────────────────────── day aggregation ───────────────────────────── */

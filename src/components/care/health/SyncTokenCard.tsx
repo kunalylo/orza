@@ -20,6 +20,8 @@ type Status = HealthTokenStatus["token"];
 export function SyncTokenCard({
   status,
   loading,
+  error,
+  onRetry,
   freshToken,
   syncUrl,
   onCreated,
@@ -28,6 +30,9 @@ export function SyncTokenCard({
 }: {
   status: Status;
   loading: boolean;
+  /** The token status couldn't be loaded. */
+  error: string | null;
+  onRetry: () => void;
   freshToken: string | null;
   syncUrl: string;
   onCreated: (created: HealthTokenCreated) => void;
@@ -74,7 +79,7 @@ export function SyncTokenCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-editorial text-[19px] font-semibold leading-6 text-orza-strong">Your sync token</h3>
-            {!loading && (status ? <Tag tone="success">Active</Tag> : <Tag tone="neutral">Not created</Tag>)}
+            {!loading && !error && (status || freshToken ? <Tag tone="success">Active</Tag> : <Tag tone="neutral">Not created</Tag>)}
           </div>
           <p className="mt-1 text-[13.5px] leading-relaxed text-orza-muted">
             Apps and Shortcuts on your phone use this token to send daily totals to your account. It can only add health data — it
@@ -86,6 +91,13 @@ export function SyncTokenCard({
       <div className="mt-5 space-y-3">
         {loading ? (
           <Skeleton className="h-[72px] w-full !rounded-orza-sm" />
+        ) : error && !freshToken ? (
+          <div role="alert" className="flex flex-col gap-3 rounded-orza-sm border border-[rgba(176,44,44,0.22)] bg-[#FDECEC] p-3.5 text-[13px] text-[#8F2323] sm:flex-row sm:items-center sm:justify-between">
+            <span>We couldn&apos;t check your sync token. {error}</span>
+            <Button size="sm" variant="secondary" onClick={onRetry}>
+              Try again
+            </Button>
+          </div>
         ) : freshToken ? (
           <div className="rounded-orza-sm border border-[rgba(255,122,106,0.35)] bg-[#FFF6F1] p-3.5">
             <div className="flex items-start gap-2 text-[13px] leading-5 text-[#9A3412]">

@@ -8,7 +8,7 @@ import { KitchenProfile } from "@/components/recipes/KitchenProfile";
 import { RecipeGenerator } from "@/components/recipes/RecipeGenerator";
 import { GeneratingCard, RecipeResult } from "@/components/recipes/RecipeResult";
 import { RecipeCollection, type CollectionTab } from "@/components/recipes/RecipeCollection";
-import type { GenerateRequest, GenerateResponse, RecipeItem, RecipesResponse } from "@/components/recipes/types";
+import type { GenerateRequest, GenerateResponse, KitchenPrefs, RecipeItem, RecipesResponse } from "@/components/recipes/types";
 
 type Busy = { id: string; action: "save" | "log" | "delete" } | null;
 
@@ -19,6 +19,7 @@ export default function RecipesPage() {
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [meta, setMeta] = React.useState<{ ai_enabled: boolean | null; cost: number }>({ ai_enabled: null, cost: 2 });
+  const [kitchen, setKitchen] = React.useState<KitchenPrefs | null>(null);
   const [tab, setTab] = React.useState<CollectionTab>("recent");
   const [generating, setGenerating] = React.useState(false);
   const [result, setResult] = React.useState<{ recipe: RecipeItem; notice?: string } | null>(null);
@@ -34,6 +35,7 @@ export default function RecipesPage() {
       const res = await api.get<RecipesResponse>("/recipes");
       setRecipes(res.recipes || []);
       setMeta({ ai_enabled: !!res.ai_enabled, cost: res.cost ?? 2 });
+      if (res.kitchen) setKitchen(res.kitchen);
       // Open on Saved when there's something saved, unless the person already picked a tab.
       if (!tabChosen.current) setTab((res.recipes || []).some((r) => r.saved) ? "saved" : "recent");
     } catch (e) {
@@ -143,11 +145,11 @@ export default function RecipesPage() {
           aiEnabled={meta.ai_enabled}
           cost={meta.cost}
           credits={user.credits}
-          profileDiet={user.profile?.diet}
+          myDiets={kitchen?.diets ?? (user.profile?.diet ? [user.profile.diet] : [])}
           generating={generating}
           onGenerate={generate}
         />
-        <KitchenProfile user={user} />
+        <KitchenProfile user={user} kitchen={kitchen} />
       </div>
 
       <div ref={resultRef} className="scroll-mt-20">

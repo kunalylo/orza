@@ -3,7 +3,7 @@
  * exports). Pure module: robust CSV parsing, header auto-mapping with units, date detection and
  * per-day aggregation. The dialog shows the mapping + a preview before anything is uploaded.
  */
-import { DayAggregator, localDateOf, localDater, parseHealthTimestamp, shiftDate, isRealDate } from "./aggregate";
+import { DayAggregator, dayBucketOf, localDater, parseHealthTimestamp, shiftDate, isRealDate } from "./aggregate";
 import { MAX_IMPORT_DAYS, toKcal, toKg, toKm, toMinutes, toMl, toNumber, type HealthDayInput, type HealthMetric } from "./metrics";
 
 /* ───────────────────────────── CSV parsing ───────────────────────────── */
@@ -251,7 +251,7 @@ export function parseCsvDate(value: string, order: DateOrder, dater: (epoch: num
   const v = value.trim();
   if (!v) return null;
   const iso = parseHealthTimestamp(v);
-  if (iso) return localDateOf(iso, dater);
+  if (iso) return dayBucketOf(iso, dater);
   const isoLoose = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
   if (isoLoose) return ymd(Number(isoLoose[1]), Number(isoLoose[2]), Number(isoLoose[3]));
   const n = NUMERIC_DATE_RE.exec(v);

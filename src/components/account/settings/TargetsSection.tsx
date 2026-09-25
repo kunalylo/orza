@@ -119,10 +119,17 @@ export function TargetsSection() {
                   f.key === "calories" && "col-span-2 sm:col-span-1"
                 )}
               >
-                <label htmlFor={id} className="font-mono text-[10px] uppercase tracking-[0.14em] text-orza-subtle">
-                  {f.label}
-                </label>
-                <div className="relative mt-1.5">
+                {/* Unit sits on the label row so the number keeps the full tile width (10,000+ steps fit at 375px). */}
+                <div className="flex items-baseline justify-between gap-2">
+                  <label htmlFor={id} className="font-mono text-[10px] uppercase tracking-[0.14em] text-orza-subtle">
+                    {f.label}
+                    <span className="sr-only"> in {f.unit}</span>
+                  </label>
+                  <span aria-hidden className="truncate text-[12px] text-orza-subtle">
+                    {f.unit}
+                  </span>
+                </div>
+                <div className="mt-1.5">
                   <Input
                     id={id}
                     inputMode="numeric"
@@ -134,9 +141,8 @@ export function TargetsSection() {
                     }}
                     aria-invalid={!!err}
                     aria-describedby={err ? `${id}-error` : undefined}
-                    className="h-11 border-transparent bg-transparent px-0 pr-16 font-editorial text-[24px] font-semibold tabular-nums text-orza-strong focus:border-transparent focus:bg-transparent focus:shadow-none"
+                    className="h-11 w-full min-w-0 border-transparent bg-transparent px-0 font-editorial text-[24px] font-semibold tabular-nums text-orza-strong focus:border-transparent focus:bg-transparent focus:shadow-none"
                   />
-                  <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[12px] text-orza-subtle">{f.unit}</span>
                 </div>
                 <FieldError id={`${id}-error`}>{err}</FieldError>
               </div>

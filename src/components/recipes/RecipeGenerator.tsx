@@ -13,14 +13,15 @@ export function RecipeGenerator({
   aiEnabled,
   cost,
   credits,
-  profileDiet,
+  myDiets,
   generating,
   onGenerate,
 }: {
   aiEnabled: boolean | null;
   cost: number;
   credits: number;
-  profileDiet?: Diet;
+  /** Diets applied when none is picked here (profile + learned in chat), strictest first. */
+  myDiets: Diet[];
   generating: boolean;
   onGenerate: (req: GenerateRequest) => void;
 }) {
@@ -128,9 +129,9 @@ export function RecipeGenerator({
           <div>
             <Label htmlFor={`${ids}-diet`}>Diet</Label>
             <Select id={`${ids}-diet`} value={diet} onChange={(e) => setDiet(e.target.value as "" | Diet)}>
-              <option value="">{profileDiet ? `My diet (${DIET_LABELS[profileDiet]})` : "No restriction"}</option>
+              <option value="">{myDiets.length ? `My diet (${myDiets.map((d) => DIET_LABELS[d]).join(" · ")})` : "No restriction"}</option>
               {(Object.keys(DIET_LABELS) as Diet[])
-                .filter((d) => d !== profileDiet)
+                .filter((d) => !(myDiets.length === 1 && d === myDiets[0]))
                 .map((d) => (
                   <option key={d} value={d}>
                     {DIET_LABELS[d]}

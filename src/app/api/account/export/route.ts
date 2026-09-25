@@ -3,6 +3,8 @@ import { col, type CollectionName } from "@/lib/db";
 import { dateInTz } from "@/lib/dates";
 import { route } from "@/lib/http";
 import { SITE } from "@/lib/site";
+import type { Media, PushSubscriptionDoc } from "@/lib/types";
+import { CREDIT_REQUEST_TYPE, LEGACY_CREDIT_REQUEST_SOURCE, creditRequests, toOwnView } from "../../credits/requests";
 
 export const dynamic = "force-dynamic";
 
@@ -18,12 +20,33 @@ const USER_COLLECTIONS: { key: string; name: CollectionName; sort: string }[] = 
   { key: "recipes", name: "recipes", sort: "created_at" },
   { key: "credit_transactions", name: "credit_transactions", sort: "created_at" },
   { key: "onboarding", name: "onboarding", sort: "updated_at" },
+  { key: "medications", name: "medications", sort: "created_at" },
+  { key: "prescriptions", name: "prescriptions", sort: "created_at" },
+  { key: "dose_logs", name: "dose_logs", sort: "scheduled_for" },
+  { key: "reminders", name: "reminders", sort: "created_at" },
+  { key: "dispatches", name: "dispatches", sort: "created_at" },
+  { key: "health_days", name: "health_days", sort: "date" },
 ];
+
+/**
+ * Photos are listed without their image bytes (a few photos would push the file past what a single
+ * download can carry); each entry has the in-app URL to save it from while signed in.
+ */
+function photoEntry(m: Media) {
+  return { id: m.id, kind: m.kind, mime: m.mime, bytes: m.bytes, width: m.width, height: m.height, created_at: m.created_at, url: `/api/media/${m.id}` };
+}
+
+/** Notification devices, without the browser's private push keys. */
+function deviceEntry(p: PushSubscriptionDoc) {
+  return { id: p.id, endpoint: p.endpoint, user_agent: p.user_agent, created_at: p.created_at };
+}
 
 /**
  * GET /api/account/export → JSON attachment with everything ÖRZA stores about the signed-in user
  * (the public user record plus all their meals, scans, tracking, chats, goals, plans, recipes,
- * credit history, credit requests and onboarding answers). Never includes the password hash.
+ * credit history, credit requests, onboarding answers, medicines, prescriptions, dose history,
+ * reminders, sent alerts, health data, photo list and notification devices).
+ * Never includes the password hash, image bytes or push encryption keys.
  */
 export const GET = route(async () => {
   const user = await requireUser();
@@ -34,21 +57,39 @@ export const GET = route(async () => {
       return [key, rows] as const;
     })
   );
-  // "Request more credits" messages sent from inside the account (stored as leads by email).
-  const creditRequests = await col<{ id: string }>("leads").find(
-    { email: (user.email || "").toLowerCase(), source: "credits-request" },
-    { sort: { created_at: 1 } }
-  );
-  entries.push(["credit_requests", creditRequests]);
-  const data = Object.fromEntries(entries);
+  const [photos, devices, requests, legacyRequests] = await Promise.all([
+    col<Media>("media").find({ user_id: user.id }, { sort: { created_at: 1 } }),
+    col<PushSubscriptionDoc>("push_subscriptions").find({ user_id: user.id }, { sort: { created_at: 1 } }),
+    // "Request more credits" messages sent from the account.
+    creditRequests().find({ type: CREDIT_REQUEST_TYPE, user_id: user.id }, { sort: { created_at: 1 } }),
+    // Older requests from before sign-in was required, stored under the account email.
+    col<{ id: string; message?: string; created_at: string; updated_at?: string }>("leads").find(
+      { email: (user.email || "").toLowerCase(), source: LEGACY_CREDIT_REQUEST_SOURCE },
+      { sort: { created_at: 1 } }
+    ),
+  ]);
+  const all: (readonly [string, unknown[]])[] = [
+    ...entries,
+    ["photos", photos.map(photoEntry)],
+    ["notification_devices", devices.map(deviceEntry)],
+    ["credit_requests", requests.map(toOwnView)],
+    [
+      "credit_requests_by_email",
+      legacyRequests.map((l) => ({ id: l.id, message: l.message ?? "", created_at: l.created_at, updated_at: l.updated_at ?? null })),
+    ],
+  ];
+  const data = Object.fromEntries(all);
 
   const payload = {
     export: {
       app: SITE.name,
       format_version: 1,
       generated_at: new Date().toISOString(),
-      note: "This file contains all the personal data ÖRZA stores for your account. Keep it somewhere safe.",
-      counts: Object.fromEntries(entries.map(([k, rows]) => [k, rows.length])),
+      note:
+        "This file contains all the personal data ÖRZA stores for your account. Keep it somewhere safe. " +
+        "Photos are listed without image data; open each photo's url in ÖRZA while signed in to save a copy. " +
+        "credit_requests_by_email are messages received for your email address before requests required signing in.",
+      counts: Object.fromEntries(all.map(([k, rows]) => [k, rows.length])),
     },
     user: toPublicUser(user),
     ...data,

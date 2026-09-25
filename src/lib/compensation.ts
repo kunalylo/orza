@@ -5,12 +5,15 @@
  * ≤ 15% of the usual target (10% on a gain goal) and never takes calories below
  * max(1200, BMR). Whatever the trims don't cover becomes a little added movement
  * (capped at a comfortable walk); anything beyond that is simply left to even out.
- * The AI route may reword the message and meal ideas, but never these numbers.
+ * The AI route may reword the message and meal ideas, but never these numbers — and every
+ * meal idea (built-in or AI) must pass `mealIdeaIsSafe` for the user's diet and avoid-list.
  */
 import type { CompensationDay, CompensationPlan, Diet, Profile, Targets } from "@/lib/types";
+import { conflictsWithAllergies } from "@/lib/allergens";
 import { bmr } from "@/lib/domain/targets";
 import { addDays } from "@/lib/dates";
 import { parseMealText } from "@/lib/nutrition";
+import { recipeViolations } from "@/lib/recipes-library";
 import { clamp, formatNumber } from "@/lib/utils";
 
 export const KCAL_PER_STEP = 0.04;
@@ -48,6 +51,7 @@ export interface CompensationDraft {
 /* ───────────────────────────── meal ideas ───────────────────────────── */
 
 type Kind = "vegan" | "veg" | "egg" | "nonveg";
+/** Allergens hidden in a dish that its name doesn't spell out (e.g. the wheat in a phulka is visible, the milk in chai isn't). */
 type Allergen = "dairy" | "nuts" | "gluten" | "soy" | "egg" | "fish";
 type Idea = { text: string; kind: Kind; jain?: boolean; allergens?: Allergen[] };
 
@@ -67,7 +71,8 @@ const BREAKFASTS: Idea[] = [
 
 const LUNCHES: Idea[] = [
   { text: "2 phulka, plain moong dal and a big cucumber-tomato salad", kind: "vegan", jain: true, allergens: ["gluten"] },
-  { text: "Jowar roti with lauki chana dal and salad", kind: "vegan", jain: true },
+  { text: "Jowar bhakri with lauki chana dal and salad", kind: "vegan", jain: true },
+  { text: "1 katori rice with moong dal, lauki sabzi and cucumber salad", kind: "vegan", jain: true },
   { text: "Millet khichdi with a bowl of curd", kind: "veg", jain: true, allergens: ["dairy"] },
   { text: "1 katori brown rice with rajma and kachumber salad", kind: "vegan" },
   { text: "Chole with 1 phulka and a big salad", kind: "vegan", allergens: ["gluten"] },
@@ -85,7 +90,7 @@ const DINNERS: Idea[] = [
   { text: "Lauki sabzi, 1 phulka and a bowl of dal", kind: "vegan", jain: true, allergens: ["gluten"] },
   { text: "Paneer and capsicum stir-fry with a bowl of tomato soup", kind: "veg", jain: true, allergens: ["dairy"] },
   { text: "Vegetable daliya with a bowl of curd", kind: "veg", jain: true, allergens: ["gluten", "dairy"] },
-  { text: "Palak dal with 1 jowar roti", kind: "vegan" },
+  { text: "Palak dal with 1 jowar bhakri", kind: "vegan" },
   { text: "Clear vegetable soup with paneer tikka", kind: "veg", allergens: ["dairy"] },
   { text: "Grilled tofu with stir-fried vegetables", kind: "vegan", allergens: ["soy"] },
   { text: "Egg bhurji with sautéed vegetables and 1 phulka", kind: "egg", allergens: ["egg", "gluten"] },
@@ -93,22 +98,30 @@ const DINNERS: Idea[] = [
   { text: "Steamed fish with sautéed greens and a small portion of rice", kind: "nonveg", allergens: ["fish"] },
 ];
 
-const ALLERGEN_WORDS: Record<Allergen, string[]> = {
-  dairy: ["dairy", "milk", "lactose", "paneer", "curd", "cheese", "ghee"],
-  nuts: ["nut", "peanut", "almond", "cashew", "walnut", "pista"],
-  gluten: ["gluten", "wheat", "celiac", "coeliac"],
-  soy: ["soy", "soya", "tofu"],
-  egg: ["egg"],
-  fish: ["fish", "seafood", "shellfish", "prawn", "shrimp"],
+/** An ingredient word the shared allergen matcher (lib/allergens) recognises for each hidden-allergen tag. */
+const HIDDEN_INGREDIENT: Record<Allergen, string> = {
+  dairy: "milk",
+  nuts: "nuts",
+  gluten: "wheat",
+  soy: "soy",
+  egg: "egg",
+  fish: "fish",
 };
 
-function allergensFor(profile: Profile): Set<Allergen> {
-  const text = (profile.allergies || []).join(" ").toLowerCase();
-  const out = new Set<Allergen>();
-  (Object.keys(ALLERGEN_WORDS) as Allergen[]).forEach((a) => {
-    if (ALLERGEN_WORDS[a].some((w) => text.includes(w))) out.add(a);
-  });
-  return out;
+/** The diet ÖRZA plans for when the profile doesn't say (suits every Indian kitchen). */
+export const DEFAULT_DIET: Diet = "vegetarian";
+
+/**
+ * True when a meal idea is safe to suggest: nothing on the avoid-list (profile allergies, including
+ * free-text ones like "coconut", plus avoid-facts from chat) and nothing the diet rules out
+ * (meat/fish/egg/dairy, or onion/garlic/root vegetables for Jain). Used for the built-in ideas and
+ * to vet every AI-written idea before it is stored.
+ */
+export function mealIdeaIsSafe(text: string, opts: { diet?: Diet | null; avoid?: string[] | null; hidden?: string[] }): boolean {
+  const body = text.replace(/^\s*(breakfast|lunch|dinner|snack)\s*:\s*/i, "");
+  if (!body.trim()) return false;
+  if (conflictsWithAllergies([body, ...(opts.hidden || [])], opts.avoid)) return false;
+  return recipeViolations({ ingredients: [body] }, { diets: [opts.diet || DEFAULT_DIET] }).length === 0;
 }
 
 function fitsDiet(idea: Idea, diet?: Diet): boolean {
@@ -127,14 +140,18 @@ function fitsDiet(idea: Idea, diet?: Diet): boolean {
   }
 }
 
-function candidates(pool: Idea[], profile: Profile): Idea[] {
-  const avoid = allergensFor(profile);
-  const byDiet = pool.filter((i) => fitsDiet(i, profile.diet));
-  const safe = byDiet.filter((i) => !(i.allergens || []).some((a) => avoid.has(a)));
-  if (safe.length) return safe;
-  // Never return nothing: fall back to allergen-free vegan staples.
-  const fallback = pool.filter((i) => i.kind === "vegan" && !(i.allergens || []).length);
-  return fallback.length ? fallback : pool.slice(0, 1);
+/** Last resort when every curated idea for a meal clashes with the diet or avoid-list. */
+const GENTLE_FALLBACK: Record<"Breakfast" | "Lunch" | "Dinner", string> = {
+  Breakfast: "A light home-cooked breakfast you know agrees with you, with a portion of protein and some fruit or vegetables",
+  Lunch: "Your usual home-cooked lunch in a slightly smaller portion, with half the plate vegetables or salad",
+  Dinner: "A light, early home-cooked dinner — a protein you tolerate well with plenty of cooked vegetables",
+};
+
+function candidates(pool: Idea[], profile: Profile, avoid: string[]): string[] {
+  return pool
+    .filter((i) => fitsDiet(i, profile.diet))
+    .filter((i) => mealIdeaIsSafe(i.text, { diet: profile.diet, avoid, hidden: (i.allergens || []).map((a) => HIDDEN_INGREDIENT[a]) }))
+    .map((i) => i.text);
 }
 
 function seedFrom(s: string): number {
@@ -147,10 +164,10 @@ function seedFrom(s: string): number {
 }
 
 /** Three meal ideas per day, rotated so consecutive days don't repeat. */
-function mealIdeas(profile: Profile, dayIndex: number, seed: number): string[] {
-  const pick = (label: string, pool: Idea[], offset: number) => {
-    const list = candidates(pool, profile);
-    return `${label}: ${list[(seed + offset + dayIndex) % list.length].text}`;
+function mealIdeas(profile: Profile, avoid: string[], dayIndex: number, seed: number): string[] {
+  const pick = (label: keyof typeof GENTLE_FALLBACK, pool: Idea[], offset: number) => {
+    const list = candidates(pool, profile, avoid);
+    return `${label}: ${list.length ? list[(seed + offset + dayIndex) % list.length] : GENTLE_FALLBACK[label]}`;
   };
   return [pick("Breakfast", BREAKFASTS, 0), pick("Lunch", LUNCHES, 3), pick("Dinner", DINNERS, 7)];
 }
@@ -245,8 +262,11 @@ export function planCompensation(input: {
   startDate: string;
   occasion?: string;
   name?: string;
+  /** Foods to keep out of meal ideas — profile allergies plus avoid-facts (see `avoidList`). Defaults to profile.allergies. */
+  avoid?: string[];
 }): CompensationDraft {
   const profile = input.profile || {};
+  const avoid = input.avoid ?? profile.allergies ?? [];
   const extra = Math.round(clamp(Number(input.extra_calories) || 0, 0, 5000));
   const n = Math.round(clamp(Number(input.days) || 3, 2, 5));
   const usual = Math.max(1200, Math.round(Number(input.targets?.calories) || 2000));
@@ -275,7 +295,7 @@ export function planCompensation(input: {
     adjustment: -cut,
     focus: focusFor(i, n),
     activity: activityFor(i, walkMin, extraSteps, usualSteps),
-    meals: mealIdeas(profile, i, seed),
+    meals: mealIdeas(profile, avoid, i, seed),
   }));
 
   const backTo = addDays(input.startDate, n);

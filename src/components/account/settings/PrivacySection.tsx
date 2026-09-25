@@ -17,6 +17,7 @@ const WHAT_GETS_DELETED = [
   "Your profile, targets, preferences and everything ÖRZA remembers",
   "Every meal, photo scan, water, step and weight entry",
   "Chats, goals, rebalance plans and saved recipes",
+  "Medicines and their photos, prescriptions, dose history, reminders and synced health data",
   "Your AI credits, credit history and credit requests",
 ];
 
@@ -157,7 +158,7 @@ export function PrivacySection() {
         <div className="flex flex-col rounded-orza-sm border border-[rgba(20,20,20,0.08)] bg-white/60 p-4">
           <div className="text-[14px] font-medium text-orza-strong">Export my data</div>
           <p className="mt-1 flex-1 text-[13px] leading-relaxed text-orza-muted">
-            Download everything ÖRZA stores about you — profile, meals, chats, goals, recipes and credit history — as a JSON file.
+            Download everything ÖRZA stores about you — profile, meals, chats, goals, recipes, medicines, reminders, health data and credit history — as a JSON file.
           </p>
           <Button variant="secondary" size="sm" className="mt-4 self-start" onClick={exportData} loading={exporting}>
             {!exporting && <Download size={14} strokeWidth={1.75} aria-hidden />}

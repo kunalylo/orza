@@ -8,7 +8,7 @@ import { SITE } from "@/lib/site";
 import { EmptyState, PageHeader, StatCard } from "@/components/app/ui";
 import { useUser } from "@/components/app/UserProvider";
 import { Eyebrow, GlassCard, Tag } from "@/components/orza/primitives";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Segmented, Skeleton } from "@/components/ui/form";
 import { AppleImportCard } from "./AppleImportCard";
 import { CsvImportCard } from "./CsvImportCard";
@@ -80,6 +80,7 @@ export function HealthView() {
   const [error, setError] = React.useState<string | null>(null);
   const [tokenStatus, setTokenStatus] = React.useState<HealthTokenStatus["token"]>(null);
   const [tokenLoading, setTokenLoading] = React.useState(true);
+  const [tokenError, setTokenError] = React.useState<string | null>(null);
   const [freshToken, setFreshToken] = React.useState<string | null>(null);
   const [platform, setPlatform] = React.useState<Platform>("iphone");
   const [syncUrl, setSyncUrl] = React.useState(() => `${SITE.url.replace(/\/+$/, "")}/api/health/sync`);
@@ -133,17 +134,26 @@ export function HealthView() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [load]);
 
-  React.useEffect(() => {
-    let alive = true;
-    api
-      .get<HealthTokenStatus>("/health/token")
-      .then((r) => alive && setTokenStatus(r.token))
-      .catch(() => alive && setTokenStatus(null))
-      .finally(() => alive && setTokenLoading(false));
-    return () => {
-      alive = false;
-    };
+  const tokenAlive = React.useRef(true);
+  const loadToken = React.useCallback(async () => {
+    setTokenLoading(true);
+    setTokenError(null);
+    try {
+      const r = await api.get<HealthTokenStatus>("/health/token");
+      if (tokenAlive.current) setTokenStatus(r.token);
+    } catch (e) {
+      if (tokenAlive.current) setTokenError(errorMessage(e));
+    } finally {
+      if (tokenAlive.current) setTokenLoading(false);
+    }
   }, []);
+  React.useEffect(() => {
+    tokenAlive.current = true;
+    void loadToken();
+    return () => {
+      tokenAlive.current = false;
+    };
+  }, [loadToken]);
 
   const days = data?.days ?? [];
   const byDate = React.useMemo(() => new Map(days.map((d) => [d.date, d])), [days]);
@@ -184,14 +194,18 @@ export function HealthView() {
     <SyncTokenCard
       status={tokenStatus}
       loading={tokenLoading}
+      error={tokenError}
+      onRetry={() => void loadToken()}
       freshToken={freshToken}
       syncUrl={syncUrl}
       onCreated={(c: HealthTokenCreated) => {
         setFreshToken(c.token);
+        setTokenError(null);
         setTokenStatus({ preview: c.preview, created_at: c.created_at });
       }}
       onRevoked={() => {
         setFreshToken(null);
+        setTokenError(null);
         setTokenStatus(null);
       }}
       onDismissFresh={() => setFreshToken(null)}
@@ -302,7 +316,7 @@ export function HealthView() {
           title="No health data yet"
           description="Import your Apple Health export, connect an automation app, or upload a CSV — your steps, sleep, heart rate and weight will show up here."
           action={
-            <a href="#connect" className="inline-flex h-10 items-center rounded-full bg-[#141414] px-5 text-sm font-medium text-orza-bg-0 shadow-orza-cta hover:bg-black">
+            <a href="#connect" className={buttonVariants()}>
               See ways to connect
             </a>
           }

@@ -7,6 +7,7 @@ import { Reveal } from "@/components/orza/Reveal";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { AdjustCreditsDialog } from "@/components/account/admin/AdjustCreditsDialog";
 import { AdminOverview, AdminOverviewSkeleton } from "@/components/account/admin/AdminOverview";
+import { CreditRequestsCard } from "@/components/account/admin/CreditRequestsCard";
 import { UsersTable } from "@/components/account/admin/UsersTable";
 import { LoadError } from "@/components/account/ui";
 import type { AdjustResponse, AdminStats, AdminUserRow } from "@/components/account/types";
@@ -39,6 +40,7 @@ function AdminConsole() {
   const [refreshKey, setRefreshKey] = React.useState(0);
   const [target, setTarget] = React.useState<AdminUserRow | null>(null);
   const [adjusted, setAdjusted] = React.useState<{ userId: string; balance: number } | null>(null);
+  const [requestsKey, setRequestsKey] = React.useState(0);
 
   const loadStats = React.useCallback(async () => {
     try {
@@ -57,6 +59,7 @@ function AdminConsole() {
   async function refresh() {
     setRefreshing(true);
     setRefreshKey((k) => k + 1);
+    setRequestsKey((k) => k + 1);
     await loadStats();
     setRefreshing(false);
   }
@@ -65,6 +68,7 @@ function AdminConsole() {
     setAdjusted({ userId, balance: res.balance });
     if (userId === user.id) setCredits(res.balance); // keep the sidebar pill honest when adjusting yourself
     loadStats(); // credits-used total may have changed
+    if (res.requests_closed) setRequestsKey((k) => k + 1); // a grant closes the member's open requests
   }
 
   if (error?.forbidden) return <NotAuthorised />;
@@ -74,7 +78,7 @@ function AdminConsole() {
       <PageHeader
         eyebrow="Admin · team only"
         title="Admin panel"
-        description="Platform overview and user management."
+        description="Platform overview, credit requests and user management."
         actions={
           <Button variant="secondary" size="sm" onClick={refresh} loading={refreshing} disabled={!stats && !error}>
             {!refreshing && <RotateCw size={14} strokeWidth={1.75} aria-hidden />}
@@ -92,6 +96,10 @@ function AdminConsole() {
       )}
 
       <Reveal className="mt-8 lg:mt-10">
+        <CreditRequestsCard refreshKey={requestsKey} onTopUp={setTarget} />
+      </Reveal>
+
+      <Reveal className="mt-6 lg:mt-8">
         <UsersTable currentUserId={user.id} refreshKey={refreshKey} onAdjust={setTarget} adjusted={adjusted} />
       </Reveal>
 
@@ -100,7 +108,7 @@ function AdminConsole() {
   );
 }
 
-/** Admin: platform stats, AI/database status, member search and manual credit adjustments. */
+/** Admin: platform stats, AI/database status, credit requests, member search and manual credit adjustments. */
 export default function AdminPage() {
   const { user } = useUser();
   if (!user.is_admin) return <NotAuthorised />;

@@ -7,12 +7,13 @@ import { Button } from "@/components/ui/button";
 import { FieldHint, Label, Textarea } from "@/components/ui/form";
 import { api, errorMessage } from "@/lib/api-client";
 import { formatNumber } from "@/lib/utils";
-
-const MAX = 800;
+import { CREDIT_REQUEST_MESSAGE_MAX as MAX } from "@/components/account/options";
+import type { CreditRequestResponse, CreditRequestView } from "@/components/account/types";
 
 /**
- * "Request more credits" — there's no payment gateway yet, so the request goes to the team
- * through /api/leads (source "credits-request") and they top the account up by hand.
+ * "Request more credits" — there's no payment gateway yet, so the request goes to the team from the
+ * signed-in account (POST /api/credits/request, which records the email and balance server-side)
+ * and they top the account up by hand.
  */
 export function RequestCreditsDialog({
   open,
@@ -25,7 +26,7 @@ export function RequestCreditsDialog({
   onOpenChange: (open: boolean) => void;
   email: string;
   credits: number;
-  onSent: () => void;
+  onSent: (request: CreditRequestView) => void;
 }) {
   const [message, setMessage] = React.useState("");
   const [sending, setSending] = React.useState(false);
@@ -41,14 +42,10 @@ export function RequestCreditsDialog({
     setSending(true);
     setError(null);
     try {
-      await api.post("/leads", {
-        email,
-        source: "credits-request",
-        message: `${note || "Please top up my AI credits."}\n\n(Current balance: ${credits} credits)`,
-      });
+      const res = await api.post<CreditRequestResponse>("/credits/request", note ? { message: note } : {});
       toast.success("Request sent", { description: `Thanks! We'll reply to ${email} soon.` });
       setMessage("");
-      onSent();
+      onSent(res.request);
       onOpenChange(false);
     } catch (err) {
       setError(errorMessage(err));

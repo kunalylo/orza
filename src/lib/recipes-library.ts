@@ -6,6 +6,7 @@
  * Diet, Jain-compatibility and allergens are DERIVED from the ingredient text,
  * so the tags can never drift out of sync with what's actually in the dish.
  */
+import { conflictsWithAllergies } from "@/lib/allergens";
 import type { Diet, MealType, Nutrients, Recipe } from "@/lib/types";
 
 /* ───────────────────────────── Types ───────────────────────────── */
@@ -70,11 +71,13 @@ const DAIRY = [
   "milk", "curd", "yogurt", "yoghurt", "dahi", "paneer", "cheese", "ghee", "butter", "buttermilk", "cream", "malai", "khoa", "khoya",
   "mawa", "chhena", "chenna", "chaas", "lassi", "whey", "raita", "kefir", "labneh", "feta", "mozzarella", "parmesan", "ricotta",
   "cheddar", "halloumi", "mascarpone", "rabri", "shrikhand", "casein",
+  // dairy dishes named on their own (same words as src/lib/allergens.ts)
+  "doodh", "kheer", "rabdi", "rasmalai", "rasgulla", "kulfi", "ice cream", "latte",
 ];
 const DAIRY_SAFE = [
   "coconut milk", "almond milk", "soy milk", "soya milk", "oat milk", "rice milk", "cashew milk", "peanut butter", "almond butter",
   "cashew butter", "nut butter", "cocoa butter", "coconut cream", "cashew cream", "vegan butter", "vegan cheese", "vegan yogurt",
-  "vegan curd", "plant-based milk", "plant milk", "dairy-free", "dairy free", "coconut yogurt", "bean curd", "soy curd", "cream of tartar",
+  "vegan curd", "vegan ice cream", "plant-based milk", "plant milk", "dairy-free", "dairy free", "coconut yogurt", "bean curd", "soy curd", "cream of tartar",
 ];
 
 const JAIN_AVOID = [
@@ -83,15 +86,28 @@ const JAIN_AVOID = [
   "spring onion", "scallion", "leek", "chive", "mushroom", "honey", "pyaz", "pyaaz", "kanda", "lehsun", "lahsun",
   "fresh turmeric", "turmeric root", "cassava",
 ];
-const JAIN_SAFE = ["dry ginger", "dried ginger", "ginger powder", "sonth", "saunth", "onion seeds", "onion-free", "garlic-free", "no onion", "no garlic"];
+const JAIN_SAFE = [
+  // longest phrases first — they're stripped in order
+  "no onion or garlic", "no onion and garlic", "no onion-garlic", "no onion garlic", "without onion or garlic", "without onion and garlic",
+  "no garlic or onion", "without garlic or onion", "no onion", "no garlic", "without onion", "without garlic",
+  "dry ginger", "dried ginger", "ginger powder", "sonth", "saunth", "onion seeds", "onion-free", "garlic-free", "onion free", "garlic free",
+];
 
 const ALLERGEN_WORDS: Record<Allergen, { words: string[]; safe?: string[] }> = {
-  peanuts: { words: ["peanut", "groundnut", "moongphali", "moongfali", "mungfali"] },
+  peanuts: {
+    // "mixed nuts" and chikki often contain peanuts, so they count for both nut allergies
+    words: ["peanut", "groundnut", "moongphali", "moongfali", "mungfali", "shengdana", "singdana", "sing dana", "mixed nut", "chikki"],
+    safe: ["peanut-free", "peanut free", "no peanuts", "without peanuts"],
+  },
   "tree nuts": {
     words: [
       "almond", "cashew", "walnut", "pistachio", "hazelnut", "pecan", "pine nut", "macadamia", "brazil nut", "badam", "kaju",
       "akhrot", "pista", "chironji", "praline", "marzipan",
+      // generic words Indian recipes use all the time ("garnish with chopped nuts", "a handful of dry fruits");
+      // the word-boundary match already leaves coconut, peanut, nutmeg, butternut and chestnut alone
+      "nut", "dry fruit", "dryfruit", "dry-fruit", "mixed nut",
     ],
+    safe: ["nut-free", "nut free", "no nuts", "without nuts", "fox nut", "foxnut", "nutritional yeast"],
   },
   dairy: { words: DAIRY, safe: DAIRY_SAFE },
   gluten: {
@@ -100,8 +116,15 @@ const ALLERGEN_WORDS: Record<Allergen, { words: string[]; safe?: string[] }> = {
       "chapatti", "phulka", "paratha", "thepla", "naan", "kulcha", "pasta", "spaghetti", "macaroni", "noodle", "couscous", "bulgur",
       "seitan", "dalia", "daliya", "soy sauce", "oat", "oatmeal", "tortilla", "pita", "bun", "vermicelli", "sevai", "semiya",
       "seviyan", "cracker", "biscuit", "malt", "farro", "spelt",
+      // wheat dishes named on their own (same words as src/lib/allergens.ts)
+      "puri", "poori", "bhatura", "pav", "samosa", "kachori", "maggi", "khakhra", "rusk", "pizza", "burger",
     ],
-    safe: ["rice noodle", "rice vermicelli", "corn tortilla"],
+    // millet/rice flatbreads are naturally gluten-free; pav bhaji masala is a spice blend
+    safe: [
+      "rice noodle", "rice vermicelli", "corn tortilla", "jowar roti", "bajra roti", "ragi roti", "makki roti", "makki ki roti",
+      "akki roti", "rice roti", "jowar bhakri", "bajra bhakri", "gluten-free roti", "gluten free roti", "gluten-free oat", "gluten free oat",
+      "pav bhaji masala",
+    ],
   },
   soy: { words: ["soy", "soya", "soybean", "tofu", "edamame", "tempeh", "miso"] },
   eggs: { words: EGG, safe: EGG_SAFE },
@@ -110,19 +133,33 @@ const ALLERGEN_WORDS: Record<Allergen, { words: string[]; safe?: string[] }> = {
   sesame: { words: ["sesame", "til", "tahini", "gingelly"] },
 };
 
-/** How users (and onboarding) name allergies → canonical allergens. */
-const ALLERGY_ALIASES: Record<string, Allergen[]> = {
-  peanut: ["peanuts"], peanuts: ["peanuts"], groundnut: ["peanuts"], groundnuts: ["peanuts"], moongphali: ["peanuts"],
-  "tree nuts": ["tree nuts"], "tree nut": ["tree nuts"], nuts: ["tree nuts", "peanuts"], nut: ["tree nuts", "peanuts"],
-  almonds: ["tree nuts"], almond: ["tree nuts"], cashews: ["tree nuts"], cashew: ["tree nuts"], walnuts: ["tree nuts"],
-  dairy: ["dairy"], milk: ["dairy"], lactose: ["dairy"], "dairy / lactose": ["dairy"], paneer: ["dairy"],
-  gluten: ["gluten"], wheat: ["gluten"], coeliac: ["gluten"], celiac: ["gluten"],
-  soy: ["soy"], soya: ["soy"],
-  eggs: ["eggs"], egg: ["eggs"],
-  fish: ["fish"], seafood: ["fish", "shellfish"],
-  shellfish: ["shellfish"], prawn: ["shellfish"], prawns: ["shellfish"], shrimp: ["shellfish"], crab: ["shellfish"],
-  sesame: ["sesame"], til: ["sesame"],
-};
+/**
+ * How people name allergies (onboarding chips, free text in Settings, facts learned in chat)
+ * → canonical allergens. Matched by word containment, so "peanut allergy", "severe nut allergy",
+ * "lactose intolerant" and "allergic to cashews" all resolve.
+ */
+const ALLERGY_ALIASES: Array<[RegExp, Allergen[]]> = [
+  [/\b(peanuts?|groundnuts?|moong ?phali|moong ?fali|mungfali|shengdana|sing ?dana)\b/, ["peanuts"]],
+  [
+    /\btree ?nuts?\b|\b(almonds?|badam|cashews?|kaju|walnuts?|akhrot|pistachios?|pista|hazelnuts?|pecans?|macadamias?|pine ?nuts?|brazil ?nuts?|chironji)\b|\bdry ?-?fruits?\b/,
+    ["tree nuts"],
+  ],
+  // a bare "nut(s)" allergy covers both kinds ("tree nuts" / "peanuts" are caught above and don't match here)
+  [/(^|[^a-z])(?<!tree )(?<!pine )(?<!brazil )nuts?\b/, ["tree nuts", "peanuts"]],
+  [/\b(dairy|lactose|milk|doodh|dudh|paneer|curd|dahi|cheese|ghee|butter|cream|casein|whey)\b/, ["dairy"]],
+  [/\b(gluten|wheat|atta|maida|coeliac|celiac)\b/, ["gluten"]],
+  [/\b(soy|soya|soybeans?|tofu)\b/, ["soy"]],
+  [/\b(eggs?|anda)\b/, ["eggs"]],
+  [/\bseafood\b/, ["fish", "shellfish"]],
+  [/\b(fish|machli|machhli)\b/, ["fish"]],
+  [/\b(shellfish|prawns?|shrimps?|crabs?|lobsters?|jhinga|kolambi)\b/, ["shellfish"]],
+  [/\b(sesame|til|gingelly)\b/, ["sesame"]],
+];
+
+/** Words that describe the allergy rather than name the food ("peanut allergy" → "peanut"). */
+const ALLERGY_FILLER =
+  /\b(i am|i'm|im|am|is|has|have|severely|severe|mildly|mild|very|highly|strictly|slightly|an|a|to|any|all|kinds? of|types? of|allergic|allergy|allergies|intolerant|intolerance|sensitive|sensitivity|reactions?|avoids?|no|free|from|se|mujhe|hai|products?|foods?|items?)\b/g;
+
 
 /* ───────────────────────────── Matching helpers ───────────────────────────── */
 
@@ -161,19 +198,48 @@ function stem(w: string) {
   return s;
 }
 
-/** Split profile allergies into canonical allergens + free-text foods to avoid. */
+/**
+ * Canonical allergens named anywhere in one allergy phrase. An allergen only counts when its word
+ * survives that allergen's safe phrases, so "coconut milk" isn't dairy and "almond milk" is only tree nuts.
+ */
+function aliasAllergens(phrase: string): Allergen[] {
+  const out = new Set<Allergen>();
+  for (const [re, list] of ALLERGY_ALIASES) {
+    if (!re.test(phrase)) continue;
+    for (const a of list) if (re.test(strip(phrase, ALLERGEN_WORDS[a].safe))) out.add(a);
+  }
+  return [...out];
+}
+
+/** Allergy entries split into single foods: "tree nuts, kiwi" / "dairy and eggs" / "Dairy / lactose". */
+function allergyEntries(list: string[] = []): string[] {
+  return (Array.isArray(list) ? list : [])
+    .flatMap((raw) => String(raw || "").split(/,|;|\/|&|\+|\band\b|\bor\b|\baur\b/i))
+    .map((a) => norm(a).replace(/[()[\]{}.!?"]/g, " ").replace(/\s+/g, " ").trim())
+    .filter((a) => a && !/^(none|no|nil|na|nothing)$/.test(a));
+}
+
+/** The food named in an allergy phrase, without the filler ("severe peanut allergy" → "peanut"). */
+const allergyFood = (entry: string) => entry.replace(ALLERGY_FILLER, " ").replace(/\s+/g, " ").trim();
+
+/**
+ * Split allergies into canonical allergens + free-text foods to avoid. Canonical allergens are
+ * found by word containment ("peanut allergy" → peanuts, "lactose intolerant" → dairy); any more
+ * specific food left after the filler words ("coconut milk", "mushrooms") is kept as a custom word too.
+ */
 export function normalizeAllergies(list: string[] = []): { canon: Allergen[]; custom: string[] } {
   const canon = new Set<Allergen>();
   const custom = new Set<string>();
-  for (const raw of list) {
-    const a = norm(String(raw || "")).trim();
-    if (!a || a === "none") continue;
-    const mapped = ALLERGY_ALIASES[a];
-    if (mapped) mapped.forEach((m) => canon.add(m));
-    else {
-      const s = stem(a);
-      if (s.length >= 3) custom.add(s);
-    }
+  for (const entry of allergyEntries(list)) {
+    const mapped = aliasAllergens(entry);
+    mapped.forEach((m) => canon.add(m));
+    const food = allergyFood(entry);
+    if (!food) continue;
+    // "peanut", "tree nuts", "lactose" are fully covered by the canonical allergen.
+    const onlyAlias = mapped.length > 0 && food.split(" ").every((w) => aliasAllergens(w).length > 0 || /^(tree|dry|fruits?|pine)$/.test(w));
+    if (onlyAlias) continue;
+    const s = stem(food);
+    if (s.length >= 3) custom.add(s);
   }
   return { canon: [...canon], custom: [...custom] };
 }
@@ -220,23 +286,61 @@ const DIET_WORDS: Record<Diet, string> = {
   jain: "Jain",
 };
 
+/** Phrases that name a food of their own rather than the allergen inside them ("coconut milk", "fox nut"). */
+const SAFE_PHRASES = new Set(Object.values(ALLERGEN_WORDS).flatMap((w) => w.safe || []));
+
+/** Everything a person reads in a recipe — a garnish or side named only in a step counts too. */
+const visibleText = (r: { title?: string; description?: string; ingredients: string[]; steps?: string[] }) => [
+  r.title || "",
+  r.description || "",
+  ...r.ingredients,
+  ...(r.steps || []),
+];
+
 /**
  * Everything wrong with a recipe for this person (empty = safe).
- * Used to vet AI recipes before they're shown and to filter the library.
+ * Used to vet AI recipes before they're shown and to filter the library. Diet and allergens are
+ * checked against the whole visible recipe (title, description, ingredients and steps); foods
+ * outside the canonical allergens are also checked with the app-wide vocabulary in src/lib/allergens.ts.
  */
 export function recipeViolations(
-  recipe: { title?: string; ingredients: string[] },
+  recipe: { title?: string; description?: string; ingredients: string[]; steps?: string[] },
   opts: { diets?: Diet[]; allergies?: string[] }
 ): string[] {
-  const out: string[] = [];
-  const d = detectDiet(recipe.ingredients);
-  for (const want of opts.diets || []) if (!dietAllows(want, d)) out.push(`not ${DIET_WORDS[want]}`);
+  const out = new Set<string>();
+  const all = visibleText(recipe);
+  const d = detectDiet(all);
+  for (const want of opts.diets || []) if (!dietAllows(want, d)) out.add(`not ${DIET_WORDS[want]}`);
+
   const { canon, custom } = normalizeAllergies(opts.allergies);
-  const found = detectAllergens(recipe.ingredients);
-  for (const a of canon) if (found.includes(a)) out.push(`contains ${a}`);
-  const text = ingredientText(recipe.ingredients, recipe.title);
-  for (const c of custom) if (wordRe(c).test(text)) out.push(`contains ${c}`);
-  return out;
+  const found = detectAllergens(all);
+  for (const a of canon) if (found.includes(a)) out.add(`contains ${a}`);
+  const text = norm(all.join(" | "));
+  for (const c of custom) if (wordRe(c).test(text)) out.add(`contains ${c}`);
+
+  // Foods outside the canonical list ("mustard", "mushrooms") also go through the app-wide
+  // vocabulary, which knows their Indian names (mustard → sarson, rai, kasundi).
+  const named = ingredientText(recipe.ingredients, recipe.title);
+  for (const c of custom) {
+    // "coconut milk" is a food of its own, not dairy — the exact-phrase check above covers it.
+    if (out.has(`contains ${c}`) || SAFE_PHRASES.has(c)) continue;
+    if (conflictsWithAllergies(named, [c])) out.add(`contains ${c}`);
+  }
+  return [...out];
+}
+
+/** Diets stated in facts ÖRZA learned in chat ("Is vegan", "Follows a Jain diet"). Non-veg adds no restriction. */
+export function memoryDiets(memory: string[] | undefined | null): Diet[] {
+  const out = new Set<Diet>();
+  for (const fact of Array.isArray(memory) ? memory : []) {
+    if (typeof fact !== "string") continue;
+    const f = fact.trim().toLowerCase();
+    if (/\bnon[- ]?veg/.test(f)) continue;
+    const m = f.match(/^(?:is|follows|eats|keeps)\s+(?:an?\s+)?(?:strict(?:ly)?\s+|pure(?:ly)?\s+|fully\s+)?(vegan|vegetarian|eggetarian|jain|veg)\b/);
+    if (!m) continue;
+    out.add(m[1] === "vegan" ? "vegan" : m[1] === "jain" ? "jain" : m[1] === "eggetarian" ? "eggetarian" : "vegetarian");
+  }
+  return [...out];
 }
 
 /* ───────────────────────────── Tags ───────────────────────────── */
@@ -299,7 +403,7 @@ const SEEDS: Seed[] = [
       "Stir in cumin, dry ginger powder, hing, turmeric, salt, tomato and coriander.",
       "Heat a non-stick tawa, smear a few drops of oil and pour a ladle of batter, spreading it into a thin round.",
       "Cook on medium heat for 2 minutes until the edges lift, flip and cook 1 more minute.",
-      "Repeat with the remaining batter and serve hot with green chutney or curd.",
+      "Repeat with the remaining batter and serve hot with green chutney.",
     ],
     n: [300, 18, 45, 5.5, 6],
     tags: ["tiffin"],
@@ -330,7 +434,7 @@ const SEEDS: Seed[] = [
       "Add ginger-garlic paste and green chilli; cook for 30 seconds.",
       "Add tomato, turmeric and salt; cook until the tomato softens.",
       "Stir in the crumbled paneer and garam masala and cook for 2–3 minutes — don't overcook or it turns rubbery.",
-      "Finish with coriander and serve with a multigrain roti or on its own.",
+      "Finish with coriander and serve with a jowar roti or on its own.",
     ],
     n: [322, 20, 10, 23, 2],
   },
@@ -362,7 +466,7 @@ const SEEDS: Seed[] = [
       "Heat oil, crackle the cumin, then sauté onion, garlic and ginger until golden.",
       "Add tomato and cook until soft, then stir in the spinach purée and salt; simmer 5 minutes.",
       "Take the pan off the heat for a moment and stir in the whisked curd so it doesn't split.",
-      "Add paneer and garam masala, simmer 2 minutes and serve with roti or rice.",
+      "Add paneer and garam masala, simmer 2 minutes and serve with rice or a jowar roti.",
     ],
     n: [215, 12.5, 11, 14, 3.5],
   },
@@ -394,7 +498,7 @@ const SEEDS: Seed[] = [
       "Heat oil, crackle cumin, and cook the onions until deep golden.",
       "Add ginger-garlic paste and green chillies, then the tomato purée and powdered spices; cook until oil separates.",
       "Add the rajma with its cooking liquid, mash a few beans to thicken, and simmer 10 minutes.",
-      "Finish with garam masala and coriander. Serve with a small bowl of rice or a roti.",
+      "Finish with garam masala and coriander. Serve with a small bowl of rice or a jowar roti.",
     ],
     n: [230, 12, 35, 5, 9],
     tags: ["one-pot", "comfort"],
@@ -458,7 +562,7 @@ const SEEDS: Seed[] = [
       "Heat oil, sauté onion until soft, add tomato and green chilli and cook until mushy.",
       "Pour in the dal, adjust consistency with water and simmer 5 minutes.",
       "For the tadka, heat ghee, add cumin, garlic and red chillies until the garlic turns golden.",
-      "Pour the tadka over the dal, add coriander and serve with rice or roti.",
+      "Pour the tadka over the dal, add coriander and serve with rice or a jowar roti.",
     ],
     n: [225, 11.5, 36, 4, 8],
     tags: ["comfort"],
@@ -673,7 +777,7 @@ const SEEDS: Seed[] = [
       "Heat oil and sauté onion and green chilli until soft.",
       "Add tomato, turmeric, pav bhaji masala and salt; cook until the tomato breaks down.",
       "Crack in the eggs and stir continuously on low heat until softly set.",
-      "Finish with coriander and serve with a multigrain toast or roti.",
+      "Finish with coriander and serve with a bajra roti or on its own.",
     ],
     n: [285, 19, 6.5, 19.5, 1.5],
   },
@@ -980,7 +1084,7 @@ const SEEDS: Seed[] = [
       "Heat mustard oil until it just smokes, cool slightly and crackle the cumin.",
       "Sauté onion, garlic, ginger and green chilli until golden.",
       "Add tomatoes and spices and cook until soft, then fold in the mashed brinjal and salt.",
-      "Cook 5 minutes, garnish with coriander and serve with roti.",
+      "Cook 5 minutes, garnish with coriander and serve with a bajra roti.",
     ],
     n: [115, 2.5, 16, 5, 6.5],
   },
@@ -1864,6 +1968,8 @@ export interface PickOptions {
   max_calories?: number;
   cuisine?: string;
   diet?: Diet;
+  /** More diets that must all be respected (e.g. learned in chat). */
+  diets?: Diet[];
   allergies?: string[];
   /** Recently generated keys, newest first — rotated to the back of the queue. */
   excludeKeys?: string[];
@@ -1907,22 +2013,14 @@ const INDEX = new Map<string, Index>(
  */
 export function pickRecipe(opts: PickOptions): PickResult | null {
   const p = parsePrompt(opts.prompt || "");
-  const diets = [...new Set([...(opts.diet ? [opts.diet] : []), ...p.diets])];
+  const diets = [...new Set([...(opts.diet ? [opts.diet] : []), ...(opts.diets || []), ...p.diets])];
   const allergies = [...(opts.allergies || []), ...p.avoid];
   const cap = opts.max_calories ?? p.maxCalories;
   const recent = opts.excludeKeys || [];
 
   // 1) Safety filters — never relaxed.
-  const { canon, custom } = normalizeAllergies(allergies);
-  const safe = RECIPE_LIBRARY.filter((r) => {
-    if (!diets.every((d) => dietAllows(d, r))) return false;
-    if (canon.some((a) => r.allergens.includes(a))) return false;
-    if (custom.length) {
-      const text = ingredientText(r.ingredients, r.title);
-      if (custom.some((c) => wordRe(c).test(text))) return false;
-    }
-    return true;
-  });
+  // The same check AI recipes get: the whole visible recipe against every diet and allergy.
+  const safe = RECIPE_LIBRARY.filter((r) => diets.every((d) => dietAllows(d, r)) && !recipeViolations(r, { diets, allergies }).length);
   if (!safe.length) return null;
 
   const relaxed: PickResult["relaxed"] = [];

@@ -14,6 +14,20 @@ export type BalanceResponse = {
 
 export type TransactionsResponse = { transactions: CreditTransaction[] };
 
+/** One of the member's own "Request more credits" messages. */
+export type CreditRequestView = {
+  id: string;
+  message: string;
+  balance: number;
+  status: "open" | "done";
+  created_at: string;
+  handled_at: string | null;
+};
+
+export type CreditRequestResponse = { request: CreditRequestView };
+
+export type CreditRequestsResponse = { requests: CreditRequestView[]; pending: CreditRequestView | null };
+
 export type UserResponse = { user: PublicUser };
 
 export type ProfileResponse = UserResponse & { targets_recomputed?: boolean };
@@ -42,4 +56,20 @@ export type AdminUserRow = {
 
 export type AdminUsersResponse = { users: AdminUserRow[]; total?: number };
 
-export type AdjustResponse = { balance: number; transaction: CreditTransaction };
+export type AdjustResponse = { balance: number; transaction: CreditTransaction; requests_closed?: number };
+
+/** An open credit request as the admin panel lists it (member details read server-side). */
+export type AdminCreditRequest = {
+  id: string;
+  message: string;
+  /** Balance when the request was sent. */
+  balance: number;
+  created_at: string;
+  /** The member now (current balance etc.); null when the account no longer exists. */
+  user: AdminUserRow | null;
+  /** Name and email recorded with the request (shown if the account is gone). */
+  name: string;
+  email: string;
+};
+
+export type AdminCreditRequestsResponse = { requests: AdminCreditRequest[] };

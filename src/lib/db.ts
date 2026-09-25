@@ -105,6 +105,8 @@ async function ensureIndexes(db: Db) {
     db.collection("credit_transactions").createIndex({ user_id: 1, created_at: -1 }),
     db.collection("onboarding").createIndex({ user_id: 1 }, { unique: true }),
     db.collection("leads").createIndex({ email: 1, source: 1 }, { unique: true }),
+    db.collection("leads").createIndex({ type: 1, status: 1, created_at: 1 }),
+    db.collection("leads").createIndex({ type: 1, user_id: 1, created_at: -1 }),
     db.collection("media").createIndex({ id: 1 }, { unique: true }),
     db.collection("medications").createIndex({ user_id: 1, active: 1 }),
     db.collection("prescriptions").createIndex({ user_id: 1, created_at: -1 }),

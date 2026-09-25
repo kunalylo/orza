@@ -26,6 +26,8 @@ export interface SendResponse {
   /** Full memory list — present only when this turn taught ÖRZA something new. */
   memory?: string[];
   remembered?: string[];
+  /** Updated profile allergies — present only when this turn learned a new food allergy. */
+  allergies?: string[];
   notice?: string;
 }
 

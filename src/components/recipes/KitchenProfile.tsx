@@ -2,9 +2,10 @@ import * as React from "react";
 import Link from "next/link";
 import { ArrowUpRight, Flame, Leaf, MapPin, ShieldCheck } from "lucide-react";
 import { Eyebrow } from "@/components/orza/primitives";
+import { avoidList } from "@/lib/allergens";
 import { cn, formatNumber } from "@/lib/utils";
 import type { PublicUser } from "@/lib/types";
-import { DIET_LABELS } from "./types";
+import { DIET_LABELS, type KitchenPrefs } from "./types";
 
 /** Dark orb panel on the ÖRZA hero surface — the orb glows behind the content. */
 export function OrbSurface({ className, children }: { className?: string; children: React.ReactNode }) {
@@ -35,14 +36,19 @@ export function OrbSurface({ className, children }: { className?: string; childr
   );
 }
 
-/** "Cooking for you" — what every recipe is tuned to (diet, allergies, region, calorie budget). */
-export function KitchenProfile({ user }: { user: PublicUser }) {
+/**
+ * "Cooking for you" — what every recipe is tuned to (diet, allergies, region, calorie budget).
+ * `kitchen` comes from the server and includes diets and foods learned in chat; until it loads,
+ * the profile (plus avoid-facts from memory) is shown.
+ */
+export function KitchenProfile({ user, kitchen }: { user: PublicUser; kitchen?: KitchenPrefs | null }) {
   const p = user.profile || {};
-  const allergies = (p.allergies || []).filter((a) => a && a.toLowerCase() !== "none");
+  const diets = kitchen?.diets ?? (p.diet ? [p.diet] : []);
+  const avoid = (kitchen?.avoid ?? avoidList(p.allergies, user.memory)).filter((a) => a && !/^(none|no|nil)$/i.test(a.trim()));
   const perMeal = Math.round(((user.targets?.calories || 2000) * 0.3) / 10) * 10;
   const rows = [
-    { icon: Leaf, label: "Diet", value: p.diet ? DIET_LABELS[p.diet] : "No restriction set" },
-    { icon: ShieldCheck, label: "Always avoiding", value: allergies.length ? allergies.join(", ") : "No allergies on file" },
+    { icon: Leaf, label: "Diet", value: diets.length ? diets.map((d) => DIET_LABELS[d]).join(" · ") : "No restriction set" },
+    { icon: ShieldCheck, label: "Always avoiding", value: avoid.length ? avoid.join(", ") : "No allergies on file" },
     { icon: MapPin, label: "Home kitchen", value: p.region || "Across India" },
     {
       icon: Flame,

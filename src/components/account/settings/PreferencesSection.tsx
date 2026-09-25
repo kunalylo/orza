@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import { Check, Globe2, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { useUser } from "@/components/app/UserProvider";
@@ -186,6 +187,30 @@ export function PreferencesSection() {
               onCheckedChange={(v) => update("weekly_report", v)}
               aria-labelledby="pref-weekly-label"
               aria-describedby="pref-weekly-desc"
+            />
+          }
+        />
+        <Row
+          id="pref-ai"
+          title="Help improve ÖRZA’s AI"
+          description={
+            <>
+              Lets your conversations and logs, anonymized first, help make ÖRZA’s AI better. Turning this off doesn’t change how AI
+              features work for you.{" "}
+              <Link
+                href="/privacy#ai-processing"
+                className="rounded-sm text-orza-strong underline decoration-[rgba(20,20,20,0.25)] underline-offset-2 hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orza-cyan/40"
+              >
+                How we use data
+              </Link>
+            </>
+          }
+          control={
+            <Switch
+              checked={!prefs.ai_training_opt_out}
+              onCheckedChange={(v) => update("ai_training_opt_out", !v)}
+              aria-labelledby="pref-ai-label"
+              aria-describedby="pref-ai-desc"
             />
           }
         />

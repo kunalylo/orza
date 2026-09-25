@@ -5,6 +5,8 @@ import { badRequest, json, parseBody, route } from "@/lib/http";
 import { IMPORT_SOURCES, MAX_IMPORT_DAYS } from "@/components/care/health/metrics";
 
 export const dynamic = "force-dynamic";
+/** A year of days is a few hundred upserts; give slow database round trips room. */
+export const maxDuration = 60;
 
 const metric = z.union([z.number(), z.string().max(32), z.null()]).optional();
 

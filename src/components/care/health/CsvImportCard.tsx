@@ -203,12 +203,12 @@ export function CsvImportCard({ tz, imperial, onImported }: { tz: string; imperi
                           </label>
                           <div className="truncate text-[12px] text-orza-subtle">{sample ? `e.g. ${sample}` : "Empty column"}</div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex w-full gap-2 sm:w-auto">
                           <Select
                             id={fieldId}
                             value={m.field}
                             onChange={(e) => setField(m.index, e.target.value as CsvField)}
-                            className="h-10 w-[190px] text-[14px]"
+                            className="h-10 min-w-0 flex-1 text-[14px] sm:w-[190px] sm:flex-none"
                           >
                             {FIELD_OPTIONS.map((f) => (
                               <option key={f} value={f}>
@@ -221,7 +221,7 @@ export function CsvImportCard({ tz, imperial, onImported }: { tz: string; imperi
                               aria-label={`Unit for ${m.header}`}
                               value={m.unit}
                               onChange={(e) => setUnit(m.index, e.target.value as CsvUnit)}
-                              className="h-10 w-[104px] text-[14px]"
+                              className="h-10 w-[96px] shrink-0 text-[14px]"
                             >
                               {units.map((u) => (
                                 <option key={u} value={u}>

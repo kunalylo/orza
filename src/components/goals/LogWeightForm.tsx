@@ -6,19 +6,21 @@ import { api, errorMessage } from "@/lib/api-client";
 import type { PublicUser, TrackingDay } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { FieldHint, Input, Label } from "@/components/ui/form";
-
-const MIN_KG = 25;
-const MAX_KG = 350;
+import { MAX_WEIGHT_KG, MIN_WEIGHT_KG, kgToUnit, unitToKg, weightRange, weightUnit } from "@/components/goals/goal-math";
 
 /**
  * Inline "log today's weight" — posts to /api/track/weight, which also keeps
  * profile.weight_kg current (the updated public user comes back when it changed).
+ * The number is typed in the user's unit (kg or lb) and always sent as kg.
  */
 export function LogWeightForm({
-  placeholder,
+  placeholderKg,
+  imperial = false,
   onLogged,
 }: {
-  placeholder?: number | null;
+  /** Latest weigh-in (kg), shown as the placeholder in the user's unit. */
+  placeholderKg?: number | null;
+  imperial?: boolean;
   onLogged: (weightKg: number, tracking?: TrackingDay, user?: PublicUser) => void;
 }) {
   const [value, setValue] = React.useState("");
@@ -26,22 +28,24 @@ export function LogWeightForm({
   const [error, setError] = React.useState<string | null>(null);
   const id = React.useId();
   const hintId = React.useId();
+  const unit = weightUnit(imperial);
+  const range = weightRange(imperial);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const w = Number(value);
-    if (!value || !Number.isFinite(w) || w < MIN_KG || w > MAX_KG) {
-      setError(`Enter a weight between ${MIN_KG} and ${MAX_KG} kg.`);
+    const kg = value && Number.isFinite(w) ? unitToKg(w, imperial) : NaN;
+    if (!(kg >= MIN_WEIGHT_KG && kg <= MAX_WEIGHT_KG)) {
+      setError(`Enter a weight between ${range.min} and ${range.max} ${unit}.`);
       return;
     }
     setError(null);
     setSaving(true);
     try {
-      const rounded = Math.round(w * 10) / 10;
-      const res = await api.post<{ tracking: TrackingDay; user?: PublicUser }>("/track/weight", { weight_kg: rounded });
+      const res = await api.post<{ tracking: TrackingDay; user?: PublicUser }>("/track/weight", { weight_kg: kg });
       toast.success("Weight logged — thanks for checking in.");
       setValue("");
-      onLogged(rounded, res?.tracking, res?.user);
+      onLogged(res?.tracking?.weight_kg ?? kg, res?.tracking, res?.user);
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -59,9 +63,9 @@ export function LogWeightForm({
             type="number"
             inputMode="decimal"
             step="0.1"
-            min={MIN_KG}
-            max={MAX_KG}
-            placeholder={placeholder ? String(placeholder) : "e.g. 72.5"}
+            min={range.min}
+            max={range.max}
+            placeholder={placeholderKg ? String(kgToUnit(placeholderKg, imperial)) : imperial ? "e.g. 160" : "e.g. 72.5"}
             value={value}
             onChange={(e) => {
               setValue(e.target.value);
@@ -72,7 +76,7 @@ export function LogWeightForm({
             className="pr-11"
           />
           <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-orza-subtle" aria-hidden>
-            kg
+            {unit}
           </span>
         </div>
         <Button type="submit" loading={saving} disabled={!value} className="h-11 shrink-0">

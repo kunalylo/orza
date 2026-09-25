@@ -104,7 +104,10 @@ export const isAdmin = (u: Pick<User, "is_admin">) => u.is_admin === true;
 export function toPublicUser(u: User): PublicUser {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { password_hash, ...rest } = u;
-  return { ...rest, is_admin: isAdmin(u) };
+  // The hashed health-sync token is a credential derivative: never needed in the browser.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { health_token_hash, ...integrations } = u.integrations || {};
+  return { ...rest, ...(u.integrations ? { integrations } : {}), is_admin: isAdmin(u) };
 }
 
 /** Full user document (includes password_hash — never return it to clients). */

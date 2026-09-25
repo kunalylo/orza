@@ -14,6 +14,8 @@ import {
 import { MAX_IMPORT_DAYS } from "@/components/care/health/metrics";
 
 export const dynamic = "force-dynamic";
+/** A year of days is a few hundred upserts; give slow database round trips room. */
+export const maxDuration = 60;
 
 const HOUR = 60 * 60 * 1000;
 const TEN_MINUTES = 10 * 60 * 1000;

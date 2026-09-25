@@ -5,18 +5,18 @@
  */
 
 const ALLERGEN_KEYWORDS: Record<string, string[]> = {
-  peanut: ["peanut", "peanuts", "groundnut", "moongphali", "mungfali", "shengdana", "sing dana", "singdana", "peanut butter", "chikki"],
+  peanut: ["peanut", "peanuts", "groundnut", "groundnuts", "moongphali", "mungfali", "moongfali", "shengdana", "sing dana", "singdana", "peanut butter", "chikki"],
   tree_nut: ["almond", "badam", "cashew", "kaju", "walnut", "akhrot", "pistachio", "pista", "hazelnut", "pecan", "macadamia", "nut", "nuts", "dry fruit", "dry fruits", "praline", "marzipan"],
   dairy: [
-    "milk", "doodh", "curd", "dahi", "yogurt", "yoghurt", "paneer", "cheese", "ghee", "butter", "cream", "malai", "khoa", "khoya",
+    "dairy", "lactose", "milk", "doodh", "dudh", "curd", "dahi", "yogurt", "yoghurt", "paneer", "cheese", "ghee", "butter", "cream", "malai", "khoa", "khoya",
     "mawa", "lassi", "chaas", "buttermilk", "raita", "kheer", "rabdi", "rasmalai", "rasgulla", "kulfi", "ice cream", "shrikhand", "whey", "latte", "chai",
   ],
   gluten: [
-    "wheat", "atta", "maida", "roti", "chapati", "phulka", "paratha", "naan", "kulcha", "puri", "bhatura", "bread", "pav", "bun", "pasta",
+    "gluten", "wheat", "gehun", "gehu", "atta", "maida", "roti", "chapati", "phulka", "paratha", "naan", "kulcha", "puri", "bhatura", "bread", "pav", "bun", "pasta",
     "noodle", "noodles", "maggi", "semolina", "suji", "sooji", "rava", "upma", "barley", "jau", "rye", "seitan", "biscuit", "cake", "pizza", "burger", "samosa", "kachori", "dalia", "toast", "rusk", "khakhra", "thepla",
   ],
   soy: ["soy", "soya", "tofu", "edamame", "tempeh", "soya chunks", "nutrela", "miso"],
-  egg: ["egg", "eggs", "anda", "omelette", "omelet", "bhurji", "mayonnaise", "mayo", "meringue"],
+  egg: ["egg", "eggs", "anda", "omelette", "omelet", "mayonnaise", "mayo", "meringue"],
   fish: ["fish", "machli", "machhli", "macher", "machher", "salmon", "tuna", "pomfret", "rohu", "surmai", "bangda", "sardine", "hilsa", "ilish", "anchovy"],
   shellfish: ["prawn", "prawns", "jhinga", "shrimp", "crab", "lobster", "oyster", "mussel", "clam", "squid", "kolambi"],
   sesame: ["sesame", "til", "gingelly", "tahini", "tilkut"],
@@ -24,14 +24,14 @@ const ALLERGEN_KEYWORDS: Record<string, string[]> = {
 };
 
 const ALIASES: Array<[RegExp, string]> = [
-  [/peanut|groundnut|moongphali/, "peanut"],
+  [/peanut|groundnut|moong ?phali|mung ?fali|moongfali/, "peanut"],
   [/\btree ?nuts?\b|almond|cashew|walnut|pista|\bnuts?\b|dry ?fruit/, "tree_nut"],
-  [/dairy|lactose|milk/, "dairy"],
-  [/gluten|wheat|celiac|coeliac/, "gluten"],
+  [/dairy|lactose|milk|\bdoodh\b|\bdudh\b|paneer|curd|dahi/, "dairy"],
+  [/gluten|wheat|celiac|coeliac|\bgehu?n?\b|\batta\b|maida/, "gluten"],
   [/soy|soya/, "soy"],
-  [/\beggs?\b/, "egg"],
+  [/\beggs?\b|\banda\b|\bande\b/, "egg"],
   [/shellfish|prawn|shrimp|crab|lobster/, "shellfish"],
-  [/fish|seafood/, "fish"],
+  [/\bfish\b|seafood|machh?li|\bmachh?er\b/, "fish"],
   [/sesame|til\b/, "sesame"],
   [/mustard/, "mustard"],
 ];

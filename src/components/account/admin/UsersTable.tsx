@@ -77,8 +77,8 @@ function RowsSkeleton() {
 }
 
 /**
- * Member directory for admins: debounced name/email search over the newest 500 members,
- * with a credit-adjust action per row. `refreshKey` forces a reload from the parent.
+ * Member directory for admins: debounced name/email search across every member (newest first,
+ * an exact email match on top), with a credit-adjust action per row. `refreshKey` forces a reload.
  */
 export function UsersTable({
   currentUserId,
@@ -200,7 +200,7 @@ export function UsersTable({
           className="mt-5"
           icon={<UsersRound size={20} strokeWidth={1.75} aria-hidden />}
           title={q ? "No members match" : "No members yet"}
-          description={q ? `Nothing in the newest 500 members matches “${q}”. Try part of an email address.` : "New sign-ups will appear here."}
+          description={q ? `No member’s name or email contains “${q}”. Check the spelling, or try part of the email address.` : "New sign-ups will appear here."}
           action={
             q ? (
               <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
@@ -298,7 +298,8 @@ export function UsersTable({
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[rgba(20,20,20,0.06)] pt-4">
             <span className="text-xs text-orza-subtle">
               Showing {formatNumber(rows.length)} of {formatNumber(total)}
-              {q ? ` matching “${q}”` : ""} · searches the newest 500 members
+              {q ? ` matching “${q}”` : " · newest first"}
+              {total > rows.length && limit >= MAX_LIMIT ? " · search by name or email to find anyone else" : ""}
             </span>
             {canShowMore && (
               <Button variant="ghost" size="sm" onClick={() => setLimit((l) => Math.min(MAX_LIMIT, l + PAGE))} disabled={loading}>

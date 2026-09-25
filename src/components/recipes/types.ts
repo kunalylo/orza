@@ -8,10 +8,18 @@ export type RecipeItem = Recipe & {
   prompt?: string;
 };
 
+/** The diets and foods every recipe is checked against: profile + what ÖRZA learned in chat. */
+export interface KitchenPrefs {
+  /** Strictest first. */
+  diets: Diet[];
+  avoid: string[];
+}
+
 export interface RecipesResponse {
   recipes: RecipeItem[];
   ai_enabled: boolean;
   cost: number;
+  kitchen?: KitchenPrefs;
 }
 
 export interface GenerateRequest {

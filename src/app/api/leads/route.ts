@@ -1,11 +1,14 @@
 import { z } from "zod";
 import { col, newId, nowISO } from "@/lib/db";
-import { json, parseBody, route } from "@/lib/http";
+import { BODY_LIMIT_SMALL, json, parseBody, route } from "@/lib/http";
 
 /**
  * POST /api/leads {email, source, message?} → {ok:true}
- * Public (no auth). Newsletter sign-ups and contact messages from the marketing site.
- * Dedupes on email+source and applies a small in-memory per-IP rate limit.
+ * Public (no auth). Newsletter sign-ups and plan wait-lists from the marketing site.
+ * Only known public sources are accepted — account messages such as "Request more credits" go
+ * through authenticated routes (POST /api/credits/request) so nobody can send or overwrite them
+ * on someone else's behalf. Dedupes on email+source (a repeat is a no-op: the first message is
+ * kept, never replaced) and applies a small in-memory per-IP rate limit.
  */
 
 export const runtime = "nodejs";
@@ -13,9 +16,21 @@ export const dynamic = "force-dynamic";
 
 type Lead = { id: string; email: string; source: string; message?: string; created_at: string; updated_at?: string };
 
+/**
+ * Public sources: the site footer newsletter, the contact form and pricing-plan wait-lists (`plan:<id>`).
+ * Anything else — in particular the reserved "credits-request" family — is rejected.
+ */
+const PUBLIC_SOURCE = /^(?:footer|newsletter|contact|waitlist|plan:[a-z0-9][a-z0-9_-]{0,31})$/;
+
 const LeadSchema = z.object({
   email: z.string().trim().toLowerCase().max(254, "Email is too long").email("Please enter a valid email"),
-  source: z.string().trim().min(1, "Source is required").max(40, "Source must be 40 characters or fewer"),
+  source: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1, "Source is required")
+    .max(40, "Source must be 40 characters or fewer")
+    .regex(PUBLIC_SOURCE, "Unknown sign-up source"),
   message: z.string().trim().max(1000, "Message must be 1000 characters or fewer").optional(),
 });
 
@@ -59,16 +74,14 @@ export const POST = route(async (req: Request) => {
     );
   }
 
-  const { email, source, message } = await parseBody(req, LeadSchema);
+  const { email, source, message } = await parseBody(req, LeadSchema, { maxBytes: BODY_LIMIT_SMALL });
 
-  // Upsert on email+source: a repeat sign-up is a silent no-op that still returns ok.
-  // A repeat *message* (e.g. a second "Request more credits") replaces the stored one so the team sees it.
+  // Upsert on email+source: a repeat is a silent no-op that still returns ok. The first message is
+  // kept — an unauthenticated caller must never be able to replace what someone else wrote.
   const now = nowISO();
   await col<Lead>("leads").updateOne(
     { email, source },
-    message
-      ? { $setOnInsert: { id: newId(), created_at: now }, $set: { message, updated_at: now } }
-      : { $setOnInsert: { id: newId(), created_at: now } },
+    { $setOnInsert: { id: newId(), created_at: now, ...(message ? { message } : {}) } },
     { upsert: true }
   );
 

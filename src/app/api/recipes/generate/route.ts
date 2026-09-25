@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { avoidList } from "@/lib/allergens";
 import { requireUser } from "@/lib/auth";
 import { aiEnabled, aiJSON } from "@/lib/ai";
 import { withCredits } from "@/lib/credits";
@@ -9,6 +10,7 @@ import { HttpError, json, parseBody, route } from "@/lib/http";
 import {
   DIET_TAGS,
   deriveTags,
+  memoryDiets,
   pickRecipe,
   promptConstraints,
   recipeViolations,
@@ -146,7 +148,8 @@ async function aiRecipe(input: {
     system:
       "You are ÖRZA's recipe creator. Create ONE practical, home-style recipe personalised to this person. " +
       "Prefer Indian regional home cooking (respect their region) unless they ask for another cuisine. " +
-      `${DIET_RULES} Follow every listed diet and never include any listed allergy or avoided food, not even as a garnish or optional topping. ` +
+      `${DIET_RULES} Follow every listed diet and never include any listed allergy or avoided food, not even as a garnish, optional topping or serving suggestion. ` +
+      "Don't name an excluded food anywhere in the recipe — not in the title, description or steps, and not as a swap (\"instead of paneer\"). " +
       "Ingredients must include quantities for the stated servings. Steps are short, clear imperative sentences (4–8 steps). " +
       "Nutrition is per serving and must be realistic (IFCT/USDA-based estimates) and consistent with the macros. " +
       "If a calorie cap is given, the per-serving calories must stay under it. Don't repeat any of the recent recipes. " +
@@ -206,8 +209,11 @@ export const POST = route(async (req: Request) => {
 
   const fromPrompt = promptConstraints(body.prompt);
   const diet = body.diet ?? profile.diet;
-  const diets = [...new Set<Diet>([...(diet ? [diet] : []), ...fromPrompt.diets])];
-  const allergies = (profile.allergies || []).filter((a) => a && a.toLowerCase() !== "none");
+  // Diets told to ÖRZA in chat ("I'm vegan") count too, unless a diet was picked for this request.
+  const learnedDiets = body.diet ? [] : memoryDiets(user.memory);
+  const diets = [...new Set<Diet>([...(diet ? [diet] : []), ...learnedDiets, ...fromPrompt.diets])];
+  // Profile allergies plus allergies/avoided foods learned in chat ("Allergic to cashews").
+  const allergies = avoidList(profile.allergies, user.memory).filter((a) => a.trim().toLowerCase() !== "none");
   const avoid = [...new Set([...allergies, ...fromPrompt.avoid])];
   const cap = body.max_calories ?? fromPrompt.max_calories;
 
@@ -244,6 +250,7 @@ export const POST = route(async (req: Request) => {
       max_calories: body.max_calories,
       cuisine: body.cuisine,
       diet,
+      diets: learnedDiets,
       allergies,
       excludeKeys: recent.map((r) => r.library_key).filter((k): k is string => !!k),
       region: profile.region,

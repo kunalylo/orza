@@ -12,12 +12,24 @@ import { FieldHint, Input, Label, Segmented, Select } from "@/components/ui/form
 import { OrbPanel } from "@/components/goals/OrbPanel";
 import {
   GAIN_PACES,
+  KG_PER_LB,
   LOSS_PACES,
+  MAX_HEIGHT_CM,
+  MAX_WEIGHT_KG,
+  MIN_HEIGHT_CM,
+  MIN_WEIGHT_KG,
+  cmToFeetInches,
+  feetInchesToCm,
   formatLongDate,
+  formatPace,
   goalInputError,
   healthyFloorKg,
+  kgToUnit,
   planGoal,
   signedRate,
+  unitToKg,
+  weightRange,
+  weightUnit,
 } from "@/components/goals/goal-math";
 import type { GoalCalculateResponse } from "@/components/goals/types";
 
@@ -68,9 +80,82 @@ function Field({ id, label, unit, hint, error, ...rest }: { id: string; label: s
   );
 }
 
+/** Height typed as feet + inches (imperial units). */
+function FeetInchesField({
+  id,
+  ft,
+  inches,
+  onFt,
+  onInches,
+  error,
+}: {
+  id: string;
+  ft: string;
+  inches: string;
+  onFt: (v: string) => void;
+  onInches: (v: string) => void;
+  error?: string | null;
+}) {
+  const hintId = `${id}-hint`;
+  const described = error ? hintId : undefined;
+  return (
+    <fieldset>
+      <legend className="mb-1.5 text-[13px] font-medium text-orza-strong">Height</legend>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="relative">
+          <Input
+            id={`${id}-ft`}
+            aria-label="Height, feet"
+            type="number"
+            inputMode="numeric"
+            min={3}
+            max={8}
+            step={1}
+            placeholder="5"
+            value={ft}
+            onChange={(e) => onFt(e.target.value)}
+            aria-invalid={!!error}
+            aria-describedby={described}
+            className="pr-8"
+          />
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-orza-subtle" aria-hidden>
+            ft
+          </span>
+        </div>
+        <div className="relative">
+          <Input
+            id={`${id}-in`}
+            aria-label="Height, inches"
+            type="number"
+            inputMode="decimal"
+            min={0}
+            max={11.5}
+            step="0.5"
+            placeholder="6"
+            value={inches}
+            onChange={(e) => onInches(e.target.value)}
+            aria-invalid={!!error}
+            aria-describedby={described}
+            className="pr-8"
+          />
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-orza-subtle" aria-hidden>
+            in
+          </span>
+        </div>
+      </div>
+      {error && (
+        <FieldHint id={hintId} className="text-[#B02C2C]">
+          {error}
+        </FieldHint>
+      )}
+    </fieldset>
+  );
+}
+
 /**
  * Goal planner: goal type, weights, a safe pace and the profile details that
  * drive BMR/TDEE — with a live calorie preview (pure `planGoal`, same maths as the server).
+ * Weights and height are typed in the user's unit preference and always sent as kg / cm.
  */
 export function GoalCalculator({
   goal: active,
@@ -78,13 +163,17 @@ export function GoalCalculator({
   latestWeight,
   currentTargets,
   today,
+  imperial = false,
   onSaved,
 }: {
   goal: Goal | null;
   profile: Profile;
+  /** Latest weigh-in (kg). "Current weight" follows it whenever a new weigh-in is logged on the page. */
   latestWeight: number | null;
   currentTargets: Targets;
   today: string;
+  /** Show and read weights in lb and height in ft/in (Settings → Units). */
+  imperial?: boolean;
   onSaved: (res: GoalCalculateResponse) => void;
 }) {
   const reduce = useReducedMotion();
@@ -92,20 +181,35 @@ export function GoalCalculator({
 
   const initialGoal: GoalType = active?.goal || profile.goal || "lose";
   const [goal, setGoal] = React.useState<GoalType>(initialGoal);
+  const unit = weightUnit(imperial);
+  const range = weightRange(imperial);
   const [current, setCurrent] = React.useState(() => {
     const w = latestWeight ?? profile.weight_kg;
-    return w ? String(w) : "";
+    return w ? String(kgToUnit(w, imperial)) : "";
   });
   const [target, setTarget] = React.useState(() => {
     const t = active && active.goal !== "maintain" ? active.target_weight_kg : profile.target_weight_kg;
-    return t ? String(t) : "";
+    return t ? String(kgToUnit(t, imperial)) : "";
   });
   const [pace, setPace] = React.useState<number>(() => nearestPace(initialGoal, active?.weekly_rate_kg));
   const [height, setHeight] = React.useState(profile.height_cm ? String(profile.height_cm) : "");
+  const [heightFt, setHeightFt] = React.useState(() => (profile.height_cm ? String(cmToFeetInches(profile.height_cm).ft) : ""));
+  const [heightIn, setHeightIn] = React.useState(() => (profile.height_cm ? String(cmToFeetInches(profile.height_cm).inches) : ""));
+  // Until ft/in are edited, keep the stored centimetres exactly (whole-inch rounding would drift them).
+  const [heightEdited, setHeightEdited] = React.useState(false);
   const [age, setAge] = React.useState(profile.age ? String(profile.age) : "");
   const [sex, setSex] = React.useState<Sex | "">(profile.sex || "");
   const [activity, setActivity] = React.useState<ActivityLevel>(profile.activity_level || "light");
   const [saving, setSaving] = React.useState(false);
+
+  // A weigh-in logged elsewhere on the page is the freshest number we have — follow it, so saving
+  // the planner never writes an older "current weight" over today's weigh-in.
+  const seenLatest = React.useRef(latestWeight);
+  React.useEffect(() => {
+    if (latestWeight == null || latestWeight === seenLatest.current) return;
+    seenLatest.current = latestWeight;
+    setCurrent(String(kgToUnit(latestWeight, imperial)));
+  }, [latestWeight, imperial]);
 
   const changeGoal = (g: GoalType) => {
     setGoal(g);
@@ -113,25 +217,36 @@ export function GoalCalculator({
   };
 
   /* ─── derived ─── */
-  const cur = num(current);
-  const tgt = goal === "maintain" ? cur : num(target);
-  const h = num(height);
+  const curInput = num(current);
+  const cur = Number.isFinite(curInput) ? unitToKg(curInput, imperial) : NaN;
+  const tgtInput = num(target);
+  const tgt = goal === "maintain" ? cur : Number.isFinite(tgtInput) ? unitToKg(tgtInput, imperial) : NaN;
+  const ftN = num(heightFt);
+  const inN = heightIn.trim() === "" ? 0 : num(heightIn);
+  const h = !imperial
+    ? num(height)
+    : !heightEdited && profile.height_cm
+      ? profile.height_cm
+      : Number.isInteger(ftN) && ftN >= 0 && Number.isFinite(inN) && inN >= 0 && inN < 12
+        ? feetInchesToCm(ftN, inN)
+        : NaN;
   const a = num(age);
-  const curOk = valid(cur, 25, 350);
-  const tgtOk = valid(tgt, 25, 350);
-  const hOk = valid(h, 100, 250);
+  const curOk = valid(cur, MIN_WEIGHT_KG, MAX_WEIGHT_KG);
+  const tgtOk = valid(tgt, MIN_WEIGHT_KG, MAX_WEIGHT_KG);
+  const hOk = valid(h, MIN_HEIGHT_CM, MAX_HEIGHT_CM);
+  const heightTyped = imperial ? heightFt.trim() !== "" || heightIn.trim() !== "" : height.trim() !== "";
   const aOk = valid(a, 13, 100) && Number.isInteger(a);
   const rate = signedRate(goal, pace);
 
   const fieldErrors = {
-    current: current && !curOk ? "Enter a weight between 25 and 350 kg." : null,
-    target: goal !== "maintain" && target && !tgtOk ? "Enter a target between 25 and 350 kg." : null,
-    height: height && !hOk ? "Height between 100 and 250 cm." : null,
+    current: current && !curOk ? `Enter a weight between ${range.min} and ${range.max} ${unit}.` : null,
+    target: goal !== "maintain" && target && !tgtOk ? `Enter a target between ${range.min} and ${range.max} ${unit}.` : null,
+    height: heightTyped && !hOk ? (imperial ? "Enter a height between 3 ft 4 in and 8 ft 2 in." : "Height between 100 and 250 cm.") : null,
     age: age && !aOk ? "ÖRZA goal planning is for ages 13–100." : null,
   };
 
   const ready = curOk && tgtOk && hOk && aOk;
-  const inputError = ready ? goalInputError({ goal, current: cur, target: tgt, rate, heightCm: h }) : null;
+  const inputError = ready ? goalInputError({ goal, current: cur, target: tgt, rate, heightCm: h, imperial }) : null;
 
   const plan = React.useMemo(() => {
     if (!ready) return null;
@@ -161,8 +276,8 @@ export function GoalCalculator({
     try {
       const res = await api.post<GoalCalculateResponse>("/goals/calculate", {
         goal,
-        current_weight_kg: Math.round(cur * 10) / 10,
-        target_weight_kg: Math.round(tgt * 10) / 10,
+        current_weight_kg: cur,
+        target_weight_kg: tgt,
         weekly_rate_kg: rate,
         height_cm: Math.round(h * 10) / 10,
         age: a,
@@ -202,13 +317,13 @@ export function GoalCalculator({
           <Field
             id={`${uid}-current`}
             label="Current weight"
-            unit="kg"
+            unit={unit}
             type="number"
             inputMode="decimal"
             step="0.1"
-            min={25}
-            max={350}
-            placeholder="e.g. 72.5"
+            min={range.min}
+            max={range.max}
+            placeholder={imperial ? "e.g. 160" : "e.g. 72.5"}
             value={current}
             onChange={(e) => setCurrent(e.target.value)}
             error={fieldErrors.current}
@@ -216,24 +331,24 @@ export function GoalCalculator({
           {goal === "maintain" ? (
             <div>
               <Label htmlFor={`${uid}-target`}>Target weight</Label>
-              <Input id={`${uid}-target`} value={curOk ? `${cur} kg` : "Same as current"} disabled readOnly aria-describedby={`${uid}-target-hint`} />
+              <Input id={`${uid}-target`} value={curOk ? `${kgToUnit(cur, imperial)} ${unit}` : "Same as current"} disabled readOnly aria-describedby={`${uid}-target-hint`} />
               <FieldHint id={`${uid}-target-hint`}>ÖRZA will help you hold steady around here.</FieldHint>
             </div>
           ) : (
             <Field
               id={`${uid}-target`}
               label="Target weight"
-              unit="kg"
+              unit={unit}
               type="number"
               inputMode="decimal"
               step="0.1"
-              min={25}
-              max={350}
-              placeholder={goal === "lose" ? "e.g. 66" : "e.g. 60"}
+              min={range.min}
+              max={range.max}
+              placeholder={goal === "lose" ? (imperial ? "e.g. 145" : "e.g. 66") : imperial ? "e.g. 132" : "e.g. 60"}
               value={target}
               onChange={(e) => setTarget(e.target.value)}
               error={fieldErrors.target}
-              hint={goal === "lose" && floorKg ? `The healthy range for your height starts around ${floorKg} kg.` : undefined}
+              hint={goal === "lose" && floorKg ? `The healthy range for your height starts around ${imperial ? `${Math.ceil(floorKg / KG_PER_LB)} lb` : `${floorKg} kg`}.` : undefined}
             />
           )}
         </div>
@@ -263,7 +378,7 @@ export function GoalCalculator({
                       {selected && <Check size={14} strokeWidth={2} className="shrink-0 text-[#E0593F]" aria-hidden />}
                     </span>
                     <span className="mt-0.5 block font-mono text-[11px] tracking-[0.02em] text-orza-muted">
-                      {p.rate} kg/wk
+                      {formatPace(p.rate, imperial)}/wk
                     </span>
                     <span className="mt-1 hidden text-[12px] leading-snug text-orza-subtle sm:block">
                       {goal === "gain" ? "Lean, steady gains — kind to your body" : PACE_NOTES[p.rate]}
@@ -274,8 +389,8 @@ export function GoalCalculator({
             </div>
             <FieldHint>
               {goal === "lose"
-                ? "ÖRZA keeps weight loss at 1 kg a week or less, and never plans below a safe calorie floor."
-                : "ÖRZA keeps weight gain to 0.5 kg a week or less so it stays lean."}
+                ? `ÖRZA keeps weight loss at ${imperial ? "about 2.2 lb" : "1 kg"} a week or less, and never plans below a safe calorie floor.`
+                : `ÖRZA keeps weight gain to ${imperial ? "about 1.1 lb" : "0.5 kg"} a week or less so it stays lean.`}
             </FieldHint>
           </fieldset>
         )}
@@ -284,19 +399,36 @@ export function GoalCalculator({
           <Eyebrow className="text-[11px]">About you</Eyebrow>
           <p className="mt-1 text-[13px] text-orza-muted">Used to estimate your energy needs. Prefilled from your profile — update anything that&apos;s changed.</p>
           <div className="mt-4 grid grid-cols-2 gap-4">
-            <Field
-              id={`${uid}-height`}
-              label="Height"
-              unit="cm"
-              type="number"
-              inputMode="decimal"
-              min={100}
-              max={250}
-              placeholder="e.g. 165"
-              value={height}
-              onChange={(e) => setHeight(e.target.value)}
-              error={fieldErrors.height}
-            />
+            {imperial ? (
+              <FeetInchesField
+                id={`${uid}-height`}
+                ft={heightFt}
+                inches={heightIn}
+                onFt={(v) => {
+                  setHeightFt(v);
+                  setHeightEdited(true);
+                }}
+                onInches={(v) => {
+                  setHeightIn(v);
+                  setHeightEdited(true);
+                }}
+                error={fieldErrors.height}
+              />
+            ) : (
+              <Field
+                id={`${uid}-height`}
+                label="Height"
+                unit="cm"
+                type="number"
+                inputMode="decimal"
+                min={MIN_HEIGHT_CM}
+                max={MAX_HEIGHT_CM}
+                placeholder="e.g. 165"
+                value={height}
+                onChange={(e) => setHeight(e.target.value)}
+                error={fieldErrors.height}
+              />
+            )}
             <Field
               id={`${uid}-age`}
               label="Age"
@@ -395,7 +527,7 @@ export function GoalCalculator({
                 <li className="flex justify-between gap-3 border-b border-white/10 pb-2">
                   <span>Weekly change</span>
                   <span className="tabular-nums text-white">
-                    {goal === "maintain" ? "Hold steady" : `${plan.weeklyRate < 0 ? "−" : "+"}${Math.abs(plan.weeklyRate)} kg`}
+                    {goal === "maintain" ? "Hold steady" : `${plan.weeklyRate < 0 ? "−" : "+"}${formatPace(plan.weeklyRate, imperial)}`}
                   </span>
                 </li>
                 <li className="flex justify-between gap-3">
@@ -418,7 +550,7 @@ export function GoalCalculator({
               {plan.paceAdjusted && (
                 <p className="mt-4 flex gap-2 rounded-orza-sm border border-[rgba(255,180,84,0.35)] bg-[rgba(255,180,84,0.10)] px-3 py-2.5 text-[13px] leading-snug text-[#FFE7C8]">
                   <Info size={15} strokeWidth={1.75} className="mt-0.5 shrink-0" aria-hidden />
-                  To keep your calories at a safe level, ÖRZA will plan a gentler {Math.abs(plan.weeklyRate)} kg a week.
+                  To keep your calories at a safe level, ÖRZA will plan a gentler {formatPace(plan.weeklyRate, imperial)} a week.
                 </p>
               )}
             </motion.div>

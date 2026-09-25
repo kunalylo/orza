@@ -11,9 +11,8 @@ import { allergyKeywords, allergyList, avoidList, conflictsWithAllergies } from 
 import { createMeal, dayTotals, guessMealType, listMeals, sumNutrients } from "@/lib/domain/meals";
 import { getTrackingDay, setTracking } from "@/lib/domain/tracking";
 import { DEFAULT_TARGETS } from "@/lib/domain/targets";
-import { FOODS, findFood, nutrientsFor, parseMealText, type FoodDiet, type FoodEntry } from "@/lib/nutrition";
+import { FOODS, ITEM_LIMITS, clampToItemLimits, findFood, maxServingsFor, nutrientsFor, parseMealText, type FoodDiet, type FoodEntry } from "@/lib/nutrition";
 import { DEFAULT_TZ, addDays, dateInTz, hourInTz, isISODate, weekdayShort } from "@/lib/dates";
-import { memoryFacts } from "@/lib/onboarding";
 import { clamp, formatNumber, round } from "@/lib/utils";
 import type { ChatMessage, Diet, Meal, MealItem, MealType, Nutrients, Profile, PublicUser, Targets } from "@/lib/types";
 
@@ -305,37 +304,84 @@ function waterGlasses(t: string): number {
 
 /* ───────────────────────────── Durable facts ───────────────────────────── */
 
-const FACT_STOP = /^(much|a lot|anything|enough|properly|well|on time|after|before|late|early|outside|out|that|this|it|much at night)\b/;
+/** Objects that are never a food ("I don't eat much", "I can't eat for the next 2 hours", "I hate you"). */
+const FACT_STOP =
+  /^(much|a lot|anything|everything|something|nothing|enough|properly|well|on time|after|before|late|early|outside|out|for|at all|any more|anymore|till|until|while|when|with|without|that|this|it|them|you|him|her|me|myself|people|anyone|someone)\b/;
+/** Words that make a statement temporary or not about food — such a sentence is not a durable fact. */
+const FACT_TRANSIENT =
+  /\b(today|tonight|tomorrow|yesterday|now|right now|currently|at the moment|this (?:week|month|morning|afternoon|evening|time|weekend)|for (?:the )?(?:next|now|a (?:few|couple|while))|these days|fasting|vrat|upvas|sick|ill|unwell|upset|aaj|abhi|you|it|that|this|them|him|her|me|people|anyone|someone)\b/;
+/** Clause words after a comma: "roti, stomach is upset" ends the list; "peanuts, dairy and eggs" doesn't. */
+const CLAUSE_WORD = /\b(is|am|are|was|were|be|been|feel|feeling|have|has|had|do|does|did|got|get|so|but|because|since|which|who|i|my|me|we)\b/;
+/** Foods, ingredients and food groups people commonly avoid or dislike, beyond what the food list knows. */
+const FOOD_WORD =
+  /\b(meat|mutton|chicken|beef|pork|fish|seafood|prawns?|eggs?|onions?|garlic|potato(?:es)?|mushrooms?|coriander|brinjal|baingan|karela|bitter gourd|lauki|tinda|capsicum|sugar|sweets?|spicy|oily|fried|junk|milk|dairy|paneer|curd|dahi|ghee|butter|cheese|wheat|gluten|maida|rice|roti|bread|nuts?|peanuts?|soy|soya|tofu|sesame|til|mustard|jaggery|tea|coffee|chai|alcohol|red meat|non[- ]?veg|breakfast|lunch|dinner|snacks?)\b/;
 
 function factObject(s: string) {
-  const cut = s.split(/\s+(?:and i|but|so|because|since|,? which)\b|[.!?;]/)[0].trim();
-  return cut.replace(/\s+/g, " ").slice(0, 40).replace(/[ ,&-]+$/, "");
+  const [first, ...rest] = s.split(/\s+(?:and i|but|so|because|since|which|when|while|if|as)\b|[.!?;]/)[0].split(",");
+  const parts = [first];
+  // Keep a comma list ("peanuts, dairy and eggs"); stop at the first clause ("roti tonight, stomach is upset").
+  for (const seg of rest) {
+    const w = seg.trim();
+    if (!w || w.split(/\s+/).length > 3 || CLAUSE_WORD.test(w)) break;
+    parts.push(w);
+  }
+  return parts
+    .join(", ")
+    .replace(/\s+/g, " ")
+    .replace(/\s+(?:any ?more|at all|ever)\s*$/, "")
+    .trim()
+    .slice(0, 40)
+    .replace(/[ ,&-]+$/, "");
 }
 
-/** Durable personal facts stated plainly ("I'm vegetarian", "I'm allergic to peanuts", "mujhe dudh se allergy hai"). */
-export function extractFacts(text: string): string[] {
+/** A durable object: not a stop word, nothing temporary ("tonight", "for now"), and — when asked — clearly a food. */
+function durableObject(o: string, mustBeFood: boolean): boolean {
+  if (!o || o.length < 2 || FACT_STOP.test(o) || FACT_TRANSIENT.test(o)) return false;
+  if (!mustBeFood) return true;
+  if (FOOD_WORD.test(o) || allergyKeywords([o]).length > 2) return true;
+  try {
+    return !!findFood(o);
+  } catch {
+    return false;
+  }
+}
+
+const HINDI_ALLERGEN: Record<string, string> = { dudh: "milk", doodh: "milk", moongphali: "peanuts", mungfali: "peanuts", anda: "eggs", ande: "eggs", gehun: "wheat", machli: "fish" };
+
+/**
+ * Durable personal facts stated plainly ("I'm vegetarian", "I'm allergic to peanuts", "mujhe dudh se allergy hai",
+ * "I don't eat mushrooms"). Temporary statements ("I can't eat roti tonight") and non-foods ("I hate you") are ignored.
+ * `safetyOnly` keeps just the high-precision diet / allergy / intolerance facts — used alongside the AI's own memory_add.
+ */
+export function extractFacts(text: string, opts: { safetyOnly?: boolean } = {}): string[] {
   const t = norm(text);
   const out: string[] = [];
   let m: RegExpMatchArray | null;
+  const negated = /\b(not|no longer|never|isn't|wasn't|nahi|nahin)\b/;
   if ((m = t.match(/\bi(?:'m| am)\s+(?:a\s+)?(?:pure\s+|strict\s+)?(vegetarian|vegan|eggetarian|jain|non[- ]?veg(?:etarian)?)\b/)))
     out.push(`Is ${m[1].startsWith("non") ? "non-vegetarian" : m[1]}`);
   if ((m = t.match(/\b(?:main|mai|mein)\s+(vegetarian|vegan|jain|eggetarian|non[- ]?veg)\s+(?:hoon|hu|hun)\b/)))
     out.push(`Is ${m[1].startsWith("non") ? "non-vegetarian" : m[1]}`);
-  if ((m = t.match(/\bi(?:'m| am)\s+(?:severely\s+|mildly\s+|very\s+)?allergic\s+to\s+([a-z][a-z ,&-]{1,60})/))) {
+  if ((m = t.match(/\bi(?:'m| am)\s+(?:severely\s+|mildly\s+|very\s+|also\s+)?allergic\s+to\s+([a-z][a-z ,&-]{1,60})/))) {
     const o = factObject(m[1]);
-    if (o && !FACT_STOP.test(o)) out.push(`Allergic to ${o}`);
+    if (durableObject(o, false)) out.push(`Allergic to ${o}`);
   }
-  if ((m = t.match(/\bmujhe\s+([a-z][a-z ]{1,30}?)\s+se\s+allergy\b/))) out.push(`Allergic to ${factObject(m[1])}`);
+  if ((m = t.match(/\bmujhe\s+([a-z][a-z ]{1,30}?)\s+se\s+allergy\b/)) && !negated.test(t.slice(m.index! + m[0].length, m.index! + m[0].length + 12))) {
+    const o = factObject(m[1]);
+    if (durableObject(o, false)) out.push(`Allergic to ${HINDI_ALLERGEN[o] || o}`);
+  }
   if ((m = t.match(/\bi(?:'m| am)\s+(lactose intolerant|gluten intolerant)\b/))) out.push(`Is ${m[1]}`);
-  if ((m = t.match(/\bi\s+(?:don't|do not|never|can't|cannot)\s+eat\s+([a-z][a-z ,&-]{1,60})/))) {
-    const o = factObject(m[1]);
-    if (o && !FACT_STOP.test(o)) out.push(`Doesn't eat ${o}`);
+  if (!opts.safetyOnly) {
+    if ((m = t.match(/\bi\s+(?:don't|do not|never|can't|cannot)\s+eat\s+([a-z][a-z ,&-]{1,60})/))) {
+      const o = factObject(m[1]);
+      if (durableObject(o, true)) out.push(`Doesn't eat ${o}`);
+    }
+    if ((m = t.match(/\bi\s+(?:hate|dislike|don't like|do not like)\s+([a-z][a-z ,&-]{1,60})/))) {
+      const o = factObject(m[1]);
+      if (durableObject(o, true)) out.push(`Dislikes ${o}`);
+    }
+    if (/\bnight shifts?\b/.test(t) && /\b(i|main|mai|my)\b/.test(t) && !/\b(today|tonight|this week)\b/.test(t)) out.push("Works night shifts");
   }
-  if ((m = t.match(/\bi\s+(?:hate|dislike|don't like|do not like)\s+([a-z][a-z ,&-]{1,60})/))) {
-    const o = factObject(m[1]);
-    if (o && !FACT_STOP.test(o)) out.push(`Dislikes ${o}`);
-  }
-  if (/\bnight shifts?\b/.test(t) && /\b(i|main|mai|my)\b/.test(t)) out.push("Works night shifts");
   return Array.from(new Set(out)).slice(0, 3);
 }
 
@@ -353,6 +399,87 @@ export function mergeMemory(existing: string[] = [], add: string[] = [], cap = 3
     out.push(f);
   }
   return out.slice(-cap);
+}
+
+/** Profile allergy list limits (same as the profile form: 20 entries of ≤ 40 characters, stored lowercase). */
+const ALLERGY_MAX_ITEMS = 20;
+const ALLERGY_MAX_LENGTH = 40;
+/** Settings → Memory's per-item limit; a longer line would make that list unsaveable. */
+const MEMORY_ITEM_MAX = 200;
+const ALLERGY_LINE = /^allergies \/ avoids:/i;
+const NO_ALLERGY_LINE = /^no food allergies$/i;
+/** Same vocabulary as onboarding's allergy chips, so a chat-learned "peanut" and the chip "peanuts" are one entry. */
+const ALLERGY_CANON: Record<string, string> = {
+  peanut: "peanuts", groundnut: "peanuts", groundnuts: "peanuts", moongphali: "peanuts", mungfali: "peanuts",
+  nut: "tree nuts", "tree nut": "tree nuts", milk: "dairy", lactose: "dairy", dudh: "dairy", doodh: "dairy",
+  wheat: "gluten", egg: "eggs", anda: "eggs", soya: "soy", til: "sesame", prawn: "shellfish", prawns: "shellfish", shrimp: "shellfish",
+};
+
+export interface LearnedFacts {
+  /** The full memory list to store. */
+  memory: string[];
+  /** What was newly learned this turn, worded for the "Remembered: …" note. */
+  remembered: string[];
+  /** The updated profile.allergies, or null when it didn't change. */
+  allergies: string[] | null;
+}
+
+/**
+ * Applies facts learned in chat to a user's memory and profile allergies.
+ * Food allergies and intolerances ("Allergic to peanuts", "Is lactose intolerant") go into profile.allergies —
+ * which recipes, rebalance plans, reports and insights all read — and the "Allergies / avoids: …" memory line the
+ * profile keeps in sync, so there's one source of truth. Everything else is merged into memory (deduped, capped).
+ */
+export function learnFacts(memory: string[] | undefined | null, allergies: string[] | undefined | null, add: string[], cap = 30): LearnedFacts {
+  const before = (Array.isArray(memory) ? memory : []).filter((s) => typeof s === "string" && s.trim());
+  const current = (Array.isArray(allergies) ? allergies : []).filter((s) => typeof s === "string" && s.trim());
+  const nextAllergies = [...current];
+  const remembered: string[] = [];
+  const other: string[] = [];
+
+  for (const raw of add) {
+    if (typeof raw !== "string") continue;
+    const fact = raw.replace(/\s+/g, " ").trim().replace(/[.。]+$/, "");
+    const allergic = fact.match(/^allergic to\s+(.+)$/i);
+    const intolerant = fact.match(/^is\s+(lactose|gluten)\s+intolerant$/i);
+    const items = allergic
+      ? allergic[1].split(/,|;|\/|\band\b|&/i).map((s) => s.trim().toLowerCase()).filter(Boolean)
+      : intolerant
+        ? [intolerant[1].toLowerCase() === "lactose" ? "dairy" : "gluten"]
+        : null;
+    // Non-food allergies ("allergic to dust") stay plain memory facts.
+    if (!items || !items.every((i) => durableObject(i, true))) {
+      other.push(fact);
+      continue;
+    }
+    let added = false;
+    for (const item of items) {
+      const value = (ALLERGY_CANON[item] || item).slice(0, ALLERGY_MAX_LENGTH);
+      // Already covered ("milk" when "dairy" is listed) → nothing new to store.
+      const have = new Set(allergyKeywords(nextAllergies));
+      const mine = allergyKeywords([value]);
+      const covered = nextAllergies.some((a) => a.toLowerCase() === value) || (mine.length > 0 && mine.every((k) => have.has(k)));
+      if (covered || nextAllergies.length >= ALLERGY_MAX_ITEMS) continue;
+      nextAllergies.push(value);
+      added = true;
+    }
+    if (added) remembered.push(fact);
+  }
+
+  let next = before;
+  const allergiesChanged = nextAllergies.length !== current.length;
+  if (allergiesChanged) {
+    const line = `Allergies / avoids: ${nextAllergies.join(", ")}`;
+    const fitted = line.length <= MEMORY_ITEM_MAX ? line : `${line.slice(0, MEMORY_ITEM_MAX - 1).trimEnd()}…`;
+    const at = next.findIndex((m) => ALLERGY_LINE.test(m.trim()));
+    next = next.filter((m) => !NO_ALLERGY_LINE.test(m.trim()));
+    if (at >= 0) next = next.map((m) => (ALLERGY_LINE.test(m.trim()) ? fitted : m));
+    else next = [...next, fitted];
+  }
+  const merged = mergeMemory(next, other, cap);
+  const known = new Set(next.map((s) => s.toLowerCase()));
+  for (const f of merged) if (!known.has(f.toLowerCase()) && !before.includes(f)) remembered.push(f);
+  return { memory: merged, remembered, allergies: allergiesChanged ? nextAllergies : null };
 }
 
 /** Session title from the first message (≤ 60 chars, cut on a word boundary). */
@@ -377,45 +504,111 @@ const DIET_ALLOWED: Record<Diet, FoodDiet[]> = {
 const JAIN_EXCLUDE =
   /\b(onion|pyaz|pyaaz|garlic|lahsun|lehsun|potato|aloo|alu|carrot|gajar|beetroot|radish|mooli|ginger|adrak|sweet potato|shakarkand|arbi|yam)\b/;
 
-const DAIRY = ["milk", "paneer", "dahi", "curd", "ghee", "cheese", "butter", "lassi", "raita", "khoya", "cream", "yogurt", "chaas", "buttermilk", "kheer", "malai"];
-const GLUTEN = ["roti", "chapati", "paratha", "naan", "bread", "pasta", "wheat", "atta", "maida", "puri", "kulcha", "bhatura", "biscuit", "pizza", "noodles", "samosa", "upma", "daliya", "sooji", "semolina", "rava"];
-const ALLERGY_MAP: Record<string, string[]> = {
-  dairy: DAIRY, milk: DAIRY, lactose: DAIRY, "lactose intolerant": DAIRY, dudh: DAIRY, doodh: DAIRY,
-  gluten: GLUTEN, wheat: GLUTEN, "gluten intolerant": GLUTEN,
-  nuts: ["almond", "badam", "cashew", "kaju", "walnut", "akhrot", "pista", "pistachio", "nut"],
-  "tree nuts": ["almond", "badam", "cashew", "kaju", "walnut", "akhrot", "pista", "pistachio"],
-  peanut: ["peanut", "moongphali", "mungfali", "groundnut", "chikki"],
-  peanuts: ["peanut", "moongphali", "mungfali", "groundnut", "chikki"],
-  egg: ["egg", "anda", "omelette", "omelet"], eggs: ["egg", "anda", "omelette", "omelet"],
-  soy: ["soy", "soya", "tofu", "edamame"], soya: ["soy", "soya", "tofu", "edamame"],
-  shellfish: ["prawn", "shrimp", "crab", "lobster", "jhinga"], prawn: ["prawn", "shrimp", "jhinga"],
-  seafood: ["prawn", "shrimp", "crab", "lobster", "jhinga", "fish", "machli", "machhli"],
-  fish: ["fish", "machli", "machhli"],
+/**
+ * Ingredients a dish usually contains that its name and aliases don't say (poha has peanuts, filter coffee
+ * has milk, a thali has rotis), keyed by FOODS key. The words are allergen keywords from lib/allergens,
+ * so the shared matcher can catch them. Dishes whose name already says it (paneer, roti, egg …) need no entry.
+ */
+const CONTAINS: Record<string, string> = {
+  // breads (all wheat unless millet), many with ghee, butter or curd in the dough
+  ghee_roti: "wheat ghee", tandoori_roti: "wheat", missi_roti: "wheat ghee", paratha: "wheat ghee", aloo_paratha: "wheat ghee",
+  gobi_paratha: "wheat ghee", paneer_paratha: "wheat ghee", mooli_paratha: "wheat ghee", lachha_paratha: "wheat ghee", thepla: "wheat",
+  naan: "maida curd", butter_naan: "maida curd butter", garlic_naan: "maida curd butter", kulcha: "maida curd", amritsari_kulcha: "maida butter",
+  puri: "wheat", bhatura: "maida curd", makki_roti: "ghee", kerala_parotta: "maida", bread_white: "wheat", bread_brown: "wheat",
+  pav: "maida", butter_toast: "wheat butter", khakhra: "wheat",
+  // breakfast
+  rava_idli: "suji curd cashew mustard", masala_dosa: "mustard", rava_dosa: "suji maida", mysore_masala_dosa: "butter mustard",
+  poha: "peanut mustard", upma: "suji mustard", semiya_upma: "wheat mustard", sabudana_khichdi: "peanut ghee", pongal: "ghee cashew",
+  dhokla: "mustard sesame", khandvi: "curd mustard sesame", handvo: "curd sesame", oats_milk: "milk", cornflakes: "milk",
+  muesli: "milk nuts", daliya: "wheat", puri_bhaji: "wheat",
+  // rice
+  jeera_rice: "ghee", veg_pulao: "ghee cashew", veg_biryani: "ghee curd cashew", chicken_biryani: "ghee curd", mutton_biryani: "ghee curd",
+  egg_biryani: "ghee curd", curd_rice: "mustard", khichdi: "ghee", lemon_rice: "peanut mustard", tamarind_rice: "peanut mustard sesame",
+  veg_fried_rice: "soy", egg_fried_rice: "soy", chicken_fried_rice: "soy egg", bisi_bele_bath: "ghee cashew", sambar_rice: "mustard",
+  kadhi_chawal: "curd", pakhala: "curd",
+  // dal, sabzi, curries
+  dal_tadka: "ghee", dal_makhani: "butter cream", urad_dal: "ghee", sambar: "mustard", rasam: "mustard", kadhi: "curd",
+  dal_baati: "wheat ghee", dal_dhokli: "wheat", kadala_curry: "mustard", dum_aloo: "curd cashew", palak_paneer: "cream",
+  paneer_butter_masala: "butter cream cashew", shahi_paneer: "cream cashew", malai_kofta: "paneer cream cashew", sarson_saag: "butter",
+  mushroom_masala: "cream", avial: "curd", veg_korma: "cream cashew", gatte: "curd", butter_chicken: "cream cashew",
+  chicken_tikka_masala: "cream butter curd", tandoori_chicken: "curd", chicken_tikka: "curd", chilli_chicken: "soy maida egg",
+  chicken_65: "egg maida curd", nihari: "wheat", haleem: "wheat ghee", machher_jhol: "mustard", nonveg_thali: "wheat curd ghee",
+  veg_thali: "wheat curd ghee",
+  // street food, snacks, global
+  chicken_momos: "maida", chicken_roll: "maida egg", egg_roll: "maida", shawarma: "wheat mayonnaise sesame", chicken_noodles: "wheat soy",
+  chicken_pizza: "maida cheese", chicken_burger: "wheat mayonnaise", chicken_sandwich: "bread mayonnaise", chicken_wrap: "wheat mayonnaise",
+  sushi: "soy sesame", bread_omelette: "butter", samosa: "maida", kachori: "maida", aloo_bonda: "mustard", sabudana_vada: "peanut",
+  vada_pav: "maida", pav_bhaji: "maida butter", misal_pav: "maida", dabeli: "maida peanut", bhel_puri: "peanut", pani_puri: "suji",
+  papdi_chaat: "maida curd", veg_momos: "maida", thukpa: "wheat", litti_chokha: "wheat ghee mustard", chole_bhature: "maida curd",
+  chole_kulche: "maida", patra: "sesame", namkeen: "peanut", chakli: "sesame butter", mathri: "maida ghee", biscuit: "wheat butter milk",
+  cream_biscuit: "wheat milk", cookie: "wheat butter", rusk: "wheat", veg_sandwich: "bread butter", grilled_sandwich: "bread butter",
+  maggi: "wheat", makhana: "ghee", paneer_tikka: "curd", spring_roll: "maida soy", veg_roll: "maida", pizza: "maida cheese",
+  veg_burger: "wheat mayonnaise", pasta: "wheat cheese", hakka_noodles: "wheat soy", manchurian: "maida soy", chilli_paneer: "maida soy",
+  veg_wrap: "wheat mayonnaise", tomato_soup: "cream butter", coconut_chutney: "mustard",
+  // sweets and drinks
+  protein_shake: "whey milk", gulab_jamun: "khoya maida milk", jalebi: "maida", sheera: "suji ghee milk cashew",
+  gajar_halwa: "milk ghee khoya cashew", moong_halwa: "ghee milk", besan_ladoo: "ghee", boondi_ladoo: "ghee", barfi: "milk khoya",
+  falooda: "milk", sandesh: "milk", mishti_doi: "milk curd", mysore_pak: "ghee", peda: "milk khoya", modak: "ghee", shrikhand: "curd",
+  puran_poli: "wheat ghee", malpua: "maida milk", gujiya: "maida khoya ghee", soan_papdi: "maida ghee", dessert: "milk",
+  chocolate: "milk", cake: "maida butter egg milk", brownie: "maida butter egg", cheese: "milk", chai: "milk", cutting_chai: "milk",
+  chai_no_sugar: "milk", coffee: "milk", coffee_no_sugar: "milk", filter_coffee: "milk", cappuccino: "milk", cold_coffee: "milk",
+  milkshake: "milk", badam_milk: "almond", malted_milk: "milk wheat", beer: "wheat", mixed_nuts: "almond cashew",
 };
 
-function blockedTerms(ctx: CoachContext): string[] {
-  const raw = [...(ctx.profile.allergies || [])];
-  for (const f of ctx.memory) {
-    const m = f.match(/^(?:allergic to|doesn't eat|does not eat|avoids)\s+(.+)$/i);
-    if (m) raw.push(...m[1].split(/,|\band\b|&/));
-  }
-  const terms = new Set<string>();
-  for (const r of raw) {
-    const a = r.toLowerCase().trim();
-    if (a.length < 3) continue;
-    terms.add(a);
-    for (const x of ALLERGY_MAP[a] || []) terms.add(x);
-  }
-  return Array.from(terms);
-}
+/** Name, key, aliases and implicit ingredients of a food — everything the allergy matcher checks. */
+const foodText = (f: FoodEntry) => [f.name, f.key.replace(/_/g, " "), ...(f.aliases || []), CONTAINS[f.key] || ""].join(" ").toLowerCase();
 
-const foodText = (f: FoodEntry) => [f.name, f.key.replace(/_/g, " "), ...(f.aliases || [])].join(" ").toLowerCase();
-
-function foodAllowed(f: FoodEntry, diet: Diet | undefined, blocked: string[]) {
+/** Diet (incl. Jain) and allergy / avoid-list check through the shared matcher in lib/allergens. */
+function foodAllowed(f: FoodEntry, diet: Diet | undefined, avoid: string[]) {
   if (diet && !DIET_ALLOWED[diet].includes(f.diet)) return false;
   const text = foodText(f);
   if (diet === "jain" && JAIN_EXCLUDE.test(text)) return false;
-  return !blocked.some((b) => text.includes(b));
+  return !conflictsWithAllergies(text, avoid);
+}
+
+/** A free-text idea ("Paneer bhurji with 1 roti") is safe for this user: fits a Jain diet and none of their avoids. */
+function ideaAllowed(text: string, ctx: CoachContext, contains = "") {
+  const t = `${text} ${contains}`.toLowerCase();
+  if (ctx.profile.diet === "jain" && JAIN_EXCLUDE.test(t)) return false;
+  return !conflictsWithAllergies(t, ctx.avoid);
+}
+
+/**
+ * Protein-rich staples for nudges ("dal, paneer or curd would close the gap"), in the order each diet
+ * would reach for them, then filtered by the user's allergies and avoids.
+ */
+const PROTEIN_SOURCES: Record<string, { en: string; hi: string; also?: string }> = {
+  dal: { en: "dal", hi: "dal" },
+  chana: { en: "chana", hi: "chana" },
+  rajma: { en: "rajma", hi: "rajma" },
+  sprouts: { en: "sprouts", hi: "sprouts" },
+  tofu: { en: "tofu", hi: "tofu", also: "soy" },
+  soya: { en: "soya chunks", hi: "soya chunks" },
+  paneer: { en: "paneer", hi: "paneer" },
+  curd: { en: "curd", hi: "dahi" },
+  eggs: { en: "eggs", hi: "anda" },
+  chicken: { en: "chicken", hi: "chicken" },
+  fish: { en: "fish", hi: "machli" },
+};
+const PROTEIN_ORDER: Record<Diet | "any", string[]> = {
+  vegan: ["dal", "chana", "rajma", "tofu", "soya", "sprouts"],
+  vegetarian: ["dal", "paneer", "curd", "chana", "sprouts", "rajma"],
+  jain: ["dal", "paneer", "curd", "chana", "rajma"],
+  eggetarian: ["dal", "paneer", "curd", "eggs", "chana", "sprouts"],
+  non_vegetarian: ["dal", "paneer", "curd", "eggs", "chicken", "fish", "chana"],
+  any: ["dal", "paneer", "curd", "eggs", "chicken", "chana"],
+};
+
+/** Up to five protein sources this user eats, as a spoken list ("dal, paneer, curd or eggs"), or null when none fit. */
+function proteinIdeas(ctx: CoachContext, lang: ReplyLang): string | null {
+  const keys = PROTEIN_ORDER[ctx.profile.diet || "any"].filter((k) => {
+    const s = PROTEIN_SOURCES[k];
+    return !conflictsWithAllergies(`${s.en} ${s.hi} ${s.also || ""}`, ctx.avoid);
+  });
+  const words = keys.slice(0, 5).map((k) => (lang === "hinglish" ? PROTEIN_SOURCES[k].hi : PROTEIN_SOURCES[k].en));
+  if (!words.length) return null;
+  if (words.length === 1) return words[0];
+  return `${words.slice(0, -1).join(", ")} ${lang === "hinglish" ? "ya" : "or"} ${words[words.length - 1]}`;
 }
 
 const EXCLUDE_CATS: Record<MealType, string[]> = {
@@ -446,17 +639,16 @@ function suggestFoods(ctx: CoachContext, mealType: MealType, wantProtein: boolea
   const light = ctx.remaining.calories < 200;
   const budget = light ? 220 : Math.max(200, Math.min(ctx.remaining.calories, slotCap));
   const proteinGap = Math.max(0, ctx.remaining.protein_g);
-  const blocked = blockedTerms(ctx);
   const exclude = EXCLUDE_CATS[mealType].filter((c) => !(wantSweet && (c === "sweet" || c === "dessert")));
   const pool = FOODS.filter(
     (f) =>
       f.per_serving?.calories > 0 &&
       !STAPLE_NAME.test(f.name.trim()) &&
       !exclude.some((c) => (f.category || "").toLowerCase().includes(c)) &&
-      foodAllowed(f, ctx.profile.diet, blocked)
+      foodAllowed(f, ctx.profile.diet, ctx.avoid)
   );
   const rotiCandidate = findFood("roti");
-  const staple = rotiCandidate && foodAllowed(rotiCandidate, ctx.profile.diet, blocked) ? rotiCandidate : null;
+  const staple = rotiCandidate && foodAllowed(rotiCandidate, ctx.profile.diet, ctx.avoid) ? rotiCandidate : null;
   const region = (ctx.profile.region || "").toLowerCase();
 
   const scored = pool
@@ -506,20 +698,73 @@ function suggestFoods(ctx: CoachContext, mealType: MealType, wantProtein: boolea
   return { picks, light, budget };
 }
 
-function staticIdeas(diet: Diet | undefined, light: boolean): string[] {
-  if (light) return ["A bowl of clear vegetable soup", "Roasted chana — a small handful", "Cucumber-tomato salad with lemon"];
-  switch (diet) {
-    case "vegan":
-      return ["Tofu bhurji with 1 roti", "Rajma or chana with a small katori of rice", "Sprouts chaat with lemon"];
-    case "jain":
-      return ["Paneer tikka (no onion-garlic) with 1 roti", "Moong dal chilla with curd", "Lauki chana dal with 1 roti"];
-    case "eggetarian":
-      return ["Egg bhurji with 1–2 rotis", "Boiled eggs with sautéed veggies", "Dal with a small katori of rice and curd"];
-    case "non_vegetarian":
-      return ["Grilled or tandoori chicken with salad", "Egg bhurji with 1 roti", "Fish curry with a small katori of rice"];
-    default:
-      return ["Paneer bhurji with 1–2 rotis", "Moong dal chilla with curd", "Chana salad with cucumber, onion and lemon"];
-  }
+type Idea = { text: string; contains?: string };
+
+const LIGHT_IDEAS: Idea[] = [
+  { text: "A bowl of clear vegetable soup" },
+  { text: "Roasted chana — a small handful" },
+  { text: "Cucumber-tomato salad with lemon" },
+  { text: "A bowl of papaya or guava" },
+  { text: "A glass of chaas (buttermilk)" },
+];
+const MEAL_IDEAS: Record<Diet | "any", Idea[]> = {
+  vegan: [
+    { text: "Tofu bhurji with 1 roti" },
+    { text: "Rajma with a small katori of rice" },
+    { text: "Sprouts chaat with lemon" },
+    { text: "Chana masala with 1 jowar roti" },
+    { text: "Moong dal chilla with mint chutney" },
+    { text: "Masoor dal with a small katori of rice and salad" },
+  ],
+  jain: [
+    { text: "Paneer tikka (no onion-garlic) with 1 roti", contains: "curd" },
+    { text: "Moong dal chilla with curd" },
+    { text: "Lauki chana dal with 1 roti" },
+    { text: "Moong dal with a small katori of rice" },
+    { text: "Chana dal with 1 jowar bhakri" },
+  ],
+  eggetarian: [
+    { text: "Egg bhurji with 1–2 rotis" },
+    { text: "Boiled eggs with sautéed veggies" },
+    { text: "Dal with a small katori of rice and curd" },
+    { text: "Chana salad with cucumber, onion and lemon" },
+    { text: "Moong dal chilla with mint chutney" },
+  ],
+  non_vegetarian: [
+    { text: "Grilled chicken with salad" },
+    { text: "Egg bhurji with 1 roti" },
+    { text: "Fish curry with a small katori of rice", contains: "mustard" },
+    { text: "Chicken curry with 1 jowar roti" },
+    { text: "Dal with a small katori of rice and salad" },
+  ],
+  vegetarian: [
+    { text: "Paneer bhurji with 1–2 rotis" },
+    { text: "Moong dal chilla with curd" },
+    { text: "Chana salad with cucumber, onion and lemon" },
+    { text: "Rajma with a small katori of rice" },
+    { text: "Masoor dal with 1 jowar roti and salad" },
+  ],
+  any: [
+    { text: "Paneer bhurji with 1–2 rotis" },
+    { text: "Moong dal chilla with curd" },
+    { text: "Chana salad with cucumber, onion and lemon" },
+    { text: "Rajma with a small katori of rice" },
+    { text: "Egg bhurji with 1 roti" },
+  ],
+};
+
+/** Fallback ideas when no food-list pick fits: the user's diet, minus anything on their avoid list (may be empty). */
+function staticIdeas(ctx: CoachContext, light: boolean): string[] {
+  const pool = light ? LIGHT_IDEAS : MEAL_IDEAS[ctx.profile.diet || "any"];
+  const dietOk = (i: Idea) => (ctx.profile.diet === "vegan" ? !/chaas|buttermilk|curd|paneer/i.test(i.text) : true);
+  return pool.filter((i) => dietOk(i) && ideaAllowed(i.text, ctx, i.contains)).slice(0, 3).map((i) => i.text);
+}
+
+/** When even the fallback ideas all clash with the user's allergies. */
+function noSafeIdeasLine(lang: ReplyLang) {
+  return lang === "hinglish"
+    ? "- Aapki allergies ke saath fit hone wala koi ready idea nahi mila — [Recipes](/dashboard/recipes) aapke liye safe recipe bana sakta hai."
+    : "- I couldn't find a ready idea that avoids all your allergies — [Recipes](/dashboard/recipes) can build a safe one for you.";
 }
 
 function suggestionLine(s: Suggestion): string {
@@ -587,10 +832,11 @@ async function logMealReply(user: CoachUser, ctx: CoachContext, intent: MealInte
     lines.push(remainingLine(lang, remaining, ctx.targets.calories, after.calories));
     const proteinLeft = Math.round(ctx.targets.protein_g - after.protein_g);
     if (remaining > 0 && proteinLeft > 20 && ctx.hour >= 14) {
+      const ideas = proteinIdeas(ctx, lang);
       lines.push(
         hi
-          ? `Protein abhi **${proteinLeft} g** baaki hai — agle meal mein dal, paneer, dahi, anda ya chicken rakhiye.`
-          : `Protein still has **${proteinLeft} g** to go — dal, paneer, curd, eggs or chicken in your next meal would close the gap.`
+          ? `Protein abhi **${proteinLeft} g** baaki hai — agle meal mein ${ideas || "koi protein-rich cheez jo aapko suit kare"} rakhiye.`
+          : `Protein still has **${proteinLeft} g** to go — ${ideas || "a protein-rich dish that suits you"} in your next meal would close the gap.`
       );
     }
   } else {
@@ -645,10 +891,11 @@ function progressReply(ctx: CoachContext, lang: ReplyLang): string {
         : "You're a little over — that's okay. One day doesn't define progress; a lighter meal and a short walk are plenty."
     );
   } else if (proteinPct < 0.5 && ctx.hour >= 15) {
+    const ideas = proteinIdeas(ctx, lang);
     lines.push(
       hi
-        ? "Protein thoda peeche hai — dal, paneer, dahi, anda ya chicken wala meal gap bhar dega."
-        : "Protein is running behind — a meal with dal, paneer, curd, eggs or chicken would close the gap."
+        ? `Protein thoda peeche hai — ${ideas ? `${ideas} wala meal` : "koi protein-rich meal jo aapko suit kare"} gap bhar dega.`
+        : `Protein is running behind — ${ideas ? `a meal with ${ideas}` : "a protein-rich meal that suits you"} would close the gap.`
     );
   } else if (tr.water_glasses < g.water_glasses / 2 && ctx.hour >= 14) {
     lines.push(hi ? "Sab badhiya chal raha hai — bas paani thoda aur pijiye." : "You're on track — just sip a little more water.");
@@ -683,14 +930,17 @@ function suggestionReply(ctx: CoachContext, text: string, lang: ReplyLang): stri
         : `You have about **${fmt(left)} kcal** left today${proteinBit}. Here are three ${label} ideas that fit:`
     );
   }
+  const ideas = picks.length ? [] : staticIdeas(ctx, light);
   if (picks.length) lines.push(...picks.map(suggestionLine));
-  else lines.push(...staticIdeas(ctx.profile.diet, light).map((s) => `- ${s}`));
+  else if (ideas.length) lines.push(...ideas.map((s) => `- ${s}`));
+  else lines.push(noSafeIdeasLine(lang));
   lines.push("");
-  const example = picks[0]?.food.name.toLowerCase() || (hi ? "paneer bhurji aur 1 roti" : "paneer bhurji with 1 roti");
+  // The example is always one of the ideas above, so it never names something the user avoids.
+  const example = picks[0]?.food.name.toLowerCase() || (ideas[0] ? ideas[0].charAt(0).toLowerCase() + ideas[0].slice(1) : "");
   lines.push(
     hi
-      ? `Khane ke baad bas bata dijiye — jaise "maine ${example} khaya" — aur yeh log ho jayega. Poori recipe chahiye toh [Recipes](/dashboard/recipes) dekhiye.`
-      : `Once you've eaten, just tell me — e.g. "I had ${example}" — and I'll log it. Want a full recipe? Try [Recipes](/dashboard/recipes).`
+      ? `Khane ke baad bas bata dijiye${example ? ` — jaise "maine ${example} khaya" —` : ""} aur yeh log ho jayega. Poori recipe chahiye toh [Recipes](/dashboard/recipes) dekhiye.`
+      : `Once you've eaten, just tell me${example ? ` — e.g. "I had ${example}" —` : " what you had"} and I'll log it. Want a full recipe? Try [Recipes](/dashboard/recipes).`
   );
   return lines.join("\n");
 }
@@ -723,7 +973,10 @@ function planReply(ctx: CoachContext, lang: ReplyLang): string {
         ? `Aaj ka target lagbhag pura hai (${fmt(ctx.totals.calories)} / ${fmt(ctx.targets.calories)} kcal), toh baaki din halka rakhiye:`
         : `You're close to today's target (${fmt(ctx.totals.calories)} / ${fmt(ctx.targets.calories)} kcal), so keep the rest of the day light:`
     );
-    lines.push(...(picks.length ? picks.map(suggestionLine) : staticIdeas(ctx.profile.diet, true).map((s) => `- ${s}`)));
+    const ideas = picks.length ? [] : staticIdeas(ctx, true);
+    if (picks.length) lines.push(...picks.map(suggestionLine));
+    else if (ideas.length) lines.push(...ideas.map((s) => `- ${s}`));
+    else lines.push(noSafeIdeasLine(lang));
   } else {
     lines.push(
       hi
@@ -746,8 +999,14 @@ function planReply(ctx: CoachContext, lang: ReplyLang): string {
         const pair = pick.pair ? ` + ${fmtQty(pick.pair.qty)} ${pick.pair.food.name.toLowerCase()}` : "";
         lines.push(`- ${label}: ${pick.food.name}${pair} — ${g1(pick.totals.protein_g)} g protein`);
       } else {
-        const ideas = staticIdeas(ctx.profile.diet, budget < 200);
-        lines.push(`- ${label}: ${ideas[idx % ideas.length]}`);
+        const ideas = staticIdeas(ctx, budget < 200);
+        lines.push(
+          ideas.length
+            ? `- ${label}: ${ideas[idx % ideas.length]}`
+            : hi
+              ? `- ${label}: apni allergies ke hisaab se koi safe dish — [Recipes](/dashboard/recipes) madad karega`
+              : `- ${label}: a dish that's safe for your allergies — [Recipes](/dashboard/recipes) can suggest one`
+        );
       }
     });
   }
@@ -1058,6 +1317,9 @@ export function contextForPrompt(ctx: CoachContext): string {
       ? `Meals logged today:\n${ctx.meals.map((m) => `- ${m.meal_type}: ${mealSummary(m)} (${m.totals.calories} kcal, ${m.totals.protein_g} g protein)`).join("\n")}`
       : "No meals logged yet today.",
     ctx.memory.length ? `Remembered about the user:\n${ctx.memory.map((f) => `- ${f}`).join("\n")}` : "Nothing remembered about the user yet.",
+    ctx.avoid.length
+      ? `NEVER suggest foods containing (allergies / avoids — also check hidden ingredients like ghee, curd, peanuts in poha, wheat in thali): ${allergyList(ctx.avoid)}.`
+      : "No known food allergies or avoids.",
     `Preferred tone: ${ctx.tone}.`,
   ];
   return lines.join("\n");
@@ -1079,9 +1341,9 @@ export function coachSystemPrompt(ctx: CoachContext, history: HistoryTurn[]): st
     "- Never log hypothetical, planned or future food, or questions (\"can I eat …\", \"should I have …\", \"kya khaun\"). Then log_meal is null.",
     "- meal_type comes from their words (breakfast/nashta, lunch, dinner/raat, snack), else from the local time. day is \"yesterday\" only when they clearly mean yesterday (\"kal raat\", \"last night\", \"yesterday\"), else \"today\".",
     "- Weddings, parties, festivals, cheat meals: reassure (no guilt — one meal doesn't undo progress) and offer a gentle rebalance at /dashboard/compensation.",
-    "- Food suggestions must respect their diet, allergies and remaining calories; prioritise protein when they ask. Prefer familiar Indian options from their region.",
+    "- Food suggestions must respect their diet, their allergies / avoids (listed in the context) and remaining calories; prioritise protein when they ask. Prefer familiar Indian options from their region.",
     "- Medical questions: give general wellness context only and gently suggest their doctor. Emergencies: tell them to call 112 now.",
-    "- memory_add: only durable personal facts useful in future chats (diet, allergies, dislikes, health conditions they mention, schedule, household, cuisine preferences, goals). Short third-person phrases like \"Works night shifts\". Never today's meals, never facts already remembered. Usually []. Max 3.",
+    "- memory_add: only durable personal facts useful in future chats (diet, allergies, dislikes, health conditions they mention, schedule, household, cuisine preferences, goals). Short third-person phrases like \"Works night shifts\"; write a food allergy exactly as \"Allergic to <food>\" and an intolerance as \"Is lactose intolerant\" / \"Is gluten intolerant\". Never temporary states (\"can't eat roti tonight\", fasting today, feeling unwell), never today's meals, never facts already remembered. Usually []. Max 3.",
     "- reply format: plain text, short paragraphs, **bold** sparingly, \"- \" bullets for lists. No headings, tables or emojis. Under ~120 words unless they ask for detail.",
     "- Language: reply in the language the user wrote in — English, Hindi, or Hinglish (Roman-script Hindi-English mix).",
     "",
@@ -1111,7 +1373,50 @@ export interface AiCoachOutput {
 }
 
 const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
-const num = (v: unknown, max: number) => Math.min(max, Math.max(0, Number(v) || 0));
+
+/** 120, "120", "240 kcal", "6g", "1,200" → number; anything else → 0. Clamped to [0, max]. */
+function num(v: unknown, max: number, digits = 1): number {
+  const n = typeof v === "number" ? v : typeof v === "string" ? parseFloat(v.replace(/,/g, "").trim()) : NaN;
+  return Number.isFinite(n) ? Math.min(max, Math.max(0, round(n, digits))) : 0;
+}
+
+/** Drinks that really are ~0 kcal, so a 0 from the model is not a gap. */
+const ZERO_CAL = /\b(water|paani|pani|black coffee|black tea|green tea|herbal tea|diet (?:coke|soda|soft drink)|coke zero|sugar[- ]?free)\b/i;
+
+/**
+ * Fills numbers the model left out: calories from macros, or everything from the built-in food list
+ * (scaled to the quantity or grams eaten), so a logged item never silently counts as 0 kcal.
+ */
+function fillItemGaps(item: MealItem): MealItem {
+  const macroKcal = item.protein_g * 4 + item.carbs_g * 4 + item.fat_g * 9;
+  const macrosMissing = item.protein_g + item.carbs_g + item.fat_g === 0;
+  if (item.calories === 0 && macroKcal > 0) return { ...item, calories: Math.round(macroKcal) };
+  if (ZERO_CAL.test(item.name) || (item.calories > 0 && !macrosMissing)) return item;
+  let food: FoodEntry | null = null;
+  try {
+    food = findFood(item.name);
+  } catch {
+    food = null;
+  }
+  if (!food || !(food.per_serving?.calories > 0)) return item;
+  let servings = 1;
+  if (food.serving.unit.toLowerCase() === item.unit.toLowerCase() || GENERIC_UNITS.has(item.unit.toLowerCase())) servings = item.quantity;
+  else if (item.grams && food.serving.grams > 0) servings = item.grams / food.serving.grams;
+  const ref = nutrientsFor(food, clamp(servings, 0.1, maxServingsFor(food)));
+  if (!(ref.calories > 0)) return item;
+  if (item.calories === 0) {
+    return { ...item, calories: ref.calories, protein_g: ref.protein_g, carbs_g: ref.carbs_g, fat_g: ref.fat_g, fiber_g: ref.fiber_g };
+  }
+  // Calories known, macros missing → the food's macro profile scaled to the model's calories.
+  const k = item.calories / ref.calories;
+  return {
+    ...item,
+    protein_g: round(ref.protein_g * k, 1),
+    carbs_g: round(ref.carbs_g * k, 1),
+    fat_g: round(ref.fat_g * k, 1),
+    fiber_g: item.fiber_g || round(ref.fiber_g * k, 1),
+  };
+}
 
 /** Validates the model's JSON; returns null when there is no usable reply. */
 export function normaliseAiOutput(raw: any, fallbackMealType: MealType): AiCoachOutput | null {
@@ -1123,17 +1428,22 @@ export function normaliseAiOutput(raw: any, fallbackMealType: MealType): AiCoach
     const items = lm.items
       .filter((i: any) => i && typeof i === "object" && typeof i.name === "string" && i.name.trim())
       .slice(0, 20)
-      .map((i: any) => ({
-        name: i.name.trim(),
-        quantity: num(i.quantity, 100) || 1,
-        unit: typeof i.unit === "string" && i.unit.trim() ? i.unit.trim() : "serving",
-        grams: i.grams != null ? num(i.grams, 5000) : undefined,
-        calories: num(i.calories, 4000),
-        protein_g: num(i.protein_g, 300),
-        carbs_g: num(i.carbs_g, 600),
-        fat_g: num(i.fat_g, 300),
-        fiber_g: num(i.fiber_g, 100),
-      }));
+      .map((i: any): MealItem => {
+        const grams = num(i.grams, ITEM_LIMITS.grams, 0);
+        const item: MealItem = {
+          name: i.name.trim().slice(0, 80),
+          quantity: num(i.quantity, ITEM_LIMITS.quantity, 2) || 1,
+          unit: typeof i.unit === "string" && i.unit.trim() ? i.unit.trim().slice(0, 30) : "serving",
+          grams: grams > 0 ? grams : undefined,
+          calories: num(i.calories, 4000, 0),
+          protein_g: num(i.protein_g, 300),
+          carbs_g: num(i.carbs_g, 600),
+          fat_g: num(i.fat_g, 300),
+          fiber_g: num(i.fiber_g, 100),
+        };
+        // Filled-in numbers come from the food list, so re-check them against the item limits.
+        return clampToItemLimits(fillItemGaps(item));
+      });
     if (items.length) {
       log_meal = {
         meal_type: MEAL_TYPES.includes(lm.meal_type) ? lm.meal_type : fallbackMealType,

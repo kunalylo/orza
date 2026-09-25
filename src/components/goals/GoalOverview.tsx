@@ -5,19 +5,19 @@ import type { Goal } from "@/lib/types";
 import { clamp, cn } from "@/lib/utils";
 import { EnergyRing, Eyebrow, GlassCard, IconTile, Tag, type TagTone } from "@/components/orza/primitives";
 import { Button } from "@/components/ui/button";
-import { GOAL_LABEL, daysBetween, formatKg, formatLongDate, formatShortDate } from "@/components/goals/goal-math";
+import { GOAL_LABEL, daysBetween, formatLongDate, formatPace, formatShortDate, formatWeight, kgToUnit, weightUnit } from "@/components/goals/goal-math";
 
 type Status = { tone: TagTone; label: string; note: string };
 
 /** Gentle, judgment-free read on progress vs the planned pace. */
-function statusFor(goal: Goal, latest: number, today: string, pct: number): Status {
+function statusFor(goal: Goal, latest: number, today: string, pct: number, imperial: boolean): Status {
   const since = goal.created_at.slice(0, 10);
   const weeks = Math.max(0, daysBetween(since, today) / 7);
   if (goal.goal === "maintain") {
     const diff = Math.abs(latest - goal.target_weight_kg);
     return diff <= 1
       ? { tone: "success", label: "Holding steady", note: "You're right in your comfort zone. Keep your everyday rhythm going." }
-      : { tone: "info", label: "Small drift", note: "A kilo or two either way is normal — ÖRZA will nudge your daily targets gently." };
+      : { tone: "info", label: "Small drift", note: `${imperial ? "A couple of pounds" : "A kilo or two"} either way is normal — ÖRZA will nudge your daily targets gently.` };
   }
   if (pct >= 1) return { tone: "success", label: "Target reached", note: "You made it. Celebrate — then consider a maintain goal to hold your progress." };
   if (weeks < 1) return { tone: "neutral", label: "Just getting started", note: "Weigh in once or twice a week, same time of day, for the clearest trend." };
@@ -40,7 +40,21 @@ export function progressFor(goal: Goal, latest: number): number {
   return clamp((latest - goal.current_weight_kg) / total, 0, 1);
 }
 
-export function GoalOverview({ goal, latest, today, onPlan }: { goal: Goal | null; latest: number | null; today: string; onPlan: () => void }) {
+export function GoalOverview({
+  goal,
+  latest,
+  today,
+  imperial = false,
+  onPlan,
+}: {
+  goal: Goal | null;
+  /** Latest weigh-in in kg. */
+  latest: number | null;
+  today: string;
+  /** Show weights in lb (Settings → Units). */
+  imperial?: boolean;
+  onPlan: () => void;
+}) {
   if (!goal) {
     return (
       <GlassCard variant="strong" className="relative flex h-full flex-col justify-between overflow-hidden">
@@ -70,9 +84,9 @@ export function GoalOverview({ goal, latest, today, onPlan }: { goal: Goal | nul
 
   const now = latest ?? goal.current_weight_kg;
   const pct = progressFor(goal, now);
-  const status = statusFor(goal, now, today, pct);
-  const change = Math.round((now - goal.current_weight_kg) * 10) / 10;
-  const pace = Math.abs(goal.weekly_rate_kg);
+  const status = statusFor(goal, now, today, pct, imperial);
+  const unit = weightUnit(imperial);
+  const change = Math.round((kgToUnit(now, imperial) - kgToUnit(goal.current_weight_kg, imperial)) * 10) / 10;
 
   return (
     <GlassCard variant="strong" className="relative h-full overflow-hidden">
@@ -100,9 +114,9 @@ export function GoalOverview({ goal, latest, today, onPlan }: { goal: Goal | nul
         <div>
           <dl className="grid grid-cols-3 gap-2">
             {[
-              { k: "Start", v: formatKg(goal.current_weight_kg) },
-              { k: "Now", v: formatKg(now), strong: true },
-              { k: goal.goal === "maintain" ? "Keep near" : "Target", v: formatKg(goal.target_weight_kg) },
+              { k: "Start", v: formatWeight(goal.current_weight_kg, imperial) },
+              { k: "Now", v: formatWeight(now, imperial), strong: true },
+              { k: goal.goal === "maintain" ? "Keep near" : "Target", v: formatWeight(goal.target_weight_kg, imperial) },
             ].map((s) => (
               <div key={s.k} className={cn("rounded-orza-sm border px-3 py-2.5", s.strong ? "border-[rgba(255,122,106,0.28)] bg-[#FFF6F1]" : "border-[rgba(20,20,20,0.08)] bg-white/60")}>
                 <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-orza-subtle">{s.k}</dt>
@@ -120,14 +134,14 @@ export function GoalOverview({ goal, latest, today, onPlan }: { goal: Goal | nul
                 <span>
                   <span className="font-medium text-orza-strong">
                     {goal.goal === "lose" ? "−" : "+"}
-                    {pace} kg
+                    {formatPace(goal.weekly_rate_kg, imperial)}
                   </span>{" "}
                   a week planned
                   {change !== 0 && (
                     <span className="text-orza-subtle">
                       {" "}
                       · {change > 0 ? "+" : "−"}
-                      {Math.abs(change)} kg so far
+                      {Math.abs(change)} {unit} so far
                     </span>
                   )}
                 </span>

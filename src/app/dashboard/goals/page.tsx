@@ -16,7 +16,7 @@ import { GoalCalculator } from "@/components/goals/GoalCalculator";
 import { GoalOverview } from "@/components/goals/GoalOverview";
 import { TargetsGrid } from "@/components/goals/TargetsGrid";
 import { WeightTrendCard } from "@/components/goals/WeightTrendCard";
-import { formatLongDate } from "@/components/goals/goal-math";
+import { formatLongDate, isImperial } from "@/components/goals/goal-math";
 import type { GoalCalculateResponse, GoalsActiveResponse, WeightPoint } from "@/components/goals/types";
 
 /** Insert or replace one day's weigh-in, keeping the list ascending. */
@@ -83,6 +83,7 @@ export default function GoalsPage() {
   }, [load]);
 
   const today = data?.today ?? dateInTz(user.profile?.timezone || DEFAULT_TZ);
+  const imperial = isImperial(user.preferences?.units);
   const latest = data?.weights.length ? data.weights[data.weights.length - 1].weight_kg : (data?.profile.weight_kg ?? null);
 
   const scrollToPlanner = () => plannerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -153,10 +154,15 @@ export default function GoalsPage() {
         <>
           <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr] lg:gap-6">
             <Reveal y={10} className="h-full">
-              <GoalOverview goal={data.goal} latest={latest} today={today} onPlan={scrollToPlanner} />
+              <GoalOverview goal={data.goal} latest={latest} today={today} imperial={imperial} onPlan={scrollToPlanner} />
             </Reveal>
             <Reveal y={10} delay={0.06} className="h-full">
-              <WeightTrendCard points={data.weights} target={data.goal && data.goal.goal !== "maintain" ? data.goal.target_weight_kg : null} onLogged={onWeightLogged} />
+              <WeightTrendCard
+                points={data.weights}
+                target={data.goal && data.goal.goal !== "maintain" ? data.goal.target_weight_kg : null}
+                imperial={imperial}
+                onLogged={onWeightLogged}
+              />
             </Reveal>
           </div>
 
@@ -183,12 +189,13 @@ export default function GoalsPage() {
               </p>
             </div>
             <GoalCalculator
-              key={plannerKey}
+              key={`${plannerKey}-${imperial ? "imperial" : "metric"}`}
               goal={data.goal}
               profile={data.profile}
               latestWeight={latest}
               currentTargets={data.targets}
               today={today}
+              imperial={imperial}
               onSaved={onGoalSaved}
             />
           </section>

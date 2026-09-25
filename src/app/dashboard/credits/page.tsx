@@ -10,7 +10,7 @@ import { PlansPreview } from "@/components/account/credits/PlansPreview";
 import { RequestCreditsDialog } from "@/components/account/credits/RequestCreditsDialog";
 import { TransactionHistory } from "@/components/account/credits/TransactionHistory";
 import { LoadError } from "@/components/account/ui";
-import type { BalanceResponse, TransactionsResponse } from "@/components/account/types";
+import type { BalanceResponse, CreditRequestsResponse, TransactionsResponse } from "@/components/account/types";
 import { api, errorMessage } from "@/lib/api-client";
 import type { CreditTransaction } from "@/lib/types";
 
@@ -55,6 +55,19 @@ export default function CreditsPage() {
       setError(errorMessage(e));
     }
   }, [setCredits]);
+
+  // A request the team hasn't handled yet keeps the "Request sent" state across visits. Non-critical:
+  // if this fails the page still works and the member can simply send a request.
+  React.useEffect(() => {
+    let alive = true;
+    api
+      .get<CreditRequestsResponse>("/credits/request")
+      .then((r) => alive && setRequested(!!r.pending))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     load();

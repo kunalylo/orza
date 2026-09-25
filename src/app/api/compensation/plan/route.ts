@@ -1,12 +1,20 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { aiEnabled, aiJSON } from "@/lib/ai";
+import { allergyList, avoidList, conflictsWithAllergies } from "@/lib/allergens";
 import { withCredits } from "@/lib/credits";
 import { col, newId, nowISO } from "@/lib/db";
 import { addDays, dateInTz } from "@/lib/dates";
 import { HttpError, json, parseBody, route } from "@/lib/http";
 import type { CompensationDay, User } from "@/lib/types";
-import { estimateExtraDetails, planCompensation, type CompensationDraft, type StoredCompensationPlan } from "@/lib/compensation";
+import {
+  DEFAULT_DIET,
+  estimateExtraDetails,
+  mealIdeaIsSafe,
+  planCompensation,
+  type CompensationDraft,
+  type StoredCompensationPlan,
+} from "@/lib/compensation";
 
 export const dynamic = "force-dynamic";
 
@@ -23,20 +31,53 @@ type AiRewrite = { message?: unknown; days?: unknown };
 
 const clean = (s: unknown, max: number) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
 
-/** Personalise wording only — every number stays from the deterministic plan. */
-async function personalise(draft: CompensationDraft, user: User, occasion: string, description?: string): Promise<{ message: string; days: CompensationDay[] }> {
+const SLOTS = ["Breakfast", "Lunch", "Dinner"] as const;
+const LABEL_RE = /^\s*(breakfast|lunch|dinner)\s*[:\-–—]\s*/i;
+
+/**
+ * Merge one day's AI meal ideas into the built-in ones, slot by slot. An AI idea is used only when it
+ * passes the same diet + avoid-list check as the built-in ideas; otherwise the built-in idea stays.
+ */
+function vetMeals(aiMeals: string[], builtIn: string[], safe: (text: string) => boolean): { meals: string[]; accepted: number } {
+  let accepted = 0;
+  const meals = builtIn.map((fallback, i) => {
+    const slot = SLOTS[i];
+    if (!slot) return fallback;
+    const labelled = aiMeals.find((m) => LABEL_RE.exec(m)?.[1].toLowerCase() === slot.toLowerCase());
+    const candidate = labelled ?? (aiMeals[i] && !LABEL_RE.test(aiMeals[i]) ? aiMeals[i] : undefined);
+    const body = candidate ? candidate.replace(LABEL_RE, "").trim() : "";
+    if (body.length < 4 || !safe(body)) return fallback;
+    accepted++;
+    return `${slot}: ${body}`;
+  });
+  return { meals, accepted };
+}
+
+/**
+ * Personalise wording only — every number stays from the deterministic plan, and every AI meal idea
+ * is re-checked against the user's diet and avoid-list before it replaces a built-in one.
+ * Throws (so `withCredits` refunds the credit) when nothing usable came back.
+ */
+async function personalise(
+  draft: CompensationDraft,
+  user: User,
+  avoid: string[],
+  occasion: string,
+  description?: string
+): Promise<{ message: string; days: CompensationDay[] }> {
   const p = user.profile || {};
+  const diet = p.diet || DEFAULT_DIET;
   const res = await aiJSON<AiRewrite>({
     system:
       "You personalise ÖRZA's 'compassionate rebalancing' plans after a special meal. Rewrite ONLY the supportive message and each day's three meal ideas. " +
       "Keep every number in the plan exactly as given (calorie targets, adjustments, steps, minutes) and never introduce new calorie numbers. " +
-      "Meal ideas must be light, home-style, realistic for the user's region and diet, and must avoid their allergies. Prefix each idea with 'Breakfast: ', 'Lunch: ' or 'Dinner: '. " +
+      "Meal ideas must be light, home-style, realistic for the user's region, strictly within their diet (Jain: no onion, garlic, potato or other root vegetables; vegetarian: no egg, meat or fish; vegan: no dairy either), and must never include anything in allergies_and_foods_to_avoid. Prefix each idea with 'Breakfast: ', 'Lunch: ' or 'Dinner: '. " +
       "Never suggest skipping meals, fasting, detoxes, compensatory exercise punishment or anything that sounds like guilt. The message is 2–4 warm sentences.",
     prompt: JSON.stringify({
       user: {
         first_name: (user.name || "").split(/\s+/)[0] || undefined,
-        diet: p.diet || "vegetarian",
-        allergies: p.allergies || [],
+        diet,
+        allergies_and_foods_to_avoid: allergyList(avoid) || "none",
         region: p.region,
         language: p.language || "en",
         tone: user.preferences?.tone || "gentle",
@@ -57,17 +98,31 @@ async function personalise(draft: CompensationDraft, user: User, occasion: strin
 
   const byDate = new Map<string, string[]>();
   if (Array.isArray(res?.days)) {
-    for (const d of res.days as any[]) {
-      if (!d || typeof d.date !== "string" || !Array.isArray(d.meals)) continue;
-      const meals = d.meals.map((m: unknown) => clean(m, 160)).filter(Boolean).slice(0, 3);
-      if (meals.length >= 2) byDate.set(d.date, meals);
+    for (const d of res.days as unknown[]) {
+      const day = d as { date?: unknown; meals?: unknown } | null;
+      if (!day || typeof day.date !== "string" || !Array.isArray(day.meals)) continue;
+      const meals = day.meals.map((m: unknown) => clean(m, 160)).filter(Boolean).slice(0, 3);
+      if (meals.length) byDate.set(day.date, meals);
     }
   }
-  const message = clean(res?.message, 700);
-  return {
-    message: message.length >= 20 ? message : draft.message,
-    days: draft.days.map((d) => ({ ...d, meals: byDate.get(d.date) || d.meals })),
-  };
+
+  const safe = (text: string) => mealIdeaIsSafe(text, { diet, avoid });
+  let accepted = 0;
+  let rejected = 0;
+  const days = draft.days.map((d) => {
+    const aiMeals = byDate.get(d.date);
+    if (!aiMeals) return d;
+    const out = vetMeals(aiMeals, d.meals, safe);
+    accepted += out.accepted;
+    rejected += aiMeals.length - out.accepted;
+    return { ...d, meals: out.meals };
+  });
+  if (rejected) console.warn(`[orza] compensation: kept ${rejected} built-in meal idea(s) in place of AI ideas that didn't fit the diet/avoid-list`);
+
+  const aiMessage = clean(res?.message, 700);
+  const messageOk = aiMessage.length >= 20 && !conflictsWithAllergies(aiMessage, avoid);
+  if (!messageOk && !accepted) throw new Error("AI rebalance output was unusable for this user's diet/avoid-list");
+  return { message: messageOk ? aiMessage : draft.message, days };
 }
 
 /**
@@ -82,6 +137,9 @@ export const POST = route(async (req: Request) => {
   const estimate = body.extra_calories == null ? estimateExtraDetails(body.description, user.targets) : null;
   const extra = body.extra_calories ?? estimate!.calories;
 
+  // Allergies plus avoid-facts learned in chat ("Doesn't eat mushrooms") — kept out of every meal idea.
+  const avoid = avoidList(user.profile?.allergies, user.memory);
+
   const draft = planCompensation({
     extra_calories: extra,
     days: body.days ?? 3,
@@ -90,6 +148,7 @@ export const POST = route(async (req: Request) => {
     startDate: addDays(today, 1),
     occasion: body.occasion,
     name: user.name,
+    avoid,
   });
 
   let message = draft.message;
@@ -100,7 +159,7 @@ export const POST = route(async (req: Request) => {
 
   if (aiEnabled()) {
     try {
-      const out = await withCredits(user.id, "compensation", () => personalise(draft, user, body.occasion, body.description), `Rebalance plan: ${body.occasion}`);
+      const out = await withCredits(user.id, "compensation", () => personalise(draft, user, avoid, body.occasion, body.description), `Rebalance plan: ${body.occasion}`);
       message = out.message;
       days = out.days;
       ai = true;

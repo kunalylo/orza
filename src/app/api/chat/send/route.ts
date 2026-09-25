@@ -7,12 +7,14 @@ import {
   chatTitle,
   coachSystemPrompt,
   extractFacts,
-  mergeMemory,
+  learnFacts,
   normaliseAiOutput,
   ruleBasedReply,
   type ChatMessageRecord,
   type HistoryTurn,
+  type LearnedFacts,
 } from "@/lib/coach";
+import { MEMORY_MAX_ITEMS } from "@/components/account/options";
 import { withCredits } from "@/lib/credits";
 import { col, newId, nowISO } from "@/lib/db";
 import { addDays } from "@/lib/dates";
@@ -32,6 +34,36 @@ const Body = z.object({
 
 /** How many earlier messages the AI sees. */
 const HISTORY_TURNS = 12;
+/** Attempts at the conditional memory write before giving up (only contended by edits made during this turn). */
+const SAVE_ATTEMPTS = 4;
+
+/** Mongo filter matching a field's exact current value (or its absence). */
+const sameAs = (v: unknown) => (v === undefined ? { $exists: false } : v);
+
+/**
+ * Stores facts learned this turn. The AI call can take many seconds, and meanwhile the user may edit
+ * Settings → Memory or their allergies (or chat in another tab), so this re-reads the user and writes only
+ * if memory and allergies are still what it merged into — otherwise it re-reads and merges again.
+ * A deleted memory therefore never comes back, and facts learned in parallel are never dropped.
+ */
+async function saveLearnedFacts(userId: string, add: string[]): Promise<LearnedFacts | null> {
+  const users = col<User>("users");
+  for (let attempt = 0; attempt < SAVE_ATTEMPTS; attempt++) {
+    const fresh = await users.findOne({ id: userId });
+    if (!fresh) return null;
+    const learned = learnFacts(fresh.memory, fresh.profile?.allergies, add, MEMORY_MAX_ITEMS);
+    if (!learned.remembered.length) return null;
+    const $set: Record<string, unknown> = { memory: learned.memory, updated_at: nowISO() };
+    if (learned.allergies) $set["profile.allergies"] = learned.allergies;
+    const r = await users.updateOne(
+      { id: userId, memory: sameAs(fresh.memory), "profile.allergies": sameAs(fresh.profile?.allergies) },
+      { $set }
+    );
+    if (r.matched) return learned;
+  }
+  console.warn("[chat/send] memory changed during every save attempt; learned facts were not stored");
+  return null;
+}
 
 /**
  * POST /api/chat/send — one turn of "Ask ÖRZA".
@@ -90,8 +122,9 @@ export const POST = route(async (req: Request) => {
       );
       reply = out.reply;
       meal = out.logged;
-      // Prefer the model's facts; fall back to the deterministic extractor ("I'm vegetarian", "mujhe dudh se allergy hai").
-      memoryAdd = out.memory_add.length ? out.memory_add : extractFacts(body.message);
+      // Trust the model's judgement of what is durable. Only when it learned nothing do the high-precision
+      // safety patterns (diet, allergy, intolerance) still apply, so "mujhe dudh se allergy hai" is never lost.
+      memoryAdd = out.memory_add.length ? out.memory_add : extractFacts(body.message, { safetyOnly: true });
       ai = true;
     } catch (e) {
       // 402 (no credits), validation and server errors propagate; only AI outages fall back to the free coach.
@@ -108,14 +141,9 @@ export const POST = route(async (req: Request) => {
     memoryAdd = r.memory_add;
   }
 
-  // Durable facts → user.memory (deduped, newest kept, max 30).
-  const before = Array.isArray(user.memory) ? user.memory : [];
-  const merged = mergeMemory(before, memoryAdd, 30);
-  const known = new Set(before);
-  const remembered = merged.filter((f) => !known.has(f));
-  if (remembered.length) {
-    await col<User>("users").updateOne({ id: user.id }, { $set: { memory: merged, updated_at: nowISO() } });
-  }
+  // Durable facts → user.memory; food allergies also → profile.allergies (see learnFacts).
+  const learned = memoryAdd.length ? await saveLearnedFacts(user.id, memoryAdd) : null;
+  const remembered = learned?.remembered ?? [];
 
   // Timestamps: the user's message is stamped when it arrived; the reply strictly after it.
   const userAt = new Date(startedAt).toISOString();
@@ -162,7 +190,8 @@ export const POST = route(async (req: Request) => {
     message,
     ...(meal ? { logged_meal: meal } : {}),
     ...(credits != null ? { credits } : {}),
-    ...(remembered.length ? { memory: merged, remembered } : {}),
+    ...(learned && remembered.length ? { memory: learned.memory, remembered } : {}),
+    ...(learned?.allergies ? { allergies: learned.allergies } : {}),
     ...(notice ? { notice } : {}),
   });
 });

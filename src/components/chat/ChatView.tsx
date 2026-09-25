@@ -16,7 +16,7 @@ import { CHAT_FRAME } from "./ChatSkeleton";
 import { Composer, MAX_MESSAGE } from "./Composer";
 import { AssistantBubble, DaySeparator, TypingIndicator, UserBubble } from "./MessageBubble";
 import { OrzaOrb } from "./OrzaOrb";
-import { QUICK_ACTIONS, type QuickAction } from "./prompts";
+import { QUICK_ACTIONS, type QuickAction, type StarterPrompt } from "./prompts";
 import { SessionList } from "./SessionList";
 import { dayKey, dayLabel } from "./format";
 import type { ChatSession, HistoryResponse, SendResponse, SessionsResponse, UIMessage } from "./types";
@@ -68,6 +68,8 @@ export function ChatView() {
   const pendingRef = React.useRef<Pending | null>(null);
   const historyReq = React.useRef(0);
   const startedRef = React.useRef(false);
+  /** The user has sent something in this visit — first-load auto-open must not replace it. */
+  const sentRef = React.useRef(false);
   const userRef = React.useRef(user);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const stickRef = React.useRef(true);
@@ -190,7 +192,8 @@ export function ChatView() {
     if (q) setInput(q.slice(0, MAX_MESSAGE));
     void (async () => {
       const list = await loadSessions();
-      if (viewRef.current !== 0 || activeRef.current) return; // the user already started something
+      // The user already started something (a send in flight, a reply or a failed message on screen, another chat).
+      if (viewRef.current !== 0 || activeRef.current || pendingRef.current || sentRef.current) return;
       const latest = list?.[0];
       const target = wanted || (latest && dayKey(latest.updated_at) === dayKey(new Date().toISOString()) ? latest.id : null);
       if (target) void openSession(target);
@@ -210,6 +213,7 @@ export function ChatView() {
       }
       const p: Pending = { view: viewRef.current, sessionId: activeRef.current, tempId: `tmp-${Date.now()}` };
       pendingRef.current = p;
+      sentRef.current = true;
       setPending(p);
       setInput("");
       stickRef.current = true;
@@ -232,7 +236,14 @@ export function ChatView() {
         const res = await api.post<SendResponse>("/chat/send", p.sessionId ? { message: text, session_id: p.sessionId } : { message: text });
 
         // Memory first (full user object), then credits (functional update) so neither overwrites the other.
-        if (res.memory) setUser({ ...userRef.current, memory: res.memory });
+        if (res.memory || res.allergies) {
+          const u = userRef.current;
+          setUser({
+            ...u,
+            ...(res.memory ? { memory: res.memory } : {}),
+            ...(res.allergies ? { profile: { ...(u.profile || {}), allergies: res.allergies } } : {}),
+          });
+        }
         if (typeof res.credits === "number") setCredits(res.credits);
 
         if (res.session) {
@@ -293,20 +304,26 @@ export function ChatView() {
     [send]
   );
 
+  /** Drop text into the composer (without overwriting a draft) and put the caret at the end. */
+  function prefillComposer(text: string) {
+    setInput((cur) => (cur.trim() ? cur : text));
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }
+
   function runQuickAction(a: QuickAction) {
-    if (a.prompt) {
-      void send(a.prompt);
-      return;
-    }
-    if (a.prefill) {
-      setInput((cur) => (cur.trim() ? cur : a.prefill!));
-      requestAnimationFrame(() => {
-        const el = textareaRef.current;
-        if (!el) return;
-        el.focus();
-        el.setSelectionRange(el.value.length, el.value.length);
-      });
-    }
+    if (a.prompt) void send(a.prompt);
+    else if (a.prefill) prefillComposer(a.prefill);
+  }
+
+  /** Questions send straight away; meal statements only fill the composer, so an example never logs a meal. */
+  function pickStarter(s: StarterPrompt) {
+    if (s.send) void send(s.text);
+    else prefillComposer(s.text);
   }
 
   /* ───────── deleting ───────── */
@@ -384,7 +401,7 @@ export function ChatView() {
       />
     );
   } else if (!messages.length && !showTyping) {
-    body = <ChatEmptyState firstName={firstName} onPick={(p) => void send(p)} onQuickAction={runQuickAction} disabled={busy} />;
+    body = <ChatEmptyState firstName={firstName} onPick={pickStarter} onQuickAction={runQuickAction} disabled={busy} />;
   } else {
     body = (
       <div role="log" aria-live="polite" aria-label="Conversation with ÖRZA" className="flex flex-col gap-4">

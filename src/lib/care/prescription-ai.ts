@@ -134,6 +134,30 @@ function doseFromGrid(pattern: string | undefined, form: MedForm): string | unde
   return (unit && !ml ? `${unit[0].toUpperCase()}${unit.slice(1)}: ${parts}` : parts).slice(0, 40);
 }
 
+const minutesOf = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+
+/**
+ * AI times are kept only when they match the written frequency slot by slot (within 3 h),
+ * e.g. "9 pm" for a night dose. "1-0-0" (morning) with an AI time of 14:00 falls back to 08:00.
+ */
+function timesAgree(given: string[], written: string[]): boolean {
+  if (given.length !== written.length) return false;
+  const a = [...given].sort();
+  const b = [...written].sort();
+  return a.every((t, i) => {
+    const d = Math.abs(minutesOf(t) - minutesOf(b[i]));
+    return Math.min(d, 1440 - d) <= 180;
+  });
+}
+
+/** True for dose text that is really a frequency: "0-0-1", "1-0-1", "once a week", "BD", "SOS", "x 5 days". */
+function looksLikeFrequency(dose: string): boolean {
+  const d = dose.trim().toLowerCase();
+  if (/^[\d½¼¾.]+\s*(?:ml)?\s*-\s*[\d½¼¾.]+/.test(d)) return true;
+  if (/\b(?:once|twice|thrice|daily|weekly|a week|per week|alternate|every|times a day|x\s*\d+|days?)\b/.test(d)) return true;
+  return /^(?:od|qd|bd|bid|tds|tid|qid|qds|hs|sos|prn|stat|ac|pc)$/.test(d);
+}
+
 /* ───────────────────────────── Medicine normaliser ───────────────────────────── */
 
 export interface NormaliseOptions {
@@ -177,7 +201,7 @@ export function normaliseMedicine(raw: unknown, opts: NormaliseOptions = {}): Ex
   if (asNeeded) {
     // SOS medicines never ring — they're taken only when needed.
     times = [];
-  } else if (given.length && (opts.fromUser || !parsed.times.length || parsed.times.length === given.length)) {
+  } else if (given.length && (opts.fromUser || !parsed.times.length || timesAgree(given, parsed.times))) {
     times = given;
   } else if (parsed.times.length) {
     times = parsed.times;
@@ -194,8 +218,16 @@ export function normaliseMedicine(raw: unknown, opts: NormaliseOptions = {}): Ex
   const aiTiming = toTiming(r.timing);
   const timing: DoseTiming = opts.fromUser ? aiTiming || "any" : aiTiming && aiTiming !== "any" ? aiTiming : parsed.timing || aiTiming || "any";
 
+  const strengthText = clampText(r.strength, 40);
+  // The AI sometimes puts the frequency ("0-0-1", "once a week", "SOS") in the dose field — never show that as a dose.
+  const aiDose = clampText(r.dose, 40);
+  const liquidAmount = (form === "syrup" || form === "drops") && strengthText && /^\d+(?:\.\d+)?\s?ml$/i.test(strengthText) ? strengthText.replace(/\s?ml$/i, " ml") : undefined;
   const dose =
-    clampText(r.dose, 40) || doseFromGrid(parsed.pattern && /^[\d½¼¾.]/.test(parsed.pattern) ? parsed.pattern : pattern, form) || DEFAULT_DOSE[form] || "As prescribed";
+    (aiDose && !looksLikeFrequency(aiDose) ? aiDose : undefined) ||
+    doseFromGrid(parsed.pattern && /^[\d½¼¾.]/.test(parsed.pattern) ? parsed.pattern : pattern, form) ||
+    liquidAmount ||
+    DEFAULT_DOSE[form] ||
+    "As prescribed";
 
   const duration = opts.fromUser ? toDays(r.duration_days) : (toDays(r.duration_days) ?? (parsed.ongoing ? undefined : parsed.duration_days));
 
@@ -208,8 +240,7 @@ export function normaliseMedicine(raw: unknown, opts: NormaliseOptions = {}): Ex
     frequency_text: frequencyText || parsed.pattern || pattern || (asNeeded ? "SOS" : times.length === 1 ? "Once a day" : `${times.length} times a day`),
     as_needed: asNeeded,
   };
-  const strength = clampText(r.strength, 40);
-  if (strength) med.strength = strength;
+  if (strengthText) med.strength = strengthText;
   if (duration) med.duration_days = duration;
   const instructions = clampText(r.instructions, 200);
   if (instructions) med.instructions = instructions;

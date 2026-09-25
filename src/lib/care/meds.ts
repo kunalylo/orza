@@ -68,7 +68,14 @@ export async function dosesBetween(user: User, from: Date, to: Date, now: Date =
   const tz = tzOf(user);
   const list = (meds || (await activeMedications(user.id))).filter((m) => m.active && !m.as_needed);
   if (!list.length) return [];
-  const occ = list.flatMap((m) => occurrencesBetween(m.schedule, from, to, tz).map((o) => ({ m, o })));
+  // Doses scheduled well before the medicine was added (e.g. this morning's 08:00 for a medicine added at 16:00)
+  // were never the user's to take in ÖRZA — don't list them as missed. 30 min grace covers "adding the one I take now".
+  const occ = list.flatMap((m) => {
+    const since = Date.parse(m.created_at) - 30 * 60000;
+    return occurrencesBetween(m.schedule, from, to, tz)
+      .filter((o) => !Number.isFinite(since) || o.at.getTime() >= since)
+      .map((o) => ({ m, o }));
+  });
   if (!occ.length) return [];
   const logs = await col<DoseLog>("dose_logs").find({
     user_id: user.id,

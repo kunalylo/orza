@@ -41,8 +41,10 @@ const MAX_RULE_ITERATIONS = 20000;
 export type IcalErrorCode = "invalid_url" | "blocked_host" | "dns" | "timeout" | "too_large" | "http" | "not_ical" | "network" | "redirects";
 
 export class IcalImportError extends Error {
-  constructor(public code: IcalErrorCode, message: string) {
+  readonly code: IcalErrorCode;
+  constructor(code: IcalErrorCode, message: string) {
     super(message);
+    this.code = code;
     this.name = "IcalImportError";
   }
 }

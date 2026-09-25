@@ -49,6 +49,8 @@ const NUM_WORDS: Record<string, number> = {
   eleven: 11, twelve: 12, fourteen: 14, fifteen: 15, pandrah: 15, twenty: 20, bees: 20, thirty: 30, tees: 30,
 };
 const NUM = "(\\d{1,3}|a|an|one|ek|two|do|three|teen|four|char|chaar|five|paanch|panch|six|seven|eight|nine|ten|das|eleven|twelve|fourteen|fifteen|pandrah|twenty|bees|thirty|tees)";
+/** Like NUM without "a"/"an": "twice a day" / "4 times a day" is a frequency, never a 1-day course. */
+const NUM_DAYS = NUM.replace("|a|an|", "|");
 
 function toNum(s: string | undefined): number | undefined {
   if (!s) return undefined;
@@ -108,7 +110,7 @@ function detectDuration(s: string): number | undefined {
   if (/\bfortnight\b/.test(s)) return 14;
   if ((m = s.match(new RegExp(`\\b${NUM}\\s*(?:-\\s*)?(?:months?|mths?|mnths?|mahine|mahina|mahino)\\b`)))) return clampDays((toNum(m[1]) ?? 0) * 30);
   if ((m = s.match(new RegExp(`\\b${NUM}\\s*(?:-\\s*)?(?:weeks?|wks?|hafte|hafta|hafton)\\b`)))) return clampDays((toNum(m[1]) ?? 0) * 7);
-  if ((m = s.match(new RegExp(`\\b${NUM}\\s*(?:-\\s*)?(?:days?|dys?|din|dino|dinon)\\b`)))) return clampDays(toNum(m[1]));
+  if ((m = s.match(new RegExp(`\\b${NUM_DAYS}\\s*(?:-\\s*)?(?:days?|dys?|din|dino|dinon)\\b`)))) return clampDays(toNum(m[1]));
   if ((m = s.match(/(?:\bx|\bfor)\s*(\d{1,3})\s*d\b/))) return clampDays(Number(m[1]));
   if ((m = s.match(/(?<![\d½¼¾.])(\d{1,3})d\b/))) return clampDays(Number(m[1]));
   // "BD x 5" — a bare number after "x" means days on Indian prescriptions.

@@ -156,22 +156,22 @@ export function inQuietWindow(quiet: { start: string; end: string } | null | und
 export const E164_RE = /^\+[1-9]\d{7,14}$/;
 
 export const COUNTRY_CODES: { code: string; label: string }[] = [
-  { code: "+91", label: "India (+91)" },
-  { code: "+971", label: "UAE (+971)" },
-  { code: "+966", label: "Saudi Arabia (+966)" },
-  { code: "+974", label: "Qatar (+974)" },
-  { code: "+965", label: "Kuwait (+965)" },
-  { code: "+968", label: "Oman (+968)" },
-  { code: "+973", label: "Bahrain (+973)" },
-  { code: "+977", label: "Nepal (+977)" },
-  { code: "+880", label: "Bangladesh (+880)" },
-  { code: "+94", label: "Sri Lanka (+94)" },
-  { code: "+65", label: "Singapore (+65)" },
-  { code: "+60", label: "Malaysia (+60)" },
-  { code: "+44", label: "UK (+44)" },
-  { code: "+1", label: "USA / Canada (+1)" },
-  { code: "+61", label: "Australia (+61)" },
-  { code: "+64", label: "New Zealand (+64)" },
+  { code: "+91", label: "+91 India" },
+  { code: "+971", label: "+971 UAE" },
+  { code: "+966", label: "+966 Saudi Arabia" },
+  { code: "+974", label: "+974 Qatar" },
+  { code: "+965", label: "+965 Kuwait" },
+  { code: "+968", label: "+968 Oman" },
+  { code: "+973", label: "+973 Bahrain" },
+  { code: "+977", label: "+977 Nepal" },
+  { code: "+880", label: "+880 Bangladesh" },
+  { code: "+94", label: "+94 Sri Lanka" },
+  { code: "+65", label: "+65 Singapore" },
+  { code: "+60", label: "+60 Malaysia" },
+  { code: "+44", label: "+44 UK" },
+  { code: "+1", label: "+1 USA / Canada" },
+  { code: "+61", label: "+61 Australia" },
+  { code: "+64", label: "+64 New Zealand" },
 ];
 
 /**
@@ -246,4 +246,57 @@ export interface DueAlarm {
 
 export function alarmUrl(medicationId: string, scheduledFor: string) {
   return `/dashboard/alarm?med=${encodeURIComponent(medicationId)}&at=${encodeURIComponent(scheduledFor)}`;
+}
+
+/** GET /api/alarms/due */
+export interface DueAlarmsResponse {
+  alarms: DueAlarm[];
+  /** True while the user's quiet hours are on — the in-app alarm stays silent (no chime / vibration). */
+  quiet: boolean;
+  server_time: string;
+}
+
+/* ───────────────────────────── API shapes ───────────────────────────── */
+
+/** GET /api/integrations (also returned by the PUT routes under /api/integrations). */
+export interface IntegrationsView {
+  push: { configured: boolean; subscriptions: number; public_key: string | null };
+  whatsapp: { configured: boolean; mode: "template" | "session"; phone: string | null; opt_in: boolean };
+  calendar: { feed_url: string | null; external_url_set: boolean };
+  health: { token_preview: string | null; last_sync: string | null };
+  quiet_hours: { start: string; end: string } | null;
+  /** Settings → "Gentle reminders". When off, meal / water / weigh-in reminders pause (medicine alarms don't). */
+  reminders_enabled: boolean;
+  timezone: string;
+}
+
+/** A reminder as the API returns it: the stored document plus its next firing time. */
+export interface ReminderView {
+  id: string;
+  kind: ReminderKind;
+  title: string;
+  body?: string;
+  schedule: Schedule;
+  channels: ReminderChannels;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  /** ISO instant of the next occurrence (null when inactive or the schedule has ended). */
+  next_at: string | null;
+}
+
+/** Friendly "Today 13:30" / "Tomorrow 09:00" / "Mon 07:30" / "12 Oct 07:30" in the given timezone. */
+export function describeNext(iso: string | null, tz: string, now: Date = new Date()): string {
+  if (!iso) return "";
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  const day = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  const time = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(at);
+  const target = day(at);
+  if (target === day(now)) return `Today ${time}`;
+  if (target === day(new Date(now.getTime() + 86400000))) return `Tomorrow ${time}`;
+  if (at.getTime() - now.getTime() < 6 * 86400000) {
+    return `${new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short" }).format(at)} ${time}`;
+  }
+  return `${new Intl.DateTimeFormat("en-GB", { timeZone: tz, day: "numeric", month: "short" }).format(at)} ${time}`;
 }

@@ -72,6 +72,25 @@ export function vapidPublicKey(): string | null {
   return vapid().publicKey || null;
 }
 
+/**
+ * Push services browsers actually use. The server POSTs to whatever endpoint a browser registers,
+ * so anything else is refused — otherwise the subscribe API could aim ÖRZA's server at arbitrary URLs.
+ * Chrome / Edge-Chromium / Samsung / Opera → FCM, Firefox → Mozilla autopush, Edge (legacy) → WNS,
+ * Safari (macOS 13+, iOS 16.4+ home-screen apps) → Apple.
+ */
+const PUSH_HOST_SUFFIXES = ["fcm.googleapis.com", "android.googleapis.com", "push.services.mozilla.com", "notify.windows.com", "push.apple.com"];
+
+export function isAllowedPushEndpoint(endpoint: string): boolean {
+  try {
+    const u = new URL(endpoint);
+    if (u.protocol !== "https:" || u.username || u.password || (u.port && u.port !== "443")) return false;
+    const host = u.hostname.toLowerCase();
+    return PUSH_HOST_SUFFIXES.some((s) => host === s || host.endsWith(`.${s}`));
+  } catch {
+    return false;
+  }
+}
+
 const byteLength = (s: string) => Buffer.byteLength(s, "utf8");
 const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, Math.max(0, n - 1)).trimEnd()}…` : s);
 

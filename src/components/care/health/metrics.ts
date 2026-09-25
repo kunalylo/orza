@@ -150,3 +150,53 @@ export const isHealthSource = (s: unknown): s is HealthSource => typeof s === "s
 /** Import limits shared by the client importers and the API. */
 export const MAX_IMPORT_DAYS = 400;
 export const APPLE_IMPORT_DAYS = 365;
+
+/** Sources an automation client may name when posting to /api/health/sync (anything else is recorded as "api"). */
+export const SYNC_SOURCES = ["health_connect", "health_auto_export", "shortcut", "api"] as const satisfies readonly HealthSource[];
+/** Sources the signed-in importers use with /api/health/import. */
+export const IMPORT_SOURCES = ["apple_health", "csv"] as const satisfies readonly HealthSource[];
+
+/* ───────────────────────────── API shapes ───────────────────────────── */
+
+/** One calendar day merged across sources (steps/sleep = max, heart rate = average, weight = most recently updated source). */
+export type MergedHealthDay = { date: string; sources: HealthSource[] } & HealthDayValues;
+
+export interface HealthSourceSummary {
+  source: HealthSource;
+  label: string;
+  /** Days this source contributed inside the requested range. */
+  days: number;
+  first_date: string;
+  last_date: string;
+  last_updated: string;
+}
+
+/** GET /api/health/days */
+export interface HealthDaysResponse {
+  from: string;
+  to: string;
+  days: MergedHealthDay[];
+  sources: HealthSourceSummary[];
+  /** Most recent write from any source (ISO), across all time. */
+  last_sync: string | null;
+  last_sync_source: HealthSource | null;
+}
+
+/** GET /api/health/token */
+export interface HealthTokenStatus {
+  token: { preview: string; created_at: string | null } | null;
+}
+
+/** POST /api/health/token — the plaintext token is returned exactly once. */
+export interface HealthTokenCreated {
+  token: string;
+  preview: string;
+  created_at: string;
+}
+
+/** POST /api/health/import and /api/health/sync */
+export interface HealthWriteResponse {
+  ok: true;
+  days_updated: number;
+  skipped: number;
+}

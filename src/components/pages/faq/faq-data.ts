@@ -64,15 +64,15 @@ export const FAQ_CATEGORIES: FaqCategory[] = [
     items: [
       {
         q: "Does ÖRZA sync with Apple Watch?",
-        a: "Yes, via Apple Health integration (steps, sleep, workouts).",
+        a: "Yes, through Apple Health. Import your Apple Health export on the Health page, or let an app like Health Auto Export send steps, sleep, heart rate and weight to ÖRZA automatically.",
       },
       {
         q: "What about Android wearables?",
-        a: "Yes, via Health Connect / Google Fit.",
+        a: "Yes, through Health Connect. An automation app can send your daily steps, sleep, heart rate and weight to ÖRZA using your personal sync link, or you can import a CSV.",
       },
       {
         q: "Can I upload blood test reports?",
-        a: "Yes. ÖRZA provides wellness guidance but always recommends consulting your doctor.",
+        a: "Not yet — health report interpretation is part of the upcoming Premium plans. You can already scan a prescription to set up medicine reminders. ÖRZA provides wellness guidance and always recommends consulting your doctor.",
       },
       {
         q: "Does ÖRZA diagnose diseases?",
@@ -86,15 +86,15 @@ export const FAQ_CATEGORIES: FaqCategory[] = [
     items: [
       {
         q: "How does Couple mode work?",
-        a: "Two linked accounts can log shared meals, see each other's progress (with permission), and coordinate household planning.",
+        a: "Couple mode arrives with the Premium Couple plan, launching soon. Two linked accounts will be able to log shared meals, see each other's progress (with permission), and coordinate household planning.",
       },
       {
         q: "Can caregivers log for elderly parents?",
-        a: "Yes, in Caregiver mode. The caregiver can log meals, track meds, and manage health reports for the dependent.",
+        a: "Yes. Today you can add a parent's medicines to your own account, with photos and reminders, and mark who each one is for. Full Caregiver mode, launching soon with Premium Caregiver, lets the caregiver log meals, track meds, and manage health reports for the dependent.",
       },
       {
         q: "Is Family mode worth it?",
-        a: "If you're managing 3+ people's nutrition (kids, parents), yes. Separate profiles + shared planning.",
+        a: "If you're managing 3+ people's nutrition (kids, parents), yes. Separate profiles + shared planning. Family mode is launching soon with the Premium Family plan.",
       },
     ],
   },

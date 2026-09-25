@@ -24,7 +24,7 @@ const config: Config = {
           strong: "#141414",
           DEFAULT: "#2A2A2A",
           muted: "#5B5B5B",
-          subtle: "#7A7A7A",
+          subtle: "#666666",
           inverse: "#F7F4EF",
           // hero
           hero: "#07090C",

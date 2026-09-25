@@ -250,7 +250,7 @@ export function ProfileSection() {
             />
           </Field>
           <GroupField id="pf-sex" label="Sex" error={errors.sex}>
-            <Segmented<Sex | "">
+            <Segmented<Sex | ""> aria-labelledby="pf-sex-label"
               value={draft.sex}
               onChange={(v) => set("sex", v)}
               options={[
@@ -375,7 +375,7 @@ export function ProfileSection() {
             </datalist>
           </Field>
           <GroupField id="pf-language" label="Language">
-            <Segmented<ProfileDraft["language"]>
+            <Segmented<ProfileDraft["language"]> aria-labelledby="pf-language-label"
               value={draft.language}
               onChange={(v) => set("language", v)}
               options={LANGUAGE_OPTIONS.map((o) => ({ value: o.value, label: o.label.split(" (")[0] }))}

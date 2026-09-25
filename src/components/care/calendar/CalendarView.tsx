@@ -179,7 +179,7 @@ export function CalendarView() {
         title="Calendar"
         description="Medicines, reminders and meals in one view — with your own calendar alongside, so ÖRZA can help you plan food around busy days."
         actions={
-          <Segmented<View>
+          <Segmented<View> aria-label="Calendar view"
             value={view}
             onChange={setView}
             options={[

@@ -49,7 +49,7 @@ export function WeightTrendCard({
           )}
         </div>
         {n > 1 && (
-          <Segmented<"chart" | "table">
+          <Segmented<"chart" | "table"> aria-label="Show weigh-ins as"
             size="sm"
             value={view}
             onChange={setView}

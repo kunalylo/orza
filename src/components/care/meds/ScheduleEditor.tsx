@@ -278,7 +278,7 @@ export function ScheduleEditor({
       {!d.as_needed && (
         <div>
           <div className="mb-2 text-[13px] font-medium text-orza-strong">Repeat</div>
-          <Segmented
+          <Segmented aria-label="Repeat"
             size="sm"
             value={d.repeat}
             onChange={(v) => set({ repeat: v, days: v === "weekdays" && !d.days.length ? [1, 2, 3, 4, 5] : d.days })}
@@ -337,7 +337,7 @@ export function ScheduleEditor({
         </div>
         <div>
           <div className="mb-1.5 text-[13px] font-medium text-orza-strong">Ends</div>
-          <Segmented
+          <Segmented aria-label="Ends"
             size="sm"
             value={d.end_mode}
             onChange={(v) => set({ end_mode: v, end_date: v === "date" && !d.end_date ? addDaysISO(d.start_date || today, 29) : d.end_date })}

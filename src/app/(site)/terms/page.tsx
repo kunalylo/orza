@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/site";
 import { Check, Coins, FileText, Stethoscope, Trash2, X, XCircle } from "lucide-react";
 import { INITIAL_CREDITS } from "@/lib/credits";
 import { LegalPage, type LegalHighlight, type LegalSection } from "@/components/pages/legal/LegalPage";
@@ -6,16 +7,14 @@ import { B, InlineLink, LegalCallout, LegalLi, LegalList, LegalP, SupportEmail }
 import { Accent } from "@/components/pages/PageHero";
 import { creditActionRows, creditsLabel } from "@/components/pages/pricing/credit-actions";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Terms of Service",
   description:
     "The terms for using ÖRZA: wellness guidance (not medical advice), your account, AI features and credits, plans and payments, household modes, and your rights.",
-  alternates: { canonical: "/terms" },
-  openGraph: {
-    title: "ÖRZA Terms of Service",
-    description: "Plain-language terms for using ÖRZA.",
-  },
-};
+  path: "/terms",
+  socialTitle: "ÖRZA Terms of Service",
+  socialDescription: "Plain-language terms for using ÖRZA.",
+});
 
 const HIGHLIGHTS: LegalHighlight[] = [
   { icon: Stethoscope, title: "Not medical advice", body: "ÖRZA offers wellness guidance. Always consult your doctor for medical concerns." },
@@ -88,8 +87,9 @@ const SECTIONS: LegalSection[] = [
       <LegalP>
         ÖRZA is an AI-powered wellness platform. You can log meals by photo, text or voice in English, Hindi or Hinglish, see
         nutrition insights, set goals and calorie targets, generate recipes, get compassionate rebalancing plans after special
-        meals, view reports, and coordinate health in Household modes. Features can vary by plan and platform, and some may be
-        marked as coming soon.
+        meals, view reports, keep track of medicines with photo reminders, bring in health data from your phone, and see it all
+        on your calendar. Household modes and some other features are marked as coming soon. Features can vary by plan and
+        platform.
       </LegalP>
     ),
   },
@@ -121,12 +121,44 @@ const SECTIONS: LegalSection[] = [
     ),
   },
   {
+    id: "medicines",
+    title: "Medicines and reminders",
+    content: (
+      <>
+        <LegalP>
+          ÖRZA can remind you to take medicines you add and show their photos so they&apos;re easy to recognise. These features
+          help you stay organised; they don&apos;t replace your doctor, pharmacist or the instructions on your prescription.
+        </LegalP>
+        <LegalList>
+          <LegalLi title="Check prescription scans.">
+            When you scan a prescription, AI reads the medicines, doses and timings. It can misread handwriting or abbreviations,
+            so check every medicine, dose, time and duration against your prescription before you save it, and ask your doctor or
+            pharmacist if anything is unclear.
+          </LegalLi>
+          <LegalLi title="Reminders can be missed.">
+            Notifications depend on your device, browser and settings, your internet connection, and services such as WhatsApp
+            and your calendar app. Keep a backup for doses that matter, especially time-critical ones.
+          </LegalLi>
+          <LegalLi title="No dosing or interaction advice.">
+            ÖRZA doesn&apos;t check for drug interactions, allergies to medicines or correct dosing. Never start, stop or change a
+            medicine because of something in ÖRZA — talk to your doctor.
+          </LegalLi>
+          <LegalLi title="Medicines for others.">
+            If you add medicines for someone else, make sure you have their permission, or are their parent, guardian or
+            caregiver.
+          </LegalLi>
+        </LegalList>
+      </>
+    ),
+  },
+  {
     id: "accounts",
     title: "Your account",
     content: (
       <LegalList>
         <LegalLi title="Eligibility:">
-          you must be at least 18 years old to create an account. Household modes let an adult manage profiles for dependents.
+          you must be at least 18 years old to create an account. Household modes, when they launch, will let an adult manage
+          profiles for dependents.
         </LegalLi>
         <LegalLi title="Accurate information:">
           give accurate details, especially the profile information used to calculate your targets, and keep them up to date.
@@ -263,8 +295,9 @@ const SECTIONS: LegalSection[] = [
     title: "Third-party services",
     content: (
       <LegalP>
-        ÖRZA relies on third-party providers such as cloud hosting, AI model providers and, where available, connected health
-        platforms like Apple Health and Google Fit or payment providers. Your use of a third-party platform you connect may also
+        ÖRZA relies on third-party providers such as cloud hosting and AI model providers, and works with services you choose to
+        use alongside it — Apple Health and Health Connect data you import or sync through other apps, WhatsApp, calendar apps
+        and your browser&apos;s notification service. Your use of a third-party platform you connect may also
         be subject to that provider&apos;s own terms. We aren&apos;t responsible for services we don&apos;t control.
       </LegalP>
     ),

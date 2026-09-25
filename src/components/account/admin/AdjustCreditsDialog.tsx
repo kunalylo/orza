@@ -107,11 +107,11 @@ export function AdjustCreditsDialog({
       >
         {member && (
           <form onSubmit={submit} noValidate>
-            <div role="group" aria-labelledby="adjust-mode-label">
+            <div>
               <div id="adjust-mode-label" className="sr-only">
                 Add or remove credits
               </div>
-              <Segmented<Mode>
+              <Segmented<Mode> aria-labelledby="adjust-mode-label"
                 value={mode}
                 onChange={(v) => {
                   setMode(v);

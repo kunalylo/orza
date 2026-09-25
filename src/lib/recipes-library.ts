@@ -329,20 +329,6 @@ export function recipeViolations(
   return [...out];
 }
 
-/** Diets stated in facts ÖRZA learned in chat ("Is vegan", "Follows a Jain diet"). Non-veg adds no restriction. */
-export function memoryDiets(memory: string[] | undefined | null): Diet[] {
-  const out = new Set<Diet>();
-  for (const fact of Array.isArray(memory) ? memory : []) {
-    if (typeof fact !== "string") continue;
-    const f = fact.trim().toLowerCase();
-    if (/\bnon[- ]?veg/.test(f)) continue;
-    const m = f.match(/^(?:is|follows|eats|keeps)\s+(?:an?\s+)?(?:strict(?:ly)?\s+|pure(?:ly)?\s+|fully\s+)?(vegan|vegetarian|eggetarian|jain|veg)\b/);
-    if (!m) continue;
-    out.add(m[1] === "vegan" ? "vegan" : m[1] === "jain" ? "jain" : m[1] === "eggetarian" ? "eggetarian" : "vegetarian");
-  }
-  return [...out];
-}
-
 /* ───────────────────────────── Tags ───────────────────────────── */
 
 const slug = (s: string) =>

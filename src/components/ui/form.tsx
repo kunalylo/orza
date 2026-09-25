@@ -46,41 +46,125 @@ export function FieldHint({ className, ...rest }: React.HTMLAttributes<HTMLParag
   return <p className={cn("mt-1.5 text-xs text-orza-subtle", className)} {...rest} />;
 }
 
-/** Segmented control (pill tabs). */
+export type SegmentedOption<T extends string> = {
+  value: T;
+  label: React.ReactNode;
+  disabled?: boolean;
+  /** Tabs mode: id of the panel this tab shows (defaults to the control's `panelId`). */
+  controls?: string;
+};
+
+const NEXT_KEYS: Record<string, 1 | -1 | "first" | "last"> = {
+  ArrowRight: 1,
+  ArrowDown: 1,
+  ArrowLeft: -1,
+  ArrowUp: -1,
+  Home: "first",
+  End: "last",
+};
+
+/**
+ * Segmented control (pill buttons) for picking one of a few options.
+ *
+ * - Default: a single-choice form field — `role="radiogroup"` with `role="radio"` / `aria-checked`.
+ *   Name it with `aria-label` or `aria-labelledby` (a visible label's id).
+ * - `semantics="tabs"`: a view switcher that shows one panel — `role="tablist"` / `role="tab"`.
+ *   Give each tab an id base via `id` and point at the panel with `panelId`; the panel should be
+ *   `<div role="tabpanel" id={panelId} aria-labelledby={`${id}-${value}`}>`.
+ *
+ * Keyboard (both modes): one Tab stop (the selected option); ←/→ (and ↑/↓) move and select;
+ * Home / End jump to the first / last option.
+ */
 export function Segmented<T extends string>({
   value,
   onChange,
   options,
   className,
   size = "md",
+  semantics = "radio",
+  id,
+  panelId,
+  disabled = false,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledby,
+  "aria-describedby": ariaDescribedby,
 }: {
   value: T;
   onChange: (v: T) => void;
-  options: { value: T; label: React.ReactNode }[];
+  options: SegmentedOption<T>[];
   className?: string;
   size?: "sm" | "md";
+  semantics?: "radio" | "tabs";
+  /** Id of the group; tabs get `${id}-${value}` ids. */
+  id?: string;
+  /** Tabs mode: id of the tabpanel the tabs control. */
+  panelId?: string;
+  disabled?: boolean;
+  "aria-label"?: string;
+  "aria-labelledby"?: string;
+  "aria-describedby"?: string;
 }) {
+  const tabs = semantics === "tabs";
+  const enabled = options.filter((o) => !o.disabled && !disabled);
+  const selectedEnabled = enabled.some((o) => o.value === value);
+  // Roving tab stop: the selected option, or the first enabled one when nothing valid is selected.
+  const tabStop = selectedEnabled ? value : enabled[0]?.value;
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLButtonElement>) {
+    const step = NEXT_KEYS[e.key];
+    if (step === undefined || !enabled.length) return;
+    e.preventDefault();
+    const current = enabled.findIndex((o) => o.value === (e.currentTarget.dataset.value as T));
+    let next: number;
+    if (step === "first") next = 0;
+    else if (step === "last") next = enabled.length - 1;
+    else next = ((current < 0 ? 0 : current + step) + enabled.length) % enabled.length;
+    const target = enabled[next];
+    if (target.value !== value) onChange(target.value);
+    const group = e.currentTarget.parentElement;
+    const button = Array.from(group?.querySelectorAll<HTMLButtonElement>("button[data-value]") ?? []).find(
+      (b) => b.dataset.value === target.value
+    );
+    button?.focus();
+  }
+
   return (
     <div
-      role="tablist"
+      id={id}
+      role={tabs ? "tablist" : "radiogroup"}
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabelledby}
+      aria-describedby={ariaDescribedby}
+      aria-disabled={disabled || undefined}
       className={cn("inline-flex rounded-full border border-[rgba(20,20,20,0.10)] bg-white/60 p-1 backdrop-blur-orza", className)}
     >
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          role="tab"
-          aria-selected={value === o.value}
-          onClick={() => onChange(o.value)}
-          className={cn(
-            "rounded-full font-medium transition-colors duration-150 ease-orza",
-            size === "sm" ? "px-3 h-7 text-xs" : "px-4 h-8 text-sm",
-            value === o.value ? "bg-[#141414] text-orza-bg-0" : "text-orza-muted hover:text-orza-strong"
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
+      {options.map((o) => {
+        const selected = value === o.value;
+        const isDisabled = disabled || !!o.disabled;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role={tabs ? "tab" : "radio"}
+            id={tabs && id ? `${id}-${o.value}` : undefined}
+            aria-selected={tabs ? selected : undefined}
+            aria-checked={tabs ? undefined : selected}
+            aria-controls={tabs ? o.controls ?? panelId : undefined}
+            data-value={o.value}
+            tabIndex={o.value === tabStop && !isDisabled ? 0 : -1}
+            disabled={isDisabled}
+            onClick={() => onChange(o.value)}
+            onKeyDown={onKeyDown}
+            className={cn(
+              "rounded-full font-medium transition-colors duration-150 ease-orza disabled:cursor-not-allowed disabled:opacity-50",
+              size === "sm" ? "px-3 h-7 text-xs" : "px-4 h-8 text-sm",
+              selected ? "bg-[#141414] text-orza-bg-0" : "text-orza-muted hover:text-orza-strong"
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

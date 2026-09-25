@@ -71,7 +71,7 @@ export function EditMealDialog({
         <div className="mt-4">
           <span className="mb-1.5 block text-[13px] font-medium text-orza-strong">Meal</span>
           <div className="no-scrollbar -mx-1 overflow-x-auto px-1">
-            <Segmented size="sm" value={mealType} onChange={setMealType} options={MEAL_TYPES.map((t) => ({ value: t, label: MEAL_SINGULAR[t] }))} />
+            <Segmented aria-label="Meal type" size="sm" value={mealType} onChange={setMealType} options={MEAL_TYPES.map((t) => ({ value: t, label: MEAL_SINGULAR[t] }))} />
           </div>
         </div>
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

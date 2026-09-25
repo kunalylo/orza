@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { MessageCircle } from "lucide-react";
-import { SITE } from "@/lib/site";
+import { SITE, pageMetadata } from "@/lib/site";
 import { Section } from "@/components/orza/primitives";
 import { Reveal } from "@/components/orza/Reveal";
 import { Accent, PageHero } from "@/components/pages/PageHero";
@@ -9,16 +9,14 @@ import { ScrollSpyNav } from "@/components/pages/ScrollSpyNav";
 import { FAQ_CATEGORIES, FAQ_TOTAL } from "@/components/pages/faq/faq-data";
 import { StillHaveQuestions } from "@/components/pages/faq/StillHaveQuestions";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "FAQ",
   description:
     "Everything you need to know about ÖRZA — Indian food intelligence, Hindi & Hinglish voice logging, health data, household modes, pricing, credits and privacy.",
-  alternates: { canonical: "/faq" },
-  openGraph: {
-    title: "ÖRZA — Frequently Asked Questions",
-    description: "Everything you need to know about ÖRZA",
-  },
-};
+  path: "/faq",
+  socialTitle: "ÖRZA — Frequently Asked Questions",
+  socialDescription: "Everything you need to know about ÖRZA",
+});
 
 /** schema.org FAQPage structured data for rich results. */
 function faqJsonLd() {

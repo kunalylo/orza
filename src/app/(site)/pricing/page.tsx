@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/site";
 import Link from "next/link";
 import { ArrowUpRight, Sparkles, Zap } from "lucide-react";
 import { Eyebrow, GlassCard, Heading, Section, SectionHeader, Tag } from "@/components/orza/primitives";
@@ -11,16 +12,14 @@ import { CreditsExplainer } from "@/components/pages/pricing/CreditsExplainer";
 import { TOP_UPS, inr, pricingFaq, type CreditFacts } from "@/components/pages/pricing/plans";
 import { CREDIT_COSTS, INITIAL_CREDITS } from "@/lib/credits";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Pricing",
   description:
     "Transparent ÖRZA pricing. Start free forever with AI credits included, and join the waitlist for Premium Individual, Couple, Caregiver or Family. No hidden fees.",
-  alternates: { canonical: "/pricing" },
-  openGraph: {
-    title: "ÖRZA Pricing — Plans that grow with your wellness journey",
-    description: "Start free. Upgrade when ready. No hidden fees.",
-  },
-};
+  path: "/pricing",
+  socialTitle: "ÖRZA Pricing — Plans that grow with your wellness journey",
+  socialDescription: "Start free. Upgrade when ready. No hidden fees.",
+});
 
 /** Live credit facts for the Free plan and FAQ — the same numbers the app uses. */
 const CREDITS: CreditFacts = {

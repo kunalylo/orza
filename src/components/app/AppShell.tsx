@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Bell,
@@ -25,8 +25,7 @@ import { cn, formatNumber } from "@/lib/utils";
 import { BrandMark } from "@/components/orza/primitives";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useUser } from "@/components/app/UserProvider";
-import { toast } from "sonner";
-import { ApiError, api, errorMessage } from "@/lib/api-client";
+import { useSignOut } from "@/components/app/useSignOut";
 import { AlarmWatcher } from "@/components/care/AlarmWatcher";
 
 export const APP_NAV = [
@@ -98,37 +97,6 @@ function CreditsPill({ className }: { className?: string }) {
   );
 }
 
-/**
- * Signs out, then leaves the app. Only the server can clear the httpOnly session cookie and revoke
- * the session, so if that request fails the user stays put and is told — never shown the home page
- * while still signed in (shared / family phones).
- */
-function useSignOut() {
-  const router = useRouter();
-  const [signingOut, setSigningOut] = React.useState(false);
-  const busy = React.useRef(false);
-  const signOut = React.useCallback(async () => {
-    if (busy.current) return;
-    busy.current = true;
-    setSigningOut(true);
-    try {
-      await api.post("/auth/logout");
-    } catch (e) {
-      busy.current = false;
-      setSigningOut(false);
-      toast.error(
-        e instanceof ApiError && e.code === "network"
-          ? "Couldn't sign you out — check your connection and try again."
-          : `Couldn't sign you out. ${errorMessage(e)}`
-      );
-      return;
-    }
-    router.replace("/");
-    router.refresh();
-  }, [router]);
-  return { signOut, signingOut };
-}
-
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user } = useUser();
   const pathname = usePathname();
@@ -158,7 +126,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <button
               type="button"
-              onClick={signOut}
+              onClick={() => void signOut()}
               disabled={signingOut}
               aria-label={signingOut ? "Signing out" : "Sign out"}
               aria-busy={signingOut}
@@ -193,7 +161,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <NavList onNavigate={() => setMenuOpen(false)} />
           <button
             type="button"
-            onClick={signOut}
+            onClick={() => void signOut()}
             disabled={signingOut}
             aria-busy={signingOut}
             className="mt-6 flex w-full items-center gap-3 rounded-orza-sm px-3 py-2.5 text-[14px] text-orza-muted hover:bg-white/60 hover:text-orza-strong disabled:cursor-wait disabled:opacity-60"
@@ -212,6 +180,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Mobile bottom tabs */}
       <nav
         aria-label="Quick"
+        data-orza-tabbar=""
         className="print:hidden fixed inset-x-0 bottom-0 z-30 border-t border-[rgba(20,20,20,0.08)] bg-[rgba(251,247,241,0.92)] pb-[env(safe-area-inset-bottom)] backdrop-blur-orza lg:hidden"
       >
         <div className="grid grid-cols-5">
@@ -220,14 +189,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             const Icon = item.icon;
             const active = isActive(pathname, href);
             return (
-              <Link key={href} href={href} className={cn("flex flex-col items-center gap-0.5 py-2.5 text-[11px]", active ? "text-orza-strong font-medium" : "text-orza-subtle")}>
-                <Icon size={19} strokeWidth={1.75} className={active ? "text-[#E0593F]" : ""} />
+              <Link
+                key={href}
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className={cn("flex flex-col items-center gap-0.5 py-2.5 text-[11px]", active ? "text-orza-strong font-medium" : "text-orza-subtle")}
+              >
+                <Icon size={19} strokeWidth={1.75} className={active ? "text-[#E0593F]" : ""} aria-hidden />
                 {item.label}
               </Link>
             );
           })}
-          <button type="button" onClick={() => setMenuOpen(true)} className="flex flex-col items-center gap-0.5 py-2.5 text-[11px] text-orza-subtle">
-            <Menu size={19} strokeWidth={1.75} />
+          <button
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={menuOpen}
+            className="flex flex-col items-center gap-0.5 py-2.5 text-[11px] text-orza-subtle"
+          >
+            <Menu size={19} strokeWidth={1.75} aria-hidden />
             More
           </button>
         </div>

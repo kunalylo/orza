@@ -7,8 +7,7 @@ import { listMeals, listMealsInRange, sumNutrients } from "@/lib/domain/meals";
 import { getTrackingDay, trackingInRange } from "@/lib/domain/tracking";
 import { DEFAULT_TARGETS } from "@/lib/domain/targets";
 import { addDays, dateRange, isISODate } from "@/lib/dates";
-import { avoidList, conflictsWithAllergies } from "@/lib/allergens";
-import { memoryDiets } from "@/lib/recipes-library";
+import { avoidList, conflictsWithAllergies, memoryDiets } from "@/lib/allergens";
 import { formatNumber, round } from "@/lib/utils";
 import type { Diet, Meal, Nutrients, Targets, TrackingDay, User } from "@/lib/types";
 

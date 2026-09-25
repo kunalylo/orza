@@ -301,7 +301,7 @@ export function GoalCalculator({
       <GlassCard variant="strong" className="sm:p-7">
         <fieldset>
           <legend className="text-[13px] font-medium text-orza-strong">What would you like to do?</legend>
-          <Segmented<GoalType>
+          <Segmented<GoalType> aria-label="Goal type"
             className="mt-2 grid w-full grid-cols-3"
             value={goal}
             onChange={changeGoal}

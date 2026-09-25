@@ -54,7 +54,7 @@ export function RecipeCollection({
             Recipes made for you
           </h2>
         </div>
-        <Segmented<CollectionTab>
+        <Segmented<CollectionTab> semantics="tabs" id="recipe-collection" panelId="recipe-collection-panel" aria-label="Recipe collection"
           value={tab}
           onChange={onTabChange}
           options={[
@@ -65,7 +65,7 @@ export function RecipeCollection({
         />
       </div>
 
-      <div className="mt-6" role="tabpanel" aria-label={tab === "saved" ? "Saved recipes" : "Recent recipes"}>
+      <div className="mt-6" role="tabpanel" id="recipe-collection-panel" aria-labelledby={`recipe-collection-${tab}`}>
         {loading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy aria-label="Loading recipes">
             {[0, 1, 2].map((i) => (

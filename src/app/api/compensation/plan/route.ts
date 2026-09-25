@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { aiEnabled, aiJSON } from "@/lib/ai";
-import { allergyList, avoidList, conflictsWithAllergies } from "@/lib/allergens";
+import { allergyList, avoidList, conflictsWithAllergies, effectiveDiet } from "@/lib/allergens";
 import { withCredits } from "@/lib/credits";
 import { col, newId, nowISO } from "@/lib/db";
 import { addDays, dateInTz } from "@/lib/dates";
@@ -134,7 +134,11 @@ export const POST = route(async (req: Request) => {
   const body = await parseBody(req, Body);
   const today = dateInTz(user.profile?.timezone);
 
-  const estimate = body.extra_calories == null ? estimateExtraDetails(body.description, user.targets) : null;
+  // The strictest of the profile diet and diets learned in chat ("Is vegan"), for every meal idea.
+  const diet = effectiveDiet(user.profile?.diet, user.memory);
+  const planUser: User = { ...user, profile: { ...(user.profile || {}), ...(diet ? { diet } : {}) } };
+
+  const estimate = body.extra_calories == null ? estimateExtraDetails(body.description, user.targets, diet) : null;
   const extra = body.extra_calories ?? estimate!.calories;
 
   // Allergies plus avoid-facts learned in chat ("Doesn't eat mushrooms") — kept out of every meal idea.
@@ -144,7 +148,7 @@ export const POST = route(async (req: Request) => {
     extra_calories: extra,
     days: body.days ?? 3,
     targets: user.targets,
-    profile: user.profile || {},
+    profile: planUser.profile || {},
     startDate: addDays(today, 1),
     occasion: body.occasion,
     name: user.name,
@@ -159,7 +163,7 @@ export const POST = route(async (req: Request) => {
 
   if (aiEnabled()) {
     try {
-      const out = await withCredits(user.id, "compensation", () => personalise(draft, user, avoid, body.occasion, body.description), `Rebalance plan: ${body.occasion}`);
+      const out = await withCredits(user.id, "compensation", () => personalise(draft, planUser, avoid, body.occasion, body.description), `Rebalance plan: ${body.occasion}`);
       message = out.message;
       days = out.days;
       ai = true;

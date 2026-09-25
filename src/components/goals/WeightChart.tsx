@@ -5,7 +5,7 @@ import { KG_PER_LB, daysBetween, formatDayDate, formatShortDate, kgToUnit, weigh
 import type { WeightPoint } from "@/components/goals/types";
 
 const M = { top: 18, right: 60, bottom: 30, left: 40 };
-const AXIS = "#7A7A7A";
+const AXIS = "#666666"; // matches the orza-subtle token (≥4.5:1 on the cream canvas)
 const GRID = "rgba(20,20,20,0.07)";
 const TARGET = "#0BBEDC";
 

@@ -455,7 +455,7 @@ function NumberAnswer({ prompt, busy, onAnswer }: PickerProps) {
       {units && units.length > 1 && (
         <div className="flex items-center justify-between gap-3">
           <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-orza-subtle">Units</span>
-          <Segmented size="sm" value={unit} onChange={changeUnit} options={units.map((u) => ({ value: u, label: UNIT_LABEL[u] ?? u }))} />
+          <Segmented aria-label="Units" size="sm" value={unit} onChange={changeUnit} options={units.map((u) => ({ value: u, label: UNIT_LABEL[u] ?? u }))} />
         </div>
       )}
       <div className="flex items-center gap-2">

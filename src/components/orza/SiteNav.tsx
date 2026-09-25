@@ -2,7 +2,6 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, useReducedMotion } from "framer-motion";
 import { ArrowUpRight, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/orza/primitives";
@@ -24,7 +23,6 @@ export const NAV_LINKS = [
  */
 export function SiteNav() {
   const pathname = usePathname();
-  const reduce = useReducedMotion();
   const [scrolled, setScrolled] = React.useState(false);
   const [open, setOpen] = React.useState(false);
   const [signedIn, setSignedIn] = React.useState(false);
@@ -47,14 +45,13 @@ export function SiteNav() {
 
   return (
     <>
-      {/* Centering lives on this wrapper: framer-motion's inline transform would override a translate class on the header. */}
+      {/* Centering lives on this wrapper: the entrance animation's transform would override a translate class on the header. */}
       <div className="pointer-events-none fixed inset-x-0 top-3 z-40 flex justify-center px-3">
-      <motion.header
-        initial={reduce ? false : { y: -12, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, ease: [0.2, 0.8, 0.2, 1] }}
+      {/* CSS-only entrance (.orza-reveal-enter): visible in the server HTML, never stuck at opacity 0 before hydration. */}
+      <header
+        style={{ "--orza-reveal-y": "-12px" } as React.CSSProperties}
         className={cn(
-          "pointer-events-auto w-full max-w-[1200px] rounded-full",
+          "orza-reveal-enter pointer-events-auto w-full max-w-[1200px] rounded-full",
           "transition-[background-color,box-shadow,border-color,color] duration-220 ease-orza",
           dark
             ? "border border-transparent bg-transparent text-white/90"
@@ -170,7 +167,7 @@ export function SiteNav() {
             </Dialog>
           </div>
         </div>
-      </motion.header>
+      </header>
       </div>
       {!isHome && <div className="h-20 sm:h-24" aria-hidden />}
     </>

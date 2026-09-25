@@ -2,14 +2,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Download, LogOut, ShieldCheck, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, Download, LogOut, MonitorSmartphone, ShieldCheck, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { useUser } from "@/components/app/UserProvider";
+import { useSignOut } from "@/components/app/useSignOut";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/form";
 import { SectionCard } from "@/components/account/ui";
-import { api } from "@/lib/api-client";
 
 const CONFIRM_WORD = "DELETE";
 
@@ -120,10 +120,10 @@ function DeleteAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChan
 /** Privacy & data — export everything, delete the account, sign out. */
 export function PrivacySection() {
   const { user } = useUser();
-  const router = useRouter();
+  const { signOut, signingOut } = useSignOut();
+  const [scope, setScope] = React.useState<"here" | "everywhere" | null>(null);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [exporting, setExporting] = React.useState(false);
-  const [signingOut, setSigningOut] = React.useState(false);
 
   function exportData() {
     setExporting(true);
@@ -133,16 +133,10 @@ export function PrivacySection() {
     setTimeout(() => setExporting(false), 2500);
   }
 
-  async function signOut() {
-    setSigningOut(true);
-    try {
-      await api.post("/auth/logout");
-    } catch {
-      /* the session cookie is cleared server-side; go home either way */
-    } finally {
-      router.replace("/");
-      router.refresh();
-    }
+  // Stays on this page with a toast if the server couldn't end the session (see useSignOut).
+  function signOutFrom(where: "here" | "everywhere") {
+    setScope(where);
+    void signOut({ everywhere: where === "everywhere" });
   }
 
   return (
@@ -191,11 +185,20 @@ export function PrivacySection() {
         <p className="min-w-0 text-[13px] text-orza-muted">
           Signed in as <span className="break-all font-medium text-orza-strong">{user.email}</span>
         </p>
-        <Button variant="secondary" onClick={signOut} loading={signingOut} className="self-start sm:self-auto">
-          {!signingOut && <LogOut size={15} strokeWidth={1.75} aria-hidden />}
-          Sign out
-        </Button>
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          <Button variant="ghost" onClick={() => signOutFrom("everywhere")} loading={signingOut && scope === "everywhere"} disabled={signingOut}>
+            {!(signingOut && scope === "everywhere") && <MonitorSmartphone size={15} strokeWidth={1.75} aria-hidden />}
+            Sign out of all devices
+          </Button>
+          <Button variant="secondary" onClick={() => signOutFrom("here")} loading={signingOut && scope === "here"} disabled={signingOut}>
+            {!(signingOut && scope === "here") && <LogOut size={15} strokeWidth={1.75} aria-hidden />}
+            Sign out
+          </Button>
+        </div>
       </div>
+      <p className="mt-2 text-[12px] leading-relaxed text-orza-subtle">
+        Lost a phone or used a shared computer? &ldquo;Sign out of all devices&rdquo; ends every ÖRZA session, including this one.
+      </p>
 
       <DeleteAccountDialog open={deleteOpen} onOpenChange={setDeleteOpen} />
     </SectionCard>

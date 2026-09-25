@@ -13,7 +13,7 @@
     --orza-text-strong: #141414;
     --orza-text: #2A2A2A;
     --orza-text-muted: #5B5B5B;
-    --orza-text-subtle: #7A7A7A;
+    --orza-text-subtle: #666666; /* ≥4.5:1 on bg-0…bg-2 for small labels */
     --orza-text-inverse: #F7F4EF;
 
     --orza-border: rgba(20, 20, 20, 0.10);
@@ -45,6 +45,16 @@
     --orza-hero-hairline: rgba(247, 244, 239, 0.14);
     --orza-hero-glass: rgba(255, 255, 255, 0.08);
     --orza-hero-glass-border: rgba(255, 255, 255, 0.14);
+
+    /* Toasts: normal gap; lifted above the app's mobile bottom tab bar (see below) */
+    --orza-toast-bottom: 16px;
+  }
+
+  @media (min-width: 600px) {
+    :root { --orza-toast-bottom: 24px; }
+  }
+  @media (max-width: 1023.98px) {
+    body:has([data-orza-tabbar]) { --orza-toast-bottom: calc(72px + env(safe-area-inset-bottom)); }
   }
 
   * { border-color: var(--orza-border); }
@@ -99,11 +109,39 @@
     background-image: radial-gradient(rgba(247,244,239,0.35) 1px, transparent 1px);
     background-size: 3px 3px;
   }
+  /*
+   * Gradient accent words. On the cream canvas the bright energy gradient is too faint to read
+   * (about 1.7–2.6:1), so light surfaces get a deepened version (3.9:1 or more, above the 3:1
+   * large-text bar); the bright gradient stays on the dark hero surfaces.
+   */
   .orza-energy-text {
-    background: linear-gradient(135deg, #FFB454 0%, #FF7A6A 50%, #FF5FA2 100%);
+    background: linear-gradient(135deg, #C2410C 0%, #D63A4A 50%, #BE185D 100%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+  }
+  :where(.bg-orza-hero, .orza-on-dark) .orza-energy-text {
+    background-image: linear-gradient(135deg, #FFB454 0%, #FF7A6A 50%, #FF5FA2 100%);
+  }
+
+  /*
+   * <Reveal> (src/components/orza/Reveal.tsx). Server HTML carries .orza-reveal-enter, a CSS-only
+   * entrance that ends visible with or without JavaScript, so hero text and the LCP element are
+   * never stuck at opacity 0 waiting for hydration. Once hydrated, blocks that start below the
+   * fold switch to .orza-reveal (hidden while .is-waiting) and fade in as they scroll into view.
+   */
+  .orza-reveal-enter {
+    animation: orza-reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) var(--orza-reveal-delay, 0s) backwards;
+  }
+  .orza-reveal {
+    transition:
+      opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1) var(--orza-reveal-delay, 0s),
+      transform 0.6s cubic-bezier(0.16, 1, 0.3, 1) var(--orza-reveal-delay, 0s);
+  }
+  .orza-reveal.is-waiting {
+    opacity: 0;
+    transform: translate3d(0, var(--orza-reveal-y, 16px), 0);
+    transition: none;
   }
   .orza-skeleton {
     background: linear-gradient(90deg, rgba(20,20,20,0.05) 25%, rgba(20,20,20,0.09) 37%, rgba(20,20,20,0.05) 63%);
@@ -118,7 +156,13 @@
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 }
 
+@keyframes orza-reveal {
+  from { opacity: 0; transform: translate3d(0, var(--orza-reveal-y, 16px), 0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .orza-reveal-enter, .orza-reveal { animation: none !important; transition: none !important; }
+  .orza-reveal.is-waiting { opacity: 1; transform: none; }
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;

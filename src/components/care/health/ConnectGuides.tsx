@@ -56,7 +56,7 @@ export function IphoneAutoSyncCard({ syncUrl, token, hasToken, today }: { syncUr
         </div>
       </div>
 
-      <Segmented
+      <Segmented semantics="tabs" id="iphone-sync-method" panelId="iphone-sync-method-panel" aria-label="iPhone sync app"
         className="mt-5 self-start"
         size="sm"
         value={method}
@@ -67,7 +67,7 @@ export function IphoneAutoSyncCard({ syncUrl, token, hasToken, today }: { syncUr
         ]}
       />
 
-      <div className="mt-5" role="tabpanel" aria-label={method === "hae" ? "Health Auto Export steps" : "Apple Shortcuts steps"}>
+      <div className="mt-5" role="tabpanel" id="iphone-sync-method-panel" aria-labelledby={`iphone-sync-method-${method}`}>
         {method === "hae" ? (
           <Steps>
             <Step n={1} title="Install Health Auto Export">

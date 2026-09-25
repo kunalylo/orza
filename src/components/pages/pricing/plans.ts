@@ -53,6 +53,9 @@ export function buildPlans(c: CreditFacts): Plan[] {
         { text: `${c.signupCredits} AI credits when you sign up`, included: true },
         { text: `Camera food scanning (${credits(c.scanCost)} per scan)`, included: true },
         { text: `Voice & text meal logging (${credits(c.voiceCost)} per log)`, included: true },
+        { text: "Medicine reminders with photo alarms", included: true },
+        { text: `Prescription scan to reminders (${credits(c.scanCost)} per scan)`, included: true },
+        { text: "Health data import & sync (Apple Health, CSV)", included: true },
         { text: "Individual mode only", included: true },
         { text: "Household modes", included: false },
       ],
@@ -166,7 +169,7 @@ export function pricingFaq(c: CreditFacts): FaqItem[] {
     },
     {
       q: "Is wearable sync included?",
-      a: "Yes — it's included in every Premium plan (Apple Health & Google Fit) when they launch.",
+      a: "Health data import and sync are free on every account today: import your Apple Health export or a CSV, or let an automation app send steps, sleep, heart rate and weight from Apple Health or Health Connect to ÖRZA. Direct wearable sync is part of the upcoming Premium plans.",
     },
     {
       q: "Can I switch between plans?",

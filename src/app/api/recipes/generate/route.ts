@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { avoidList } from "@/lib/allergens";
+import { avoidList, memoryDiets } from "@/lib/allergens";
 import { requireUser } from "@/lib/auth";
 import { aiEnabled, aiJSON } from "@/lib/ai";
 import { withCredits } from "@/lib/credits";
@@ -10,7 +10,6 @@ import { HttpError, json, parseBody, route } from "@/lib/http";
 import {
   DIET_TAGS,
   deriveTags,
-  memoryDiets,
   pickRecipe,
   promptConstraints,
   recipeViolations,

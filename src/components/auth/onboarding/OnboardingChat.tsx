@@ -354,7 +354,9 @@ export function OnboardingChat({ name }: { name: string }) {
                 aria-live="polite"
                 aria-relevant="additions"
                 aria-label="Conversation"
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-12 pt-6 sm:px-0 sm:pt-8"
+                // Focusable so keyboard users can scroll the transcript (arrow keys / Page Up count as hand scrolling).
+                tabIndex={0}
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-12 pt-6 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orza-cyan/40 sm:px-0 sm:pt-8"
               >
                 <div className="mx-auto flex max-w-[680px] flex-col gap-4">
                   {items.map((m) =>

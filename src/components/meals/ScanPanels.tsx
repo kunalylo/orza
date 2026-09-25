@@ -317,8 +317,8 @@ export function ScanResultPanel({
           <span id="scan-meal-type" className="mb-1.5 block text-[13px] font-medium text-orza-strong">
             Log to <span className="font-normal text-orza-muted">· {dayLabel}</span>
           </span>
-          <div role="group" aria-labelledby="scan-meal-type" className="no-scrollbar -mx-1 overflow-x-auto px-1">
-            <Segmented size="sm" value={mealType} onChange={onMealTypeChange} options={MEAL_TYPES.map((t) => ({ value: t, label: MEAL_SINGULAR[t] }))} />
+          <div className="no-scrollbar -mx-1 overflow-x-auto px-1">
+            <Segmented aria-labelledby="scan-meal-type" size="sm" value={mealType} onChange={onMealTypeChange} options={MEAL_TYPES.map((t) => ({ value: t, label: MEAL_SINGULAR[t] }))} />
           </div>
         </div>
 

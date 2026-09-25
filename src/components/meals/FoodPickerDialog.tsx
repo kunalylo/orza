@@ -114,7 +114,7 @@ function MealTypePicker({ value, onChange }: { value: MealType; onChange: (v: Me
   return (
     <div>
       <span className="mb-1.5 block text-[13px] font-medium text-orza-strong">Add to</span>
-      <Segmented
+      <Segmented aria-label="Add to meal"
         size="sm"
         value={value}
         onChange={onChange}
@@ -280,7 +280,7 @@ export function FoodPickerDialog({
         description="Search ÖRZA's Indian & global food list, or add your own item from a nutrition label."
         className="sm:w-[min(600px,calc(100%-32px))]"
       >
-        <Segmented
+        <Segmented aria-label="How to add food"
           size="sm"
           value={tab}
           onChange={(v) => setTab(v)}
@@ -402,7 +402,7 @@ export function FoodPickerDialog({
                 </div>
                 <div>
                   <span className="mb-1.5 block text-[13px] font-medium text-orza-strong">Cooked</span>
-                  <Segmented
+                  <Segmented aria-label="Where it was cooked"
                     size="sm"
                     value={style}
                     onChange={setStyle}

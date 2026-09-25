@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { clientIp } from "@/app/api/auth/_lib";
+import { clientIp } from "@/lib/rate-limit";
 import { BODY_LIMIT_DEFAULT, HttpError, json, readJsonBody, route } from "@/lib/http";
 import {
   bearerToken,

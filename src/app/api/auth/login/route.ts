@@ -2,7 +2,19 @@ import { hashPassword, startSession, toPublicUser, verifyPassword } from "@/lib/
 import { col } from "@/lib/db";
 import { json, route, unauthorized } from "@/lib/http";
 import type { User } from "@/lib/types";
-import { ONE_HOUR, TEN_MINUTES, clearLimit, clientIp, loginSchema, parseAuthBody, release, reserve, tooManyRequests } from "../_lib";
+import {
+  ONE_HOUR,
+  TEN_MINUTES,
+  assertSameOriginJson,
+  clearLimit,
+  clientIp,
+  loginSchema,
+  parseAuthBody,
+  peek,
+  release,
+  reserve,
+  tooManyRequests,
+} from "../_lib";
 
 export const dynamic = "force-dynamic";
 
@@ -14,13 +26,18 @@ const getDummyHash = () => (dummyHash ||= hashPassword("orza-timing-equaliser-no
 
 /** POST /api/auth/login {email, password} → {user} + session cookie; generic 401 on bad credentials. */
 export const POST = route(async (req: Request) => {
+  assertSameOriginJson(req);
+  const ip = clientIp(req);
+  const ipKey = `login-ip:${ip}`; // 50 attempts / 10 min per IP (credential stuffing)
+  // A network that is already throttled is refused before its request body is read or parsed.
+  const ipWait = peek([{ key: ipKey, limit: 50, windowMs: TEN_MINUTES }]);
+  if (ipWait) return tooManyRequests(ipWait, "Too many sign-in attempts.");
+
   const parsed = await parseAuthBody(req, loginSchema);
   if (parsed.error) return parsed.error;
   const { email, password } = parsed.data;
 
-  const ip = clientIp(req);
   const pairKey = `login:${ip}|${email}`; // 10 attempts / 10 min per IP + email
-  const ipKey = `login-ip:${ip}`; // 50 attempts / 10 min per IP (credential stuffing)
   // Per account, whatever the IP — holds even if the client IP can't be trusted or is rotated.
   // Counted for unknown emails too, so a 429 never reveals whether an account exists.
   const accountKey = `login-acct:${email}`;

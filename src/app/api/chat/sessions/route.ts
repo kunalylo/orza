@@ -2,7 +2,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { chatTitle } from "@/lib/coach";
 import { newId, nowISO } from "@/lib/db";
-import { badRequest, json, route } from "@/lib/http";
+import { BODY_LIMIT_SMALL, badRequest, json, readBodyText, route } from "@/lib/http";
 import type { ChatSession } from "@/lib/types";
 import { DEFAULT_TITLE, sessionsCol } from "../_shared";
 
@@ -20,7 +20,7 @@ const Body = z.object({
 /** POST /api/chat/sessions {title?} — start an empty conversation (the body is optional). */
 export const POST = route(async (req: Request) => {
   const user = await requireUser();
-  const raw = await req.text();
+  const raw = await readBodyText(req, { maxBytes: BODY_LIMIT_SMALL });
   let data: unknown = {};
   if (raw.trim()) {
     try {

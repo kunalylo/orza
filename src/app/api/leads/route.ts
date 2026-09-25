@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { col, newId, nowISO } from "@/lib/db";
 import { BODY_LIMIT_SMALL, json, parseBody, route } from "@/lib/http";
+import { ONE_MINUTE, clientIp, reserve, tooManyRequests } from "@/lib/rate-limit";
 
 /**
  * POST /api/leads {email, source, message?} → {ok:true}
@@ -36,43 +37,12 @@ const LeadSchema = z.object({
 
 /* ───────────── rate limit: 10 requests / minute / IP (per server instance) ───────────── */
 
-const WINDOW_MS = 60_000;
-const MAX_PER_WINDOW = 10;
-
-type Bucket = { count: number; resetAt: number };
-const g = globalThis as typeof globalThis & { __orzaLeadLimits?: Map<string, Bucket> };
-const buckets = (g.__orzaLeadLimits ??= new Map<string, Bucket>());
-
-function clientIp(req: Request) {
-  const fwd = req.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim() || "unknown";
-  return req.headers.get("x-real-ip")?.trim() || "unknown";
-}
-
-/** Returns seconds to wait when limited, or 0 when the request may proceed. */
-function rateLimit(ip: string): number {
-  const now = Date.now();
-  // Keep the map bounded: drop expired buckets once it grows.
-  if (buckets.size > 5000) {
-    for (const [k, b] of buckets) if (b.resetAt <= now) buckets.delete(k);
-  }
-  const b = buckets.get(ip);
-  if (!b || b.resetAt <= now) {
-    buckets.set(ip, { count: 1, resetAt: now + WINDOW_MS });
-    return 0;
-  }
-  b.count += 1;
-  return b.count > MAX_PER_WINDOW ? Math.max(1, Math.ceil((b.resetAt - now) / 1000)) : 0;
-}
+const LEAD_LIMIT = { limit: 10, windowMs: ONE_MINUTE };
 
 export const POST = route(async (req: Request) => {
-  const wait = rateLimit(clientIp(req));
-  if (wait) {
-    return json(
-      { error: "Too many requests. Please try again in a minute.", code: "rate_limited" },
-      { status: 429, headers: { "Retry-After": String(wait) } }
-    );
-  }
+  // Keyed on the proxy-appended IP hop (see clientIp), which the caller can't choose.
+  const wait = reserve([{ key: `lead:${clientIp(req)}`, ...LEAD_LIMIT }]);
+  if (wait) return tooManyRequests(wait, "Too many requests.");
 
   const { email, source, message } = await parseBody(req, LeadSchema, { maxBytes: BODY_LIMIT_SMALL });
 

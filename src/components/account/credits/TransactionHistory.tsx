@@ -61,7 +61,7 @@ export function TransactionHistory({ transactions, className }: { transactions: 
           </h2>
         </div>
         {transactions.length > 0 && (
-          <Segmented<Filter>
+          <Segmented<Filter> aria-label="Filter credit activity"
             size="sm"
             value={filter}
             onChange={(v) => {

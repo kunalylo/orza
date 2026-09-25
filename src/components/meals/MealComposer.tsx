@@ -3,7 +3,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { ListPlus, Mic, MicOff, Sparkles, Square } from "lucide-react";
 import type { MealType } from "@/lib/types";
-import { api, errorMessage } from "@/lib/api-client";
+import { api, ApiError, errorMessage } from "@/lib/api-client";
 import { cn, formatNumber } from "@/lib/utils";
 import { Eyebrow, GlassCard, IconTile } from "@/components/orza/primitives";
 import { Button } from "@/components/ui/button";
@@ -51,7 +51,7 @@ export function MealComposer({
   onOpenFoodList: () => void;
   className?: string;
 }) {
-  const { user, setCredits } = useUser();
+  const { user, setCredits, refresh } = useUser();
   const [text, setText] = React.useState("");
   const [lang, setLang] = React.useState<Lang>("en-IN");
   const [submitting, setSubmitting] = React.useState(false);
@@ -125,6 +125,8 @@ export function MealComposer({
       onLogged(res);
     } catch (e) {
       toast.error(errorMessage(e));
+      // Text the AI found no food in can still use a credit once the daily refunds are used up.
+      if (e instanceof ApiError && e.code === "no_items") void refresh().catch(() => {});
       textRef.current?.focus();
     } finally {
       setSubmitting(false);
@@ -244,8 +246,8 @@ export function MealComposer({
                 <Mic size={18} strokeWidth={1.75} aria-hidden />
               )}
             </button>
-            <div role="group" aria-label="Voice language">
-              <Segmented size="sm" value={lang} onChange={chooseLang} options={LANGS.map((l) => ({ value: l.value, label: l.label }))} />
+            <div>
+              <Segmented aria-label="Voice language" size="sm" value={lang} onChange={chooseLang} options={LANGS.map((l) => ({ value: l.value, label: l.label }))} />
             </div>
             <div className="min-w-0 flex-1 basis-full text-[13px] sm:basis-auto" aria-live="polite">
               {speech.listening ? (
@@ -289,8 +291,8 @@ export function MealComposer({
               <span className="mb-1.5 block text-[13px] font-medium text-orza-strong" id="composer-meal-type">
                 Meal
               </span>
-              <div role="group" aria-labelledby="composer-meal-type" className="no-scrollbar -mx-1 overflow-x-auto px-1">
-                <Segmented
+              <div className="no-scrollbar -mx-1 overflow-x-auto px-1">
+                <Segmented aria-labelledby="composer-meal-type"
                   size="sm"
                   value={mealType}
                   onChange={onMealTypeChange}

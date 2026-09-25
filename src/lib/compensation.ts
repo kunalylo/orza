@@ -322,11 +322,16 @@ export function planCompensation(input: {
  * Estimate the surplus from a free-text description: parsed meal calories minus
  * a normal meal (~⅓ of the daily target). Defaults to 600 kcal when nothing is recognised.
  */
-export function estimateExtraDetails(description: string | undefined, targets: Targets): { calories: number; matched: string[]; source: "parsed" | "default" } {
+export function estimateExtraDetails(
+  description: string | undefined,
+  targets: Targets,
+  /** The user's diet, so "biryani" is read as Veg Biryani for a vegetarian (see parseMealText). */
+  diet?: Diet | null
+): { calories: number; matched: string[]; source: "parsed" | "default" } {
   const text = (description || "").trim();
   if (text) {
     try {
-      const parsed = parseMealText(text);
+      const parsed = parseMealText(text, { diet });
       const total = parsed.items.reduce((s, i) => s + (Number(i.calories) || 0), 0);
       if (total > 0) {
         const normalMeal = Math.round((Number(targets?.calories) || 2000) / 3);

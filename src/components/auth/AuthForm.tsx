@@ -207,11 +207,10 @@ export function AuthForm({ initialMode, next }: { initialMode: AuthMode; next: s
 
   return (
     <div className="w-full max-w-[440px]">
-      <motion.div
-        {...(reduce ? { initial: false as const } : { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.7, delay: 0.1, ease: EASE } })}
-      >
+      {/* CSS-only entrance: the form is visible in the server HTML instead of waiting for hydration at opacity 0. */}
+      <div className="orza-reveal-enter" style={{ "--orza-reveal-delay": "0.1s", "--orza-reveal-y": "16px" } as React.CSSProperties}>
         <GlassCard variant="strong" padded={false} className="rounded-orza-xl p-6 shadow-orza-floating sm:p-8">
-          <Segmented<AuthMode>
+          <Segmented<AuthMode> aria-label="Sign in or create an account"
             value={mode}
             onChange={switchMode}
             options={[
@@ -375,7 +374,7 @@ export function AuthForm({ initialMode, next }: { initialMode: AuthMode; next: s
             </button>
           </p>
         </GlassCard>
-      </motion.div>
+      </div>
 
       <div className="mt-6 space-y-1.5 px-2 text-center text-[12px] leading-relaxed text-orza-subtle">
         {mode === "signup" && (

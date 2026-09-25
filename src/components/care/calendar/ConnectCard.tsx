@@ -232,7 +232,7 @@ export function ConnectCard({
           {showForm && (
             <div className="mt-5">
               <div className="-mx-1 overflow-x-auto px-1 pb-1">
-                <Segmented<Provider>
+                <Segmented<Provider> aria-label="Your calendar app"
                   size="sm"
                   value={provider}
                   onChange={setProvider}

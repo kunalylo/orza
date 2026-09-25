@@ -9,6 +9,11 @@ import { AuthOrb } from "./AuthOrb";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
+/** CSS-only entrance (`.orza-reveal-enter`): visible in the server HTML, never waits for hydration. */
+function enter(delay: number): React.CSSProperties {
+  return { "--orza-reveal-delay": `${delay}s`, "--orza-reveal-y": "12px" } as React.CSSProperties;
+}
+
 const BENEFITS: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: Camera,
@@ -33,10 +38,6 @@ const BENEFITS: { icon: LucideIcon; title: string; body: string }[] = [
  */
 export function AuthHeroPanel({ className }: { className?: string }) {
   const reduce = useReducedMotion();
-  const rise = (delay: number) =>
-    reduce
-      ? { initial: false as const }
-      : { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.7, delay, ease: EASE } };
 
   return (
     <aside
@@ -93,29 +94,29 @@ export function AuthHeroPanel({ className }: { className?: string }) {
 
         {/* Promise */}
         <div className="mt-8 max-w-[500px] lg:my-auto lg:py-12">
-          <motion.div
-            {...rise(0)}
-            className="hidden items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-white/70 backdrop-blur-orza sm:inline-flex"
+          <div
+            style={enter(0)}
+            className="orza-reveal-enter hidden items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-white/70 backdrop-blur-orza sm:inline-flex"
           >
             <Sparkles size={12} strokeWidth={1.75} className="text-orza-cyan-400" aria-hidden />
             AI-Powered Wellness Platform
-          </motion.div>
+          </div>
 
-          <motion.p
-            {...rise(0.06)}
-            className="font-editorial text-[30px] font-semibold leading-[1.1] tracking-[-0.025em] text-white sm:mt-5 sm:text-[40px] lg:text-[46px] xl:text-[54px]"
+          <p
+            style={enter(0.06)}
+            className="orza-reveal-enter font-editorial text-[30px] font-semibold leading-[1.1] tracking-[-0.025em] text-white sm:mt-5 sm:text-[40px] lg:text-[46px] xl:text-[54px]"
           >
             Your health, <em className="orza-energy-text pr-[0.08em] italic">reimagined</em>
             <span className="hidden text-[rgba(255,231,200,0.94)] sm:block">by AI that evolves with you</span>
-          </motion.p>
+          </p>
 
-          <motion.p {...rise(0.14)} className="mt-3 max-w-md text-[14px] leading-relaxed text-white/70 sm:mt-5 sm:text-[16px]">
+          <p style={enter(0.14)} className="orza-reveal-enter mt-3 max-w-md text-[14px] leading-relaxed text-white/70 sm:mt-5 sm:text-[16px]">
             Snap your meals, chat naturally, get instant nutritional insights — judgment-free.
-          </motion.p>
+          </p>
 
           <ul className="mt-9 hidden space-y-5 lg:block">
             {BENEFITS.map(({ icon: Icon, title, body }, i) => (
-              <motion.li key={title} {...rise(0.22 + i * 0.08)} className="flex items-start gap-3.5">
+              <li key={title} style={enter(0.22 + i * 0.08)} className="orza-reveal-enter flex items-start gap-3.5">
                 <IconTile tone="dark" className="mt-0.5 h-9 w-9">
                   <Icon size={16} strokeWidth={1.75} aria-hidden />
                 </IconTile>
@@ -123,13 +124,13 @@ export function AuthHeroPanel({ className }: { className?: string }) {
                   <div className="text-[15px] font-medium text-white">{title}</div>
                   <p className="mt-0.5 text-[14px] leading-relaxed text-white/60">{body}</p>
                 </div>
-              </motion.li>
+              </li>
             ))}
           </ul>
 
-          <motion.div
-            {...rise(0.5)}
-            className="mt-9 hidden max-w-[400px] items-center gap-3 rounded-orza-md border border-white/[0.14] bg-white/[0.07] p-3.5 pr-5 backdrop-blur-orza lg:flex"
+          <div
+            style={enter(0.5)}
+            className="orza-reveal-enter mt-9 hidden max-w-[400px] items-center gap-3 rounded-orza-md border border-white/[0.14] bg-white/[0.07] p-3.5 pr-5 backdrop-blur-orza lg:flex"
           >
             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orza-energy text-white shadow-[0_10px_30px_rgba(255,122,106,0.35)]">
               <Sparkles size={16} strokeWidth={1.75} aria-hidden />
@@ -138,7 +139,7 @@ export function AuthHeroPanel({ className }: { className?: string }) {
               <div className="text-[14px] font-medium text-white">100 AI credits included</div>
               <div className="text-[13px] text-white/60">Start free. No credit card.</div>
             </div>
-          </motion.div>
+          </div>
         </div>
 
         {/* Footer line (desktop) */}

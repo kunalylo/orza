@@ -1,19 +1,18 @@
 import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/site";
 import { Ban, Download, Eye, Lock, ShieldCheck } from "lucide-react";
 import { LegalPage, type LegalHighlight, type LegalSection } from "@/components/pages/legal/LegalPage";
 import { B, InlineLink, LegalCallout, LegalH3, LegalLi, LegalList, LegalP, SupportEmail } from "@/components/pages/legal/prose";
 import { Accent } from "@/components/pages/PageHero";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Privacy Policy",
   description:
     "How ÖRZA collects, uses and protects your information: encrypted in transit and at rest, never sold, permission-based household sharing, and export or deletion anytime from Settings.",
-  alternates: { canonical: "/privacy" },
-  openGraph: {
-    title: "ÖRZA Privacy Policy",
-    description: "Encrypted, never sold, and always in your control.",
-  },
-};
+  path: "/privacy",
+  socialTitle: "ÖRZA Privacy Policy",
+  socialDescription: "Encrypted, never sold, and always in your control.",
+});
 
 const HIGHLIGHTS: LegalHighlight[] = [
   { icon: Lock, title: "Encrypted", body: "Your data is encrypted in transit and at rest." },
@@ -64,9 +63,18 @@ const SECTIONS: LegalSection[] = [
             short facts ÖRZA learns from your conversations to personalise its guidance (for example, a food you avoid). You can
             view, edit or remove them in Settings.
           </LegalLi>
-          <LegalLi title="Connected health data (where available):">
-            if you connect a health platform such as Apple Health or Google Fit, the data you authorise, such as steps, sleep and
-            workouts.
+          <LegalLi title="Medicines and prescriptions:">
+            medicines you add — name, strength, dose, timing, schedule, stock and who each one is for — the photos you take of
+            them, prescriptions you scan, and a history of the doses you mark as taken, skipped or snoozed.
+          </LegalLi>
+          <LegalLi title="Reminders and connections:">
+            reminders you set up; if you turn them on, your WhatsApp number, the browser push-notification address your device
+            gives us, and the address of an external calendar you ask ÖRZA to show; and your quiet hours.
+          </LegalLi>
+          <LegalLi title="Health data you import or sync:">
+            daily totals such as steps, active energy, distance, sleep, heart rate, weight and water — from an Apple Health
+            export or CSV file you import, or sent by an app you set up with your personal sync link. Apple Health exports are
+            read in your browser, and only the daily totals are uploaded.
           </LegalLi>
           <LegalLi title="Messages to us:">
             if you email us, join our updates list or join a waitlist for a Premium plan, your email address and what you send us.
@@ -105,6 +113,10 @@ const SECTIONS: LegalSection[] = [
             see <InlineLink href="#ai-processing">AI processing</InlineLink> below.
           </LegalLi>
           <LegalLi title="To keep ÖRZA safe:">protect accounts, prevent abuse and fix problems.</LegalLi>
+          <LegalLi title="To remind you:">
+            send the medicine and wellness reminders you set up — as notifications on your devices, WhatsApp messages or entries
+            in your calendar — with your medicine&apos;s photo, so it&apos;s easy to recognise.
+          </LegalLi>
           <LegalLi title="To communicate with you:">
             about your account, the reminders and weekly reports you&apos;ve opted into, and replies to your questions. You can
             change reminder and report preferences in Settings.
@@ -126,8 +138,8 @@ const SECTIONS: LegalSection[] = [
     content: (
       <>
         <LegalP>
-          Some features use AI models operated by third-party model providers — meal photo scans, text and voice meal logging, AI
-          chat, recipe generation, rebalancing plans and report insights. When you use one of these features, we send the provider
+          Some features use AI models operated by third-party model providers — meal photo scans, prescription scans, text and
+          voice meal logging, AI chat, recipe generation, rebalancing plans and report insights. When you use one of these features, we send the provider
           the content needed for that request (for example, the meal photo or your message, plus relevant context such as your
           targets or diet preference) and return the result to you.
         </LegalP>
@@ -145,8 +157,8 @@ const SECTIONS: LegalSection[] = [
         </LegalList>
         <LegalP>
           As described on our <InlineLink href="/trust">Trust &amp; Safety</InlineLink> page, conversations may help improve
-          ÖRZA&apos;s AI only after they are anonymized, and no personal health data is ever sold. You can opt out at any time in{" "}
-          <B>Settings → Preferences</B>, or by writing to <SupportEmail subject="AI training opt-out" />. Your choice is saved
+          ÖRZA&apos;s AI only after they are anonymized, and no personal health data is ever sold. You can opt out at any time by
+          turning off <B>Help improve ÖRZA&apos;s AI</B> in <B>Settings → Preferences</B>, or by writing to <SupportEmail subject="AI training opt-out" />. Your choice is saved
           to your account and keeps your conversations and logs out of any work to improve ÖRZA&apos;s AI. Opting out
           doesn&apos;t change how AI features work for you.
         </LegalP>
@@ -167,6 +179,15 @@ const SECTIONS: LegalSection[] = [
           <LegalLi title="With service providers">
             who help us run ÖRZA — such as cloud hosting and database providers, AI model providers and email delivery — who
             process information on our behalf and only for that purpose.
+          </LegalLi>
+          <LegalLi title="To deliver the reminders you turn on.">
+            Push notifications travel through your browser&apos;s notification service, and WhatsApp reminders through
+            WhatsApp&apos;s business messaging service, to the number you give us. They carry only what the reminder needs: the
+            reminder or medicine name, the dose and, for medicines, its photo — shared through a link that expires within a day.
+          </LegalLi>
+          <LegalLi title="With calendars you connect.">
+            Your private calendar feed lists your upcoming doses and reminders for whichever calendar app you add it to. Anyone
+            with the feed link can read it, so keep it private — you can replace or turn off the link at any time.
           </LegalLi>
           <LegalLi title="For legal reasons:">
             when required by law, or when needed to protect the safety, rights or property of our users, the public or ÖRZA.
@@ -198,8 +219,8 @@ const SECTIONS: LegalSection[] = [
           </LegalLi>
         </LegalList>
         <LegalP>
-          The web app also remembers a few conveniences, such as the language you last picked for voice input, in your
-          browser&apos;s local storage. That stays on your device.
+          The web app also remembers a few conveniences in your browser&apos;s local storage, such as the language you last
+          picked for voice input, your calendar view and which alarms you&apos;ve already dismissed or snoozed. That stays on your device.
         </LegalP>
         <LegalP>
           We don&apos;t use advertising, tracking or third-party analytics cookies. Because both cookies exist only to support
@@ -236,7 +257,8 @@ const SECTIONS: LegalSection[] = [
       <>
         <LegalP>
           We keep your information for as long as your account is active. When you delete your account, your profile and all
-          associated data — meals, scans, conversations, goals, plans, recipes and credit history — are permanently deleted. We may
+          associated data — meals, scans, conversations, goals, plans, recipes, medicines and their photos, prescriptions, dose
+          history, reminders, notification devices, imported health data and credit history — are permanently deleted. We may
           keep limited records where the law requires it (for example, billing records for paid plans).
         </LegalP>
         <LegalP>
@@ -259,7 +281,13 @@ const SECTIONS: LegalSection[] = [
             delete your account from Settings. This permanently deletes your data and can&apos;t be undone.
           </LegalLi>
           <LegalLi title="Sharing:">grant or revoke household sharing permissions at any time.</LegalLi>
-          <LegalLi title="Communications:">turn reminders and weekly reports on or off in Settings.</LegalLi>
+          <LegalLi title="Communications:">
+            turn reminders and weekly reports on or off in Settings, and switch push, WhatsApp or calendar reminders on or off on
+            the Reminders page.
+          </LegalLi>
+          <LegalLi title="Connections:">
+            revoke your health sync link or calendar feed link at any time, and remove your WhatsApp number or external calendar.
+          </LegalLi>
           <LegalLi title="AI improvement:">
             opt out of your anonymized data being used to improve ÖRZA&apos;s AI in Settings → Preferences, or by email.
           </LegalLi>

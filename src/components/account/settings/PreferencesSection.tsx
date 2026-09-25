@@ -131,8 +131,8 @@ export function PreferencesSection() {
           title="Units"
           description="How weight and height are shown across ÖRZA."
           control={
-            <div role="group" aria-labelledby="pref-units-label">
-              <Segmented<Preferences["units"]>
+            <div>
+              <Segmented<Preferences["units"]> aria-labelledby="pref-units-label"
                 value={prefs.units}
                 onChange={(v) => update("units", v)}
                 options={[
@@ -150,8 +150,8 @@ export function PreferencesSection() {
           title="Coach tone"
           description={TONE_COPY[prefs.tone]}
           control={
-            <div role="group" aria-labelledby="pref-tone-label">
-              <Segmented<Preferences["tone"]>
+            <div>
+              <Segmented<Preferences["tone"]> aria-labelledby="pref-tone-label"
                 value={prefs.tone}
                 onChange={(v) => update("tone", v)}
                 options={[

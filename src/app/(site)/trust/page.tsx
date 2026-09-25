@@ -16,7 +16,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { SITE } from "@/lib/site";
+import { SITE, pageMetadata } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { Eyebrow, GlassCard, Heading, IconTile, Section, SectionHeader } from "@/components/orza/primitives";
 import { Reveal } from "@/components/orza/Reveal";
@@ -24,16 +24,14 @@ import { ButtonLink, buttonVariants } from "@/components/ui/button";
 import { Accent, PageHero } from "@/components/pages/PageHero";
 import { SharingPreview } from "@/components/pages/trust/SharingPreview";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Trust & Safety",
   description:
     "Your health. Your privacy. Your choice. ÖRZA is built with medical boundaries, data security and transparent practices at the core — encrypted, never sold, permission-based sharing.",
-  alternates: { canonical: "/trust" },
-  openGraph: {
-    title: "ÖRZA Trust & Safety — Your health. Your privacy. Your choice.",
-    description: "Built with medical boundaries, data security, and transparent practices at the core.",
-  },
-};
+  path: "/trust",
+  socialTitle: "ÖRZA Trust & Safety — Your health. Your privacy. Your choice.",
+  socialDescription: "Built with medical boundaries, data security, and transparent practices at the core.",
+});
 
 /* Content: verbatim from the ÖRZA wellness app's Trust page. */
 

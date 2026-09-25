@@ -7,7 +7,14 @@ import { GlassCard } from "@/components/orza/primitives";
 import { ButtonLink } from "@/components/ui/button";
 import { HeroScene } from "./_heroScene";
 
-const EASE = [0.16, 1, 0.3, 1] as const;
+/**
+ * CSS-only entrance (`.orza-reveal-enter` in globals.css, fill-mode `backwards`): the server HTML
+ * is fully visible and the headline, lead and CTAs never wait for hydration to appear. Reduced
+ * motion turns the animation off in CSS.
+ */
+function enter(delay: number, y = "12px"): React.CSSProperties {
+  return { "--orza-reveal-delay": `${delay}s`, "--orza-reveal-y": y } as React.CSSProperties;
+}
 
 const LINE_ONE = ["Your", "health,"];
 const LINE_TWO = ["by", "AI", "that", "evolves", "with", "you"];
@@ -64,20 +71,6 @@ export function HomeHero() {
   const sceneOpacity = useTransform(scrollYProgress, [0, 0.9], [1, 0.4]);
   const parallax = fromSm && !reduce;
 
-  const rise = (delay: number) =>
-    reduce
-      ? { initial: false as const }
-      : { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.7, delay, ease: EASE } };
-
-  const word = (i: number, base: number) =>
-    reduce
-      ? { initial: false as const }
-      : {
-          initial: { opacity: 0, y: "0.45em" },
-          animate: { opacity: 1, y: "0em" },
-          transition: { duration: 0.7, delay: base + i * 0.06, ease: EASE },
-        };
-
   return (
     <section
       ref={ref}
@@ -103,13 +96,13 @@ export function HomeHero() {
         <div className="grid items-center gap-10 lg:grid-cols-[1.05fr_1fr] lg:gap-10">
           {/* Left: editorial copy */}
           <div className="relative z-10">
-            <motion.div
-              {...rise(0)}
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-white/70 backdrop-blur-orza"
+            <div
+              style={enter(0)}
+              className="orza-reveal-enter inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-white/70 backdrop-blur-orza"
             >
               <Sparkles size={12} strokeWidth={1.75} className="text-orza-cyan-400" aria-hidden />
               AI-Powered Wellness Platform
-            </motion.div>
+            </div>
 
             <h1
               id="home-hero-title"
@@ -118,47 +111,47 @@ export function HomeHero() {
               <span className="block">
                 {LINE_ONE.map((w, i) => (
                   <React.Fragment key={w}>
-                    <motion.span className="inline-block" {...word(i, 0.05)}>
+                    <span className="orza-reveal-enter inline-block" style={enter(0.05 + i * 0.06, "0.45em")}>
                       {w}
-                    </motion.span>{" "}
+                    </span>{" "}
                   </React.Fragment>
                 ))}
-                <motion.em className="orza-energy-text inline-block pr-[0.08em] italic" {...word(LINE_ONE.length, 0.05)}>
+                <em
+                  className="orza-reveal-enter orza-energy-text inline-block pr-[0.08em] italic"
+                  style={enter(0.05 + LINE_ONE.length * 0.06, "0.45em")}
+                >
                   reimagined
-                </motion.em>
+                </em>
               </span>
               <span className="block text-[rgba(255,231,200,0.94)]">
                 {LINE_TWO.map((w, i) => (
                   <React.Fragment key={w}>
-                    <motion.span className="inline-block" {...word(i, 0.3)}>
+                    <span className="orza-reveal-enter inline-block" style={enter(0.3 + i * 0.06, "0.45em")}>
                       {w}
-                    </motion.span>
+                    </span>
                     {i < LINE_TWO.length - 1 ? " " : null}
                   </React.Fragment>
                 ))}
               </span>
             </h1>
 
-            <motion.p {...rise(0.35)} className="mt-6 max-w-xl text-[16px] leading-relaxed text-white/70 sm:text-[17px]">
+            <p style={enter(0.35)} className="orza-reveal-enter mt-6 max-w-xl text-[16px] leading-relaxed text-white/70 sm:text-[17px]">
               Snap your meals, chat naturally, get instant nutritional insights. AI that learns your lifestyle, respects your
               choices, and helps you thrive — judgment-free.
-            </motion.p>
+            </p>
 
-            <motion.div {...rise(0.45)} className="mt-8 flex flex-wrap items-center gap-3">
+            <div style={enter(0.45)} className="orza-reveal-enter mt-8 flex flex-wrap items-center gap-3">
               <ButtonLink href="/login?mode=signup" variant="hero" size="lg" className="px-6">
                 Start Free <ArrowUpRight size={15} strokeWidth={1.75} aria-hidden />
               </ButtonLink>
               <ButtonLink href="#how-it-works" variant="hero-outline" size="lg" className="px-5">
                 See How It Works <ChevronDown size={15} strokeWidth={1.75} aria-hidden />
               </ButtonLink>
-            </motion.div>
+            </div>
 
-            <motion.p
-              {...(reduce ? { initial: false as const } : { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { duration: 0.8, delay: 0.7 } })}
-              className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-white/45"
-            >
+            <p style={enter(0.7, "0px")} className="orza-reveal-enter mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-white/45">
               English · Hindi · Hinglish
-            </motion.p>
+            </p>
           </div>
 
           {/* Right: convergence orb with floating glass chips */}
@@ -173,13 +166,7 @@ export function HomeHero() {
               className="mt-4 grid grid-cols-3 gap-2 sm:pointer-events-none sm:absolute sm:inset-0 sm:mt-0 sm:block"
             >
               {CHIPS.map((c, i) => (
-                <motion.li
-                  key={c.label}
-                  initial={reduce ? false : { opacity: 0, y: 18, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ duration: 0.8, delay: 0.8 + i * 0.15, ease: EASE }}
-                  className={cn("sm:absolute", c.place)}
-                >
+                <li key={c.label} style={enter(0.8 + i * 0.15, "18px")} className={cn("orza-reveal-enter sm:absolute", c.place)}>
                   <div className="h-full animate-orza-float" style={{ animationDelay: c.delay }}>
                     <GlassCard
                       variant="hero"
@@ -202,7 +189,7 @@ export function HomeHero() {
                       </span>
                     </GlassCard>
                   </div>
-                </motion.li>
+                </li>
               ))}
             </ul>
           </motion.div>

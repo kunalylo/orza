@@ -224,7 +224,7 @@ export function HealthView() {
             A website can&apos;t read Apple Health or Health Connect directly, so pick whichever of these suits you. You can use more than one.
           </p>
         </div>
-        <Segmented
+        <Segmented semantics="tabs" id="health-platform" panelId="health-platform-panel" aria-label="Your phone"
           value={platform}
           onChange={setPlatform}
           options={[
@@ -251,7 +251,7 @@ export function HealthView() {
       </div>
 
       {/* Every card stays mounted (an Apple Health import keeps running if you peek at the Android tab); the other platform's cards are hidden. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" role="tabpanel" aria-label={platform === "iphone" ? "iPhone options" : "Android options"}>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" role="tabpanel" id="health-platform-panel" aria-labelledby={`health-platform-${platform}`}>
         <div className={cn("grid min-w-0 grid-cols-1", !isIphone && "hidden")}>
           <AppleImportCard tz={tz} onImported={onImported} />
         </div>
@@ -368,7 +368,7 @@ export function HealthView() {
 
           <div className="mb-4 mt-8 flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-editorial text-[22px] font-semibold leading-7 text-orza-strong">Trends</h2>
-            <Segmented
+            <Segmented aria-label="Trend period"
               size="sm"
               value={range}
               onChange={setRange}

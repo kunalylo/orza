@@ -71,7 +71,7 @@ function AnalysingPanel() {
 
 /** /dashboard/scan — Snap & Know: photo → AI estimate → review & edit → log. `?date=` / `?meal_type=` supported. */
 export function ScanView() {
-  const { user, setCredits } = useUser();
+  const { user, setCredits, refresh } = useUser();
   const tz = user.profile?.timezone || DEFAULT_TZ;
   const params = useSearchParams();
   const router = useRouter();
@@ -157,6 +157,8 @@ export function ScanView() {
       }
     } catch (err) {
       setPhase("ready");
+      // A photo with no food can still use credits once the daily refunds are used up — resync the balance.
+      if (err instanceof ApiError && err.code === "no_food") void refresh().catch(() => {});
       if (err instanceof ApiError && err.code === "ai_disabled") setProblem({ kind: "ai_disabled", message: err.message });
       else if (err instanceof ApiError && (err.status === 402 || err.code === "no_credits")) setProblem({ kind: "no_credits", message: err.message });
       else setProblem({ kind: "error", message: errorMessage(err) });

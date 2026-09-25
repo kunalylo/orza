@@ -129,7 +129,7 @@ export default function ReportsPage() {
         }
       />
 
-      <Segmented<Tab>
+      <Segmented<Tab> semantics="tabs" id="report-tabs" panelId="report-panel" aria-label="Report period"
         value={tab}
         onChange={setTab}
         options={[
@@ -139,7 +139,7 @@ export default function ReportsPage() {
         className="mb-6"
       />
 
-      <div role="tabpanel" aria-label={tab === "daily" ? "Daily report" : "Weekly report"}>
+      <div role="tabpanel" id="report-panel" aria-labelledby={`report-tabs-${tab}`}>
         {tab === "daily" ? (
           <DailyReportView
             report={daily.data}

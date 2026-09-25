@@ -185,8 +185,8 @@ export function RebalanceForm({
             <span id={`${uid}-days`} className="mb-1.5 block text-[13px] font-medium text-orza-strong">
               Days to spread it over
             </span>
-            <div role="group" aria-labelledby={`${uid}-days`}>
-              <Segmented<Days>
+            <div>
+              <Segmented<Days> aria-labelledby={`${uid}-days`}
                 className="grid w-full grid-cols-4"
                 value={days}
                 onChange={setDays}

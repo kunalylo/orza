@@ -4,7 +4,7 @@ import { aiEnabled } from "@/lib/ai";
 import { withCredits } from "@/lib/credits";
 import { col, newId, nowISO } from "@/lib/db";
 import { sumNutrients } from "@/lib/domain/meals";
-import { HttpError, json, parseBody, route } from "@/lib/http";
+import { BODY_LIMIT_UPLOAD, HttpError, json, parseBody, route } from "@/lib/http";
 import { aiScanImage, type MealAIResult } from "@/lib/meal-ai";
 import type { Scan } from "@/lib/types";
 import { MEAL_AI, emptyResultCreditNote, rateLimited, refundEmptyResult, reserveMealAi } from "../_ai-guard";
@@ -36,7 +36,8 @@ export const POST = route(async (req: Request) => {
       "ai_disabled"
     );
   }
-  const body = await parseBody(req, Body);
+  // A base64 photo up to ~6 MB: read under the upload cap, not the 1 MB default.
+  const body = await parseBody(req, Body, { maxBytes: BODY_LIMIT_UPLOAD });
 
   const release = await reserveMealAi(user.id, "scan");
   if (!release) throw rateLimited();

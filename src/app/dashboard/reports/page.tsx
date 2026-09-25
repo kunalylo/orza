@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api-client";
 import { dateInTz } from "@/lib/dates";
 import { useUser } from "@/components/app/UserProvider";
+import { isImperial } from "@/components/goals/goal-math";
 import { PageHeader } from "@/components/app/ui";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/form";
@@ -48,6 +49,7 @@ function useReport<T>(path: string, param: string) {
 export default function ReportsPage() {
   const { user } = useUser();
   const tz = user.profile?.timezone;
+  const imperial = isImperial(user.preferences?.units);
   const today = React.useMemo(() => dateInTz(tz), [tz]);
   const [tab, setTab] = React.useState<Tab>("daily");
   const [date, setDate] = React.useState(today);
@@ -104,7 +106,7 @@ export default function ReportsPage() {
     try {
       const w = await currentWeek();
       if (!w) return;
-      downloadText(`orza-weekly-${w.start}-to-${w.end}.csv`, weeklyCsv(w));
+      downloadText(`orza-weekly-${w.start}-to-${w.end}.csv`, weeklyCsv(w, imperial));
       toast.success("Weekly CSV downloaded");
     } finally {
       setExporting(null);
@@ -149,6 +151,7 @@ export default function ReportsPage() {
             date={date}
             today={today}
             onDateChange={setDate}
+            imperial={imperial}
           />
         ) : (
           <WeeklyReportView
@@ -159,6 +162,7 @@ export default function ReportsPage() {
             end={end}
             today={today}
             onEndChange={setEnd}
+            imperial={imperial}
           />
         )}
       </div>

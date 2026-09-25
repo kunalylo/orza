@@ -7,6 +7,7 @@
  * `{ step, answers }` in the `onboarding` collection and call into this module.
  */
 import { healthyFloorKg, planGoal } from "@/components/goals/goal-math";
+import { capMemory } from "@/lib/allergens";
 import { computeTargets } from "@/lib/domain/targets";
 import type { ActivityLevel, Diet, GoalType, HouseholdMode, Language, Profile, Sex, Targets } from "@/lib/types";
 import { formatNumber, round } from "@/lib/utils";
@@ -1087,13 +1088,13 @@ export function memoryFacts(a: OnboardingAnswers, plan?: Pick<OnboardingPlan, "h
   return facts.map((f) => (f.length <= 200 ? f : `${f.slice(0, 199).trimEnd()}…`));
 }
 
-/** Merge new facts into memory: case-insensitive dedupe, newest last, max 30. */
+/** Merge new facts into memory: case-insensitive dedupe, newest last, max 30 (diet/allergy/avoid facts from chat are kept first, see capMemory). */
 export function mergeMemory(existing: string[] = [], facts: string[]): string[] {
   const seen = new Set(facts.map((f) => f.toLowerCase()));
   // Replace older onboarding facts with the same prefix (e.g. "Diet: …").
   const prefixes = new Set(facts.map((f) => f.split(":")[0].toLowerCase()).filter((p) => p.length < 30));
   const kept = existing.filter((m) => !seen.has(m.toLowerCase()) && !(m.includes(":") && prefixes.has(m.split(":")[0].toLowerCase())));
-  return [...kept, ...facts].slice(-30);
+  return capMemory([...kept, ...facts], 30);
 }
 
 /* ───────────────────────────── Transcript ───────────────────────────── */

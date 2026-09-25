@@ -9,6 +9,7 @@ import { DEFAULT_TARGETS } from "@/lib/domain/targets";
 import { addDays, dateRange, isISODate } from "@/lib/dates";
 import { avoidList, conflictsWithAllergies, memoryDiets } from "@/lib/allergens";
 import { formatNumber, round } from "@/lib/utils";
+import { formatWeight, isImperial } from "@/components/goals/goal-math";
 import type { Diet, Meal, Nutrients, Targets, TrackingDay, User } from "@/lib/types";
 
 /* ───────────────────────────── Types ───────────────────────────── */
@@ -369,7 +370,8 @@ export async function buildDailyReport(user: User, date: string, today: string):
 
 const avg = (list: number[], digits = 0) => (list.length ? round(list.reduce((s, v) => s + v, 0) / list.length, digits) : 0);
 
-function weeklySummary(r: Omit<WeeklyReport, "summary">): string {
+/** `imperial`: weights in lb (Settings → Units); the report data itself stays in kg. */
+function weeklySummary(r: Omit<WeeklyReport, "summary">, imperial = false): string {
   const t = r.targets;
   if (!r.logged_days) {
     const tracked = r.days.some((d) => d.water_glasses || d.steps);
@@ -393,10 +395,10 @@ function weeklySummary(r: Omit<WeeklyReport, "summary">): string {
   if (r.weight) {
     parts.push(
       r.weight.entries === 1
-        ? `You logged a weigh-in of ${r.weight.last} kg.`
+        ? `You logged a weigh-in of ${formatWeight(r.weight.last, imperial)}.`
         : r.weight.change === 0
-          ? `Your weight held steady at ${r.weight.last} kg.`
-          : `Your weigh-ins moved from ${r.weight.first} kg to ${r.weight.last} kg.`
+          ? `Your weight held steady at ${formatWeight(r.weight.last, imperial)}.`
+          : `Your weigh-ins moved from ${formatWeight(r.weight.first, imperial)} to ${formatWeight(r.weight.last, imperial)}.`
     );
   }
   return parts.join(" ");
@@ -460,5 +462,5 @@ export async function buildWeeklyReport(user: User, end: string): Promise<Weekly
     weight,
     targets,
   };
-  return { ...base, summary: weeklySummary(base) };
+  return { ...base, summary: weeklySummary(base, isImperial(user.preferences?.units)) };
 }

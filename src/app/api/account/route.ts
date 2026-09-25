@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { endSession, requireUser } from "@/lib/auth";
+import { endSession, requireUser, revokeAllSessions } from "@/lib/auth";
 import { col, type CollectionName } from "@/lib/db";
 import { json, parseBody, route } from "@/lib/http";
 import { CREDIT_REQUEST_TYPE, LEGACY_CREDIT_REQUEST_SOURCE } from "../credits/requests";
@@ -55,8 +55,9 @@ export const DELETE = route(async (req: Request) => {
     source: LEGACY_CREDIT_REQUEST_SOURCE,
   });
   await col<{ id: string }>("users").deleteOne({ id: user.id });
-  // Sign out this browser and every other device (their sessions point at an account that no longer exists).
-  await endSession({ everywhere: true });
+  // Sign out this browser and every other device: revoke all of the account's sessions, then clear the cookies.
+  removed.sessions = await revokeAllSessions(user.id);
+  await endSession();
 
   console.info("[orza] account deleted", { user_id: user.id, removed });
   return json({ ok: true });

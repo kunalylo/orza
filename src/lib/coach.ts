@@ -7,7 +7,7 @@
  *                       suggests foods from FOODS, reports progress, handles special meals and medical questions.
  * - AI helpers:         system prompt, reply shape and output normalisation for the OpenAI path.
  */
-import { allergyKeywords, allergyList, avoidList, conflictsWithAllergies } from "@/lib/allergens";
+import { allergyKeywords, allergyList, avoidList, capMemory, conflictsWithAllergies } from "@/lib/allergens";
 import { createMeal, dayTotals, guessMealType, listMeals, sumNutrients } from "@/lib/domain/meals";
 import { getTrackingDay, setTracking } from "@/lib/domain/tracking";
 import { DEFAULT_TARGETS } from "@/lib/domain/targets";
@@ -398,7 +398,8 @@ export function mergeMemory(existing: string[] = [], add: string[] = [], cap = 3
     seen.add(k);
     out.push(f);
   }
-  return out.slice(-cap);
+  // Oldest facts go first, but diet/allergy/avoid facts (read by recipes, reports, rebalance) are kept.
+  return capMemory(out, cap);
 }
 
 /** Profile allergy list limits (same as the profile form: 20 entries of ≤ 40 characters, stored lowercase). */
@@ -803,7 +804,8 @@ function medicalNote(lang: ReplyLang) {
 }
 
 async function logMealReply(user: CoachUser, ctx: CoachContext, intent: MealIntent, text: string, lang: ReplyLang): Promise<CoachReply | null> {
-  const parsed = parseMealText(intent.text || text);
+  // The profile diet resolves ambiguous dishes ("biryani" → Veg Biryani for a vegetarian), as in /api/meals/text.
+  const parsed = parseMealText(intent.text || text, { diet: ctx.profile.diet });
   if (!parsed.items.length) return null;
   const date = intent.day === "yesterday" ? addDays(ctx.date, -1) : ctx.date;
   const mealType = parsed.mealType || intent.mealType || guessMealType(ctx.tz);
@@ -1030,8 +1032,8 @@ function planReply(ctx: CoachContext, lang: ReplyLang): string {
   return lines.join("\n");
 }
 
-function lookupReply(text: string, lang: ReplyLang): string | null {
-  const parsed = parseMealText(text);
+function lookupReply(text: string, lang: ReplyLang, diet?: Diet | null): string | null {
+  const parsed = parseMealText(text, { diet });
   if (!parsed.items.length) return null;
   const tot = sumNutrients(parsed.items);
   const hi = lang === "hinglish";
@@ -1240,7 +1242,7 @@ export async function ruleBasedReply(user: CoachUser, ctx: CoachContext, text: s
 
   // "I drank 2 glasses of water" → hydration, not a meal (unless other foods are mentioned).
   if (WATER.test(t) && (intent || /\b(add|log|drink|drank|pee|pi)\b/.test(t))) {
-    const parsed = parseMealText(text);
+    const parsed = parseMealText(text, { diet: ctx.profile.diet });
     const hasFood = parsed.items.some((i) => i.calories > 0 && !/water|paani|pani/i.test(i.name));
     if (!hasFood) return done(await waterReply(user, ctx, text, lang), "water");
   }
@@ -1262,7 +1264,7 @@ export async function ruleBasedReply(user: CoachUser, ctx: CoachContext, text: s
   if (MEDICAL.test(t)) return done(medicalReply(lang), "medical");
   if (SPECIAL_MEAL.test(t)) return done(specialMealReply(lang), "special_meal");
   if (LOOKUP.test(t)) {
-    const r = lookupReply(text, lang);
+    const r = lookupReply(text, lang, ctx.profile.diet);
     if (r) return done(r, "lookup");
   }
   if (PLAN.test(t)) return done(planReply(ctx, lang), "plan");

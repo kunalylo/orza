@@ -104,9 +104,11 @@ export const isAdmin = (u: Pick<User, "is_admin">) => u.is_admin === true;
 export function toPublicUser(u: User): PublicUser {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { password_hash, ...rest } = u;
-  // The hashed health-sync token is a credential derivative: never needed in the browser.
+  // Credentials never needed in the browser: the hashed health-sync token, the calendar feed token
+  // (the page gets the feed link from /api/calendar or /api/integrations) and the user's secret iCal
+  // address for their own calendar (only its connection state is shown, via /api/calendar).
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { health_token_hash, ...integrations } = u.integrations || {};
+  const { health_token_hash, calendar_token, external_ical_url, ...integrations } = u.integrations || {};
   return { ...rest, ...(u.integrations ? { integrations } : {}), is_admin: isAdmin(u) };
 }
 

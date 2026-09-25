@@ -31,10 +31,12 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 | `src/components/app/ui.tsx` | `PageHeader`, `StatCard`, `MacroRow`, `EmptyState`, `WellnessNote` |
 | `src/lib/types.ts` | Data model (User, PublicUser, Profile, Targets, Meal, MealItem, Nutrients, Scan, TrackingDay, ChatSession, ChatMessage, Goal, CompensationPlan, Recipe, CreditTransaction …) |
 | `src/lib/db.ts` | `col<T>(name)` → Mongo-like collection (`findOne/find/insertOne/updateOne/findOneAndUpdate/deleteOne/deleteMany/countDocuments`), `newId()`, `nowISO()`, `usingMongo()`. MongoDB when `MONGODB_URI` is set, else `.data/orza-db.json`. Docs use string `id`; never touch `_id`. Only these operators: filters `$gt $gte $lt $lte $ne $in $exists`; updates `$set $inc $push($each,$slice) $unset $setOnInsert` (never put the same path in `$set` and `$setOnInsert`) |
-| `src/lib/auth.ts` | `hashPassword`, `verifyPassword`, `startSession(userId)`, `endSession()`, `getSessionUserId()`, `getCurrentUser()`, `requireUser()`, `requireAdmin()`, `toPublicUser(user)`, `isAdminEmail()` |
-| `src/lib/http.ts` | `route(handler)` wrapper (maps HttpError/ZodError → `{error, code}`), `json()`, `parseBody(req, zodSchema)`, `HttpError`, `badRequest/unauthorized/forbidden/notFound` |
+| `src/lib/auth.ts` | `hashPassword`, `verifyPassword`, `startSession(userId)`, `endSession({everywhere?})`, `revokeAllSessions(userId)`, `getSessionUserId()`, `getCurrentUser()`, `requireUser()`, `requireAdmin()`, `toPublicUser(user)` (drops `password_hash` and integration secrets: `health_token_hash`, `calendar_token`, `external_ical_url`), `isAdmin(user)` (`is_admin: true` only) |
+| `src/lib/http.ts` | `route(handler, {tokenAuth?})` wrapper (maps HttpError/ZodError → `{error, code}`; cross-site guard below), `json()`, `parseBody(req, zodSchema, {maxBytes?})`, `readJsonBody`, `readBodyText`, `BODY_LIMIT_SMALL` (16 KB) / `_DEFAULT` (1 MB) / `_UPLOAD` (12 MB), `assertSameOrigin(Json)`, `HttpError`, `badRequest/unauthorized/forbidden/notFound` |
+| `src/lib/rate-limit.ts` | `clientIp(req)` (spoof-resistant, `TRUSTED_PROXY_HOPS`), in-memory `reserve/peek/release/clearLimit`, `tooManyRequests()` — public endpoints (auth, leads) |
 | `src/lib/ai.ts` | `aiEnabled()`, `aiText({system, messages})`, `aiJSON({system, prompt, shape, imageUrl?})`, `WELLNESS_GUARDRAIL`. Throws HttpError 502/503/504 with friendly messages |
-| `src/lib/credits.ts` | `INITIAL_CREDITS=100`, `CREDIT_COSTS` (scan 2, meal_text 1, chat 1, recipe 2, compensation 1, report_insight 1), `spendCredits`, `refundCredits`, `adjustCredits`, `withCredits(userId, action, fn)` (spend → run → refund on throw; 402 `no_credits` when empty) |
+| `src/lib/credits.ts` | `INITIAL_CREDITS=100`, `CREDIT_COSTS` (scan 2, meal_text 1, chat 1, recipe 2, compensation 1, report_insight 1), `spendCredits`, `refundCredits`, `adjustCredits`, `withCredits(userId, action, fn)` (spend → run → refund on throw; 402 `no_credits` when empty). Spends/refunds record their `action` |
+| `src/lib/ai-guard.ts` | `AI_GUARD` policies, `reserveAi(userId, action)` (per-user requests/minute + concurrency; `null` = over budget → free fallback or `aiRateLimited()` 429), `refundEmptyResult` (a completed but unusable AI answer is refunded only 3×/day per action), `emptyResultCreditNote` |
 | `src/lib/domain/meals.ts` | `sumNutrients`, `cleanItem`, `guessMealType(tz)`, `createMeal({...})`, `listMeals`, `listMealsInRange`, `dayTotals`, `ZERO` |
 | `src/lib/domain/tracking.ts` | `getTrackingDay`, `setTracking(userId, date, fields)`, `trackingInRange` |
 | `src/lib/domain/targets.ts` | `bmr`, `tdee`, `computeTargets(profile, {goal, weeklyRateKg})`, `DEFAULT_TARGETS` |
@@ -48,8 +50,13 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 Validate bodies with zod via `parseBody`. Always scope queries by `user_id: user.id` (no IDOR). Never return `password_hash`
 (use `toPublicUser`). A user's "today" is `dateInTz(user.profile.timezone)`; accept an optional `date` (validate with `isISODate`).
 Every AI feature must work without `OPENAI_API_KEY` via a deterministic fallback (except photo scan → 503 `ai_disabled` with a
-friendly "type or speak your meal instead" message). Charge credits only for real AI calls, via `withCredits`.
+friendly "type or speak your meal instead" message). Charge credits only for real AI calls, via `withCredits`, with only the AI call
+inside it (so only AI failures are refunded); reserve the call with `reserveAi` and vet the answer outside, refunding an unusable one via `refundEmptyResult`.
 Route params in Next 15 are async: `export const DELETE = route(async (req: Request, ctx: { params: Promise<{ id: string }> }) => { const { id } = await ctx.params; ... })`.
+**Cross-site guard**: `route()` rejects every non-GET/HEAD/OPTIONS request that is cross-site (`Sec-Fetch-Site`/`Origin` → 403 `cross_site`) or not
+`application/json` (415; a bodyless DELETE may omit it). Uploads are JSON data URLs. Only token-authenticated routes opt out with
+`route(handler, { tokenAuth: true })` (`/api/health/sync`, `/api/cron/dispatch`). Bodies are capped (413): pass `BODY_LIMIT_UPLOAD` for photos/imports,
+`BODY_LIMIT_SMALL` for public forms.
 
 **Rules for UI**: App pages are client components (`"use client"`) that fetch via `api` and show skeletons while loading, friendly
 empty states, toasts (`import { toast } from "sonner"`) for errors/success. Mobile-first (works at 375px; bottom tab bar
@@ -62,15 +69,18 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 ### Marketing (public)
 - `/` — `src/app/(site)/page.tsx` composes `src/components/home/*` sections.
 - `/pricing`, `/faq`, `/trust`, `/privacy`, `/terms` — `src/app/(site)/<name>/page.tsx`.
-- `POST /api/leads {email, source, message?}` → `{ok:true}` (store in `leads`, dedupe by email+source, basic rate limit).
+- `POST /api/leads {email, source, message?}` → `{ok:true}` (store in `leads`, dedupe by email+source — a repeat never overwrites the stored message;
+  10/min per `clientIp`). `source` must be `footer|newsletter|contact|waitlist|plan:<slug>` (else 400 "Unknown sign-up source") — add new public forms to `PUBLIC_SOURCE`.
 
 ### Auth — `/login` (`src/app/login/page.tsx`, own full-screen layout, `?mode=signup` shows sign-up, `?next=` respected)
 - `POST /api/auth/register {name, email, password(≥8)}` → `{user}` + session cookie. 409 if email exists. New user: `credits: INITIAL_CREDITS` (+ transaction "Welcome credits"), `targets: DEFAULT_TARGETS`, `profile: {timezone:"Asia/Kolkata"}`, `preferences: {units:"metric", reminders:true, weekly_report:true, tone:"gentle"}`, `memory: []`, `onboarding_complete:false`.
 - `POST /api/auth/login {email, password}` → `{user}`; 401 "Incorrect email or password". Emails are stored lowercase/trimmed.
-- `POST /api/auth/logout` → `{ok:true}`; `GET /api/auth/me` → `{user}` | 401.
+- `POST /api/auth/logout {everywhere?}` → `{ok:true}` (`everywhere: true` revokes every session of the account); `GET /api/auth/me` → `{user}` | 401.
+- Auth bodies ≤16 KB; login/register are rate-limited per IP (+ per account for login) → 429 `rate_limited` with `Retry-After`; validation errors add `field`.
 
 ### Onboarding — `/onboarding` (`src/app/onboarding/page.tsx`, full-screen conversational UI)
-- `GET /api/onboarding` → `{step, answers, done, prompt}`; `POST /api/onboarding/step {answer: string | number | string[] , step}` → `{reply, step, options?, input: "text"|"number"|"choice"|"multi"|"none", done, user?}`; `POST /api/onboarding/restart`.
+- `GET /api/onboarding` → `{step, answers, done, prompt, history, progress}`; `POST /api/onboarding/step {answer: string | number | string[] , step, timezone?}` → `{reply, step, options?, input: "text"|"number"|"choice"|"multi"|"none", done, user?, prompt, progress, valid}`
+  (an invalid answer keeps the step with `valid:false`; `timezone` = the browser's IANA zone, saved on completion); `POST /api/onboarding/restart` → the GET shape + `reply, input, options`.
 - Scripted steps (deterministic, <2 min): goal → sex → age → height → weight → target weight (lose/gain only) → activity → diet → allergies → region → language → household mode → lifestyle (optional) → summary/confirm → complete (saves `profile`, `targets = computeTargets(profile)`, `onboarding_complete:true`). Free-text parsing for numbers/units (e.g. `5'8"`, `172 cm`, `70kg`, `154 lb`), "skip" allowed on optional steps.
 
 ### Today — `/dashboard`
@@ -87,21 +97,31 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 ### Chat — `/dashboard/chat`
 - `GET/POST /api/chat/sessions` → `{sessions}` / `{session}`; `DELETE /api/chat/sessions/[id]`.
 - `GET /api/chat/history?session_id=` → `{session, messages}`.
-- `POST /api/chat/send {message, session_id?}` → `{session_id, user_message, message, logged_meal?, credits?}`. Detects meal-logging intent ("maine … khaya", "I had/ate …") and logs it; learns durable facts into `user.memory` (max 30).
+- `POST /api/chat/send {message, session_id?}` → `{session_id, session, user_message, message, logged_meal?, credits?, memory?, remembered?, allergies?, notice?}`. Detects meal-logging intent ("maine … khaya", "I had/ate …") and logs it; learns durable facts into `user.memory` (max 30).
+  `memory` + `remembered` when something new was learned; `allergies` = the updated `profile.allergies` when a food allergy was learned; `notice` when the built-in coach answered (AI down, over the AI budget, or an unusable AI answer).
 
 ### Goals & Rebalance — `/dashboard/goals`, `/dashboard/compensation`
 - `GET /api/goals/active` → `{goal, weights:[{date, weight_kg}], targets, profile}`; `POST /api/goals/calculate {goal, current_weight_kg, target_weight_kg, weekly_rate_kg?, height_cm?, age?, sex?, activity_level?}` → `{goal, user}`.
-- `POST /api/compensation/plan {occasion, description?, extra_calories?, days?(2–5)}` → `{plan, credits?}`; `GET /api/compensation` → `{plans}`; `DELETE /api/compensation/[id]`.
+- `POST /api/compensation/plan {occasion, description?, extra_calories?, days?(2–5)}` → `{plan, credits?, estimate?, notice?}`; `GET /api/compensation` → `{plans}`; `DELETE /api/compensation/[id]`.
+  Meal ideas respect `avoidList(profile.allergies, memory)` and `effectiveDiet(profile.diet, memory)` (diets learned in chat).
 
 ### Recipes & Reports — `/dashboard/recipes`, `/dashboard/reports`
-- `GET /api/recipes` → `{recipes}`; `POST /api/recipes/generate {prompt?, max_calories?, cuisine?, diet?}` → `{recipe, credits?}`; `POST /api/recipes/[id]/save {saved}`; `DELETE /api/recipes/[id]`.
-- `GET /api/reports/daily?date=` → `{date, totals, targets, meals, tracking, score, highlights, suggestions}`; `GET /api/reports/weekly?end=` → `{days, averages, adherence, best_day, summary}`.
+- `GET /api/recipes` → `{recipes}`; `POST /api/recipes/generate {prompt?, max_calories?, cuisine?, diet?}` → `{recipe, ai, credits?, notice?}` (AI, else the curated library;
+  both honour `avoidList(...)` + `memoryDiets(memory)`); `POST /api/recipes/[id]/save {saved}`; `DELETE /api/recipes/[id]`.
+- `GET /api/reports/daily?date=` → `{date, totals, targets, meals, tracking, score, highlights, suggestions}`; `GET /api/reports/weekly?end=` → `{days, averages, adherence, best_day, summary}`
+  (weights are kg in the data; the `summary` text uses the user's units, lb when `preferences.units` is "imperial").
 
 ### Account — `/dashboard/credits`, `/dashboard/settings`, `/dashboard/admin`
 - `GET /api/credits/balance` → `{credits, costs, ai_enabled}`; `GET /api/credits/transactions` → `{transactions}`.
-- `GET/PUT /api/profile` → `{user}`; `PUT /api/settings/preferences`, `PUT /api/settings/targets`, `PUT /api/settings/memory {memory}` → `{user}`.
-- `GET /api/account/export` → JSON attachment of all the user's data; `DELETE /api/account {confirm:"DELETE"}` → deletes the user and all their data, ends session.
-- Admin (requireAdmin): `GET /api/admin/stats`, `GET /api/admin/users?q=`, `POST /api/admin/credits/[userId]/adjust {amount, reason}`.
+- `POST /api/credits/request {message?}` → `{request}` (201; 429 `rate_limited` after 3 in 24 h); `GET /api/credits/request` → `{requests, pending}`.
+- `GET/PUT /api/profile` → `{user}` (PUT also returns `targets_recomputed`; memory facts derived from profile fields are refreshed with a conditional write,
+  so memory saved concurrently by chat/Settings is never overwritten); `PUT /api/settings/preferences {units?, reminders?, weekly_report?, tone?, ai_training_opt_out?}`,
+  `PUT /api/settings/targets`, `PUT /api/settings/memory {memory}` → `{user}`.
+- `GET /api/account/export` → JSON attachment of all the user's data (incl. Care collections, photo metadata without bytes, notification devices without keys,
+  signed-in sessions, credit requests; never password/token hashes); `DELETE /api/account {confirm:"DELETE"}` → deletes the user and all their data
+  (incl. Care data and photos, credit requests) and signs out every device.
+- Admin (requireAdmin): `GET /api/admin/stats`, `GET /api/admin/users?q=`, `POST /api/admin/credits/[userId]/adjust {amount, reason}` → `{balance, transaction, requests_closed}`
+  (a grant closes the member's open credit requests); `GET /api/admin/credit-requests` → `{requests}` (open, oldest first); `PATCH /api/admin/credit-requests/[id] {status: "open"|"done"}` → `{ok}`.
 
 ## Care module (medicines, reminders, calendar, health sync)
 
@@ -134,25 +154,34 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
 
 ### Medicines & prescriptions — `/dashboard/medicines`, `/dashboard/medicines/prescriptions`, `/dashboard/alarm`
 - `GET /api/meds` → `{medications}` (active first); `POST /api/meds {name, strength?, form, dose, timing, instructions?, schedule, as_needed?, stock?, for_person?, photos?: dataUrl[] (≤4)}` → `{medication}`;
-  `PATCH /api/meds/[id]` (partial) → `{medication}`; `DELETE /api/meds/[id]` → `{ok}` (also deletes its photos and dose logs).
+  `GET /api/meds/[id]` → `{medication}`; `PATCH /api/meds/[id]` (partial) → `{medication}`; `DELETE /api/meds/[id]` → `{ok}` (also deletes its photos and dose logs).
+  Medicine responses also carry `uses_prescription_photo` (true while the prescription photo is its only photo).
 - `POST /api/meds/[id]/photos {image: dataUrl}` → `{medication}`; `DELETE /api/meds/[id]/photos/[mediaId]` → `{medication}`.
   Every medication in a response carries `photo_urls: string[]` (owner URLs via `mediaUrl(id)`).
 - `GET /api/meds/today?date=` → `{date, doses: [{medication_id, name, strength, dose, timing, form, photo_urls, scheduled_for, local_time, status: "due"|"upcoming"|"taken"|"skipped"|"snoozed"|"missed", for_person}]}`
   (a dose is "missed" if unacted 60 min after its time). `POST /api/meds/doses {medication_id, scheduled_for, action: "take"|"skip"|"snooze", snooze_minutes?: 5–60}` → `{dose}`
-  (upserts `dose_logs` id `${medication_id}:${scheduled_for}`; "take" decrements `stock.count` when set). `GET /api/meds/adherence?days=7|30` → per-day and per-medicine taken/total.
+  (upserts `dose_logs` id `${medication_id}:${scheduled_for}`; "take" decrements `stock.count` when set). `GET /api/meds/doses?at=<iso>` → `{now, doses}` (every dose at that
+  instant — the alarm screen); `GET /api/meds/doses` → `{now, doses, next}` (due now + the next dose within 24 h).
+  `GET /api/meds/adherence?days=7|30` → `{days, from, to, overall, daily, medicines}` (per-day and per-medicine taken/total).
 - `POST /api/prescriptions/scan {image: dataUrl}` → `{prescription, credits}` (AI vision via `withCredits(…, "scan")`; stores the photo as media kind
   "prescription"; normalises Indian notation 1-0-1 / BD / TDS / OD / HS / SOS / AC / PC / "x 5 days" via `timesForPattern`; status "review").
-  AI disabled → 503 `ai_disabled` and the UI offers manual entry. `GET /api/prescriptions` → `{prescriptions}`;
-  `POST /api/prescriptions/[id]/apply {medicines: ExtractedMedicine[] (user-edited), start_date?}` → `{medications}` (creates meds with schedules:
-  times, end_date from duration_days; the prescription photo is attached as a fallback photo until the user adds pill photos).
+  AI disabled → 503 `ai_disabled` and the UI offers manual entry; 429 `rate_limited` over the photo-scan budget shared with meal scans.
+  `GET /api/prescriptions` → `{prescriptions}` (each with `photo_url`); `POST /api/prescriptions {image?, doctor?, issued_on?, notes?, medicines?}` → `{prescription}`
+  (manual entry, status "review"); `GET /api/prescriptions/[id]` → `{prescription}`; `DELETE /api/prescriptions/[id]` → `{ok}` (medicines made from it keep working).
+  `POST /api/prescriptions/[id]/apply {medicines: ExtractedMedicine[] (user-edited), start_date?, for_person?}` → `{medications, prescription}` (creates meds with schedules:
+  times, end_date from duration_days; the prescription photo is attached as a fallback photo until the user adds pill photos); applying twice → 409 `already_applied`.
 - `/dashboard/alarm?med=<id>&at=<iso>` (opened from notifications too): full-screen alarm with **large medicine photo(s)**, name, strength,
   dose, timing; Take / Snooze 10 min / Skip; lists other doses due at the same time.
+- After any Take / Skip / Snooze (medicine pages, alarm, `<AlarmWatcher />`, service-worker actions) the client fires
+  `window.dispatchEvent(new CustomEvent("orza:dose-updated", {detail:{medication_id, scheduled_for, action}}))`; dose lists and the in-app alarm listen for it.
 
 ### Reminders & notifications — `/dashboard/reminders`
 - `GET/POST /api/reminders`, `PATCH/DELETE /api/reminders/[id]` (kinds meal/water/weight/custom; `schedule`; `channels {push, whatsapp, calendar}`).
-- `POST /api/push/subscribe {endpoint, keys:{p256dh, auth}}`, `POST /api/push/unsubscribe {endpoint}`, `POST /api/push/test` (uses a medicine photo if one exists).
-- `PUT /api/integrations/whatsapp {phone (E.164), opt_in}`, `POST /api/integrations/whatsapp/test`; `PUT /api/integrations/quiet-hours {start, end} | null`;
-  `GET /api/integrations` → `{push: {configured, subscriptions}, whatsapp: {configured, phone, opt_in}, calendar: {feed_url | null, external_url_set}, health: {token_preview | null, last_sync | null}, quiet_hours}`.
+- `POST /api/push/subscribe {endpoint, keys:{p256dh, auth}}`, `POST /api/push/unsubscribe {endpoint}`, `POST /api/push/test {endpoint?}` → `{sent, failed, errors}` (uses a medicine photo if one exists).
+- `PUT /api/integrations/whatsapp {phone (E.164), opt_in}`, `POST /api/integrations/whatsapp/test` → `{ok, mode, image}`; `PUT /api/integrations/quiet-hours {start, end} | null`;
+  `GET /api/integrations` → `{push: {configured, subscriptions, public_key}, whatsapp: {configured, mode, phone, opt_in}, calendar: {feed_url | null, external_url_set}, health: {token_preview | null, last_sync | null}, quiet_hours, reminders_enabled, timezone}`
+  (`feed_url` is built with `feedLinks`/`publicBaseUrl` from `src/app/api/calendar/_lib/feed.ts`, identical to `/api/calendar`). `preferences.reminders === false` pauses
+  meal/water/weigh-in/custom reminders only; medicine alarms keep ringing.
 - `GET|POST /api/cron/dispatch` (auth: `Authorization: Bearer ${CRON_SECRET}` or `?secret=`): for each user, find medication + reminder occurrences in
   (now−10 min, now], skip those already in `dispatches` (idempotent id) or already acted on, respect quiet hours and snoozes (a snoozed dose re-fires at
   `snooze_until`), send Web Push (title, body, `image` = signed URL of the medicine's first photo valid 24 h, `data.url` = alarm page, actions take/snooze)
@@ -164,7 +193,8 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
 
 ### Calendar — `/dashboard/calendar`
 - `GET /api/calendar/feed/[token]` (public; token = `integrations.calendar_token`; serve `text/calendar`): medication doses for the next 30 days
-  (each with VALARM, name + dose, and the photo alarm URL) plus reminders with `channels.calendar`. `POST /api/calendar/token` creates/rotates; `DELETE` revokes.
+  (each with VALARM, name + dose, and the photo alarm URL) plus reminders with `channels.calendar`. `POST /api/calendar/token` creates/rotates → `{feed_url, webcal_url, is_local}`; `DELETE` revokes.
+  `GET /api/calendar` → `{tz, feed: {feed_url, webcal_url} | null, is_local, external}` (`external` shows only a masked URL preview).
 - `PUT /api/calendar/external {url}` (https only — Google "Secret address in iCal format", iCloud public calendar, Outlook ICS); `DELETE` removes;
   `GET /api/calendar/events?from&to` → `{events}` merging external events (server fetch with SSRF guards: https, no private/loopback IPs, 5 s timeout,
   ≤2 MB; RRULE DAILY/WEEKLY with COUNT/UNTIL/BYDAY) + medication doses + reminders + logged meals.
@@ -174,9 +204,10 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
 - `POST /api/health/sync` (auth: `Authorization: Bearer <health token>`, no cookies): accepts (a) ÖRZA JSON
   `{source, days:[{date, steps?, active_kcal?, distance_km?, sleep_minutes?, resting_hr?, avg_hr?, weight_kg?, water_ml?}]}` and (b) the "Health Auto Export"
   iOS app REST format `{data:{metrics:[{name, units, data:[{date, qty | Avg | …}]}]}}`; aggregates per day; upserts `health_days`; mirrors steps (max) and
-  weight into `tracking`. `POST /api/health/token` → `{token}` (shown once; store sha256 + preview); `DELETE` revokes.
-- `POST /api/health/import {source: "apple_health" | "csv", days:[…]}` (session). Apple Health `export.zip` is parsed **in the browser** (fflate unzip +
+  weight into `tracking` → `{ok, days_updated, skipped}` (≤1 MB; 401 with `WWW-Authenticate` for a missing/invalid token; 429 when a token or IP is over its budget).
+  `GET /api/health/token` → `{token: {preview, created_at} | null}`; `POST /api/health/token` → `{token, preview, created_at}` (shown once; store sha256 + preview); `DELETE` revokes → `{ok}`.
+- `POST /api/health/import {source: "apple_health" | "csv", days:[…] (≤400)}` (session) → `{ok, days_updated, skipped}`. Apple Health `export.zip` is parsed **in the browser** (fflate unzip +
   streaming scan of `export.xml` for StepCount, ActiveEnergyBurned, DistanceWalkingRunning, SleepAnalysis, RestingHeartRate, HeartRate, BodyMass,
   DietaryWater); only daily aggregates are uploaded. CSV import maps a date column + metric columns.
-- `GET /api/health/days?from&to` → `{days}` merged per date. Page: connect cards (iPhone: export import + Health Auto Export / Shortcuts steps with the sync
+- `GET /api/health/days?from&to` (default last 30 days, ≤400) → `{from, to, days, sources, last_sync, last_sync_source}`, `days` merged per date. Page: connect cards (iPhone: export import + Health Auto Export / Shortcuts steps with the sync
   URL and token; Android: Health Connect via automation apps posting to the same API, plus CSV; ÖRZA mobile app "coming soon"), charts, last sync.

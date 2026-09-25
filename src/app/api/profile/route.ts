@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { capMemory } from "@/lib/allergens";
 import { requireUser, toPublicUser } from "@/lib/auth";
 import { col, nowISO } from "@/lib/db";
 import { dateInTz } from "@/lib/dates";
@@ -102,6 +103,12 @@ const Body = z.object({
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
+/** Filter value matching a field's exact current value (or its absence). */
+const sameValue = (v: unknown) => (v === undefined ? { $exists: false } : v);
+
+/** Conditional memory writes tried before the profile is saved without the memory refresh. */
+const MEMORY_SAVE_ATTEMPTS = 3;
+
 /** Recommended targets for a profile; honours the pace of an active goal of the same kind. */
 async function recommendedTargets(userId: string, profile: Profile): Promise<Targets> {
   const active = await col<Goal>("goals").findOne({ user_id: userId, active: true });
@@ -147,7 +154,7 @@ function syncMemory(memory: string[], profile: Profile, changed: Set<keyof Profi
   if (changed.has("household_mode") && profile.household_mode) answers.household_mode = profile.household_mode;
   if (changed.has("lifestyle") && profile.lifestyle) answers.lifestyle = profile.lifestyle;
   const fresh = memoryFacts(answers).filter((f) => !kept.some((m) => m.toLowerCase() === f.toLowerCase()));
-  const next = [...kept, ...fresh].slice(-MEMORY_MAX_ITEMS);
+  const next = capMemory([...kept, ...fresh], MEMORY_MAX_ITEMS);
   return same(next, memory) ? null : next;
 }
 
@@ -198,18 +205,28 @@ export const PUT = route(async (req: Request) => {
     if (!same(targets, user.targets)) $set.targets = targets;
   }
 
-  const memory = syncMemory(user.memory || [], merged, changed);
-  if (memory) $set.memory = memory;
+  let seenMemory = user.memory;
+  let memory = syncMemory(seenMemory || [], merged, changed);
 
-  if (!Object.keys($set).length && !Object.keys($unset).length) {
+  if (!Object.keys($set).length && !Object.keys($unset).length && !memory) {
     return json({ user: toPublicUser(user), targets_recomputed: recompute });
   }
 
-  $set.updated_at = nowISO();
-  const updated = await col<User>("users").findOneAndUpdate(
-    { id: user.id },
-    Object.keys($unset).length ? { $set, $unset } : { $set }
-  );
+  // Memory is written only if it's still the list it was derived from: chat or Settings → Memory may
+  // have saved new facts since this request read the user. On a miss, re-read and redo the merge; the
+  // last attempt saves the profile without touching memory, so the edit itself is never lost.
+  const users = col<User>("users");
+  let updated: User | null = null;
+  for (let attempt = 1; ; attempt++) {
+    const set = { ...$set, ...(memory ? { memory } : {}), updated_at: nowISO() };
+    const update = Object.keys($unset).length ? { $set: set, $unset } : { $set: set };
+    updated = await users.findOneAndUpdate(memory ? { id: user.id, memory: sameValue(seenMemory) } : { id: user.id }, update);
+    if (updated || !memory) break;
+    const fresh = await users.findOne({ id: user.id });
+    if (!fresh) break;
+    seenMemory = fresh.memory;
+    memory = attempt < MEMORY_SAVE_ATTEMPTS ? syncMemory(seenMemory || [], merged, changed) : null;
+  }
 
   // A new weight in Settings counts as today's weigh-in, like /api/track/weight.
   if (changed.has("weight_kg") && merged.weight_kg != null) {

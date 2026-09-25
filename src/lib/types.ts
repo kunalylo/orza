@@ -194,6 +194,8 @@ export interface CreditTransaction {
   user_id: string;
   amount: number; // + grant, - spend
   reason: string;
+  /** The AI action (a `CreditAction` key) for spends and refunds; absent on grants and older records. */
+  action?: string;
   balance_after: number;
   created_at: string;
 }

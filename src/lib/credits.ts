@@ -15,8 +15,16 @@ export const CREDIT_COSTS = {
 } as const;
 export type CreditAction = keyof typeof CREDIT_COSTS;
 
-async function record(userId: string, amount: number, reason: string, balance_after: number) {
-  const tx: CreditTransaction = { id: newId(), user_id: userId, amount, reason, balance_after, created_at: nowISO() };
+async function record(userId: string, amount: number, reason: string, balance_after: number, action?: CreditAction) {
+  const tx: CreditTransaction = {
+    id: newId(),
+    user_id: userId,
+    amount,
+    reason,
+    ...(action ? { action } : {}),
+    balance_after,
+    created_at: nowISO(),
+  };
   await col<CreditTransaction>("credit_transactions").insertOne(tx);
   return tx;
 }
@@ -31,7 +39,7 @@ export async function spendCredits(userId: string, action: CreditAction, reason?
   if (!u) {
     throw new HttpError(402, "You're out of AI credits. Request more on the Credits page — manual logging stays free.", "no_credits");
   }
-  await record(userId, -cost, reason || action, u.credits);
+  await record(userId, -cost, reason || action, u.credits, action);
   return u.credits;
 }
 
@@ -39,7 +47,7 @@ export async function spendCredits(userId: string, action: CreditAction, reason?
 export async function refundCredits(userId: string, action: CreditAction, reason?: string) {
   const cost = CREDIT_COSTS[action];
   const u = await col<User>("users").findOneAndUpdate({ id: userId }, { $inc: { credits: cost } });
-  if (u) await record(userId, cost, `Refund: ${reason || action}`, u.credits);
+  if (u) await record(userId, cost, `Refund: ${reason || action}`, u.credits, action);
 }
 
 /** Admin/system grant (amount may be negative, floor at 0). */
@@ -53,7 +61,11 @@ export async function adjustCredits(userId: string, amount: number, reason: stri
   return { balance: u?.credits ?? cur.credits + delta, transaction: tx };
 }
 
-/** Runs `fn` after spending credits; refunds if `fn` throws. */
+/**
+ * Runs `fn` after spending credits; refunds if `fn` throws. Keep only the AI call itself (and writes
+ * that must succeed with it) inside `fn`: checks on a completed AI answer belong outside, so an
+ * unusable answer is refunded only within the daily allowance (see refundEmptyResult in @/lib/ai-guard).
+ */
 export async function withCredits<T>(userId: string, action: CreditAction, fn: () => Promise<T>, reason?: string): Promise<T> {
   await spendCredits(userId, action, reason);
   try {

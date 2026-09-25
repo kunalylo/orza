@@ -3,6 +3,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import type { PublicUser } from "@/lib/types";
 import { formatNumber } from "@/lib/utils";
+import { formatWeight, isImperial, kgToUnit, weightUnit } from "@/components/goals/goal-math";
 import { dayMonth, longDate, MEAL_LABELS, rangeLabel, weekdayShort, type DailyReport, type WeeklyReport } from "./format";
 
 /**
@@ -36,12 +37,13 @@ export function DoctorReport({ user, weekly, daily, generatedOn }: { user: Publi
   if (!mounted) return null;
 
   const p = user.profile || {};
+  const imperial = isImperial(user.preferences?.units);
   const facts = [
     ["Name", user.name || "—"],
     ["Age", p.age ? `${p.age} years` : "—"],
     ["Sex", p.sex ? SEX[p.sex] : "—"],
     ["Height", p.height_cm ? `${p.height_cm} cm` : "—"],
-    ["Weight", p.weight_kg ? `${p.weight_kg} kg` : "—"],
+    ["Weight", p.weight_kg ? formatWeight(p.weight_kg, imperial) : "—"],
     ["Goal", p.goal ? GOAL[p.goal] : "—"],
     ["Diet", p.diet ? DIET[p.diet] : "—"],
     ["Allergies", (p.allergies || []).filter((a) => a && a.toLowerCase() !== "none").join(", ") || "None recorded"],
@@ -107,7 +109,7 @@ export function DoctorReport({ user, weekly, daily, generatedOn }: { user: Publi
                 <Th className="text-right">Fibre g</Th>
                 <Th className="text-right">Water</Th>
                 <Th className="text-right">Steps</Th>
-                <Th className="text-right">Weight kg</Th>
+                <Th className="text-right">Weight {weightUnit(imperial)}</Th>
                 <Th className="text-right">Meals</Th>
               </tr>
             </thead>
@@ -124,7 +126,7 @@ export function DoctorReport({ user, weekly, daily, generatedOn }: { user: Publi
                   <Td className="text-right">{d.meals_count ? d.fiber_g : "—"}</Td>
                   <Td className="text-right">{d.water_glasses || "—"}</Td>
                   <Td className="text-right">{d.steps ? formatNumber(d.steps) : "—"}</Td>
-                  <Td className="text-right">{d.weight_kg ?? "—"}</Td>
+                  <Td className="text-right">{d.weight_kg != null ? kgToUnit(d.weight_kg, imperial) : "—"}</Td>
                   <Td className="text-right">{d.meals_count}</Td>
                 </tr>
               ))}
@@ -137,7 +139,7 @@ export function DoctorReport({ user, weekly, daily, generatedOn }: { user: Publi
                 <Td className="text-right">{weekly.logged_days ? weekly.averages.fiber_g : "—"}</Td>
                 <Td className="text-right">{weekly.averages.water_glasses || "—"}</Td>
                 <Td className="text-right">{weekly.averages.steps ? formatNumber(weekly.averages.steps) : "—"}</Td>
-                <Td className="text-right">{weekly.weight ? weekly.weight.last : "—"}</Td>
+                <Td className="text-right">{weekly.weight ? kgToUnit(weekly.weight.last, imperial) : "—"}</Td>
                 <Td className="text-right">{weekly.logged_days}/7</Td>
               </tr>
             </tbody>
@@ -158,7 +160,7 @@ export function DoctorReport({ user, weekly, daily, generatedOn }: { user: Publi
           <p className="mt-1 text-[10pt]">
             {formatNumber(daily.totals.calories)} kcal · protein {daily.totals.protein_g} g · carbs {daily.totals.carbs_g} g · fat {daily.totals.fat_g} g · fibre{" "}
             {daily.totals.fiber_g} g · water {daily.tracking.water_glasses} glasses · {formatNumber(daily.tracking.steps)} steps
-            {daily.tracking.weight_kg ? ` · weight ${daily.tracking.weight_kg} kg` : ""}
+            {daily.tracking.weight_kg ? ` · weight ${formatWeight(daily.tracking.weight_kg, imperial)}` : ""}
           </p>
           {daily.meals.length ? (
             <table className="mt-1.5 w-full border-collapse">

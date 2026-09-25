@@ -167,7 +167,7 @@ export function PreferencesSection() {
         <Row
           id="pref-reminders"
           title="Gentle reminders"
-          description="Friendly nudges to log meals and drink water."
+          description="Friendly nudges to log meals, drink water and weigh in, plus your custom reminders. Medicine alarms aren’t affected — they keep ringing."
           control={
             <Switch
               checked={prefs.reminders}

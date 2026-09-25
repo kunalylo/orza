@@ -81,6 +81,10 @@ function BillingToggle({ value, onChange, maxSaving }: { value: Billing; onChang
 
 function PlanPrice({ plan, billing }: { plan: Plan; billing: Billing }) {
   const reduce = useReducedMotion();
+  // The price only animates when the billing switch changes it, never on first paint, so the
+  // server HTML shows it at full opacity instead of waiting for hydration.
+  const [hydrated, setHydrated] = React.useState(false);
+  React.useEffect(() => setHydrated(true), []);
   const annual = billing === "annual" && plan.annual ? plan.annual : null;
   const amount = annual ? annual.total : plan.monthly;
   const period = plan.periodLabel ?? (annual ? "/year" : "/month");
@@ -95,7 +99,7 @@ function PlanPrice({ plan, billing }: { plan: Plan; billing: Billing }) {
       <div className="flex items-baseline gap-2">
         <motion.span
           key={amount}
-          initial={reduce ? false : { opacity: 0, y: 8 }}
+          initial={reduce || !hydrated ? false : { opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
           className="font-editorial text-[44px] font-semibold leading-none tracking-[-0.02em] text-orza-strong tabular-nums"

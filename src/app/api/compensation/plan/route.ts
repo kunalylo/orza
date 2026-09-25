@@ -2,6 +2,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { aiEnabled, aiJSON } from "@/lib/ai";
 import { allergyList, avoidList, conflictsWithAllergies, effectiveDiet } from "@/lib/allergens";
+import { AI_GUARD, emptyResultCreditNote, refundEmptyResult, reserveAi } from "@/lib/ai-guard";
 import { withCredits } from "@/lib/credits";
 import { col, newId, nowISO } from "@/lib/db";
 import { addDays, dateInTz } from "@/lib/dates";
@@ -54,20 +55,19 @@ function vetMeals(aiMeals: string[], builtIn: string[], safe: (text: string) => 
 }
 
 /**
- * Personalise wording only — every number stays from the deterministic plan, and every AI meal idea
- * is re-checked against the user's diet and avoid-list before it replaces a built-in one.
- * Throws (so `withCredits` refunds the credit) when nothing usable came back.
+ * The paid AI call alone (run inside withCredits, so only AI failures are refunded): asks for a
+ * personalised message and meal ideas for the deterministic plan.
  */
-async function personalise(
+function requestRewrite(
   draft: CompensationDraft,
   user: User,
   avoid: string[],
   occasion: string,
   description?: string
-): Promise<{ message: string; days: CompensationDay[] }> {
+): Promise<AiRewrite> {
   const p = user.profile || {};
   const diet = p.diet || DEFAULT_DIET;
-  const res = await aiJSON<AiRewrite>({
+  return aiJSON<AiRewrite>({
     system:
       "You personalise ÖRZA's 'compassionate rebalancing' plans after a special meal. Rewrite ONLY the supportive message and each day's three meal ideas. " +
       "Keep every number in the plan exactly as given (calorie targets, adjustments, steps, minutes) and never introduce new calorie numbers. " +
@@ -95,7 +95,20 @@ async function personalise(
     temperature: 0.5,
     maxTokens: 900,
   });
+}
 
+/**
+ * Personalise wording only — every number stays from the deterministic plan, and every AI meal idea
+ * is re-checked against the user's diet and avoid-list before it replaces a built-in one.
+ * Returns null when nothing usable came back.
+ */
+function applyRewrite(
+  res: AiRewrite | null | undefined,
+  draft: CompensationDraft,
+  user: User,
+  avoid: string[]
+): { message: string; days: CompensationDay[] } | null {
+  const diet = user.profile?.diet || DEFAULT_DIET;
   const byDate = new Map<string, string[]>();
   if (Array.isArray(res?.days)) {
     for (const d of res.days as unknown[]) {
@@ -121,13 +134,15 @@ async function personalise(
 
   const aiMessage = clean(res?.message, 700);
   const messageOk = aiMessage.length >= 20 && !conflictsWithAllergies(aiMessage, avoid);
-  if (!messageOk && !accepted) throw new Error("AI rebalance output was unusable for this user's diet/avoid-list");
+  if (!messageOk && !accepted) return null;
   return { message: messageOk ? aiMessage : draft.message, days };
 }
 
 /**
  * Create a rebalance plan. Always deterministic first; when AI is configured the
- * wording is personalised for 1 credit (falls back to the deterministic plan on any AI error).
+ * wording is personalised for 1 credit (falls back to the deterministic plan on any AI error or when
+ * the user is over the per-user AI budget). AI failures are refunded; an AI answer with nothing
+ * usable for the user's diet/avoid-list is refunded only within the daily allowance (see @/lib/ai-guard).
  */
 export const POST = route(async (req: Request) => {
   const user = await requireUser();
@@ -162,18 +177,40 @@ export const POST = route(async (req: Request) => {
   let notice: string | undefined;
 
   if (aiEnabled()) {
-    try {
-      const out = await withCredits(user.id, "compensation", () => personalise(draft, planUser, avoid, body.occasion, body.description), `Rebalance plan: ${body.occasion}`);
-      message = out.message;
-      days = out.days;
-      ai = true;
+    // Per-user rate + concurrency budget (see @/lib/ai-guard); over it, the free built-in plan is used.
+    const release = await reserveAi(user.id, "compensation");
+    if (!release) {
+      notice = "You're making plans faster than ÖRZA's AI can keep up, so here's the built-in plan (free).";
+    } else {
+      try {
+        // Only AI failures throw in here, so only they are refunded by withCredits.
+        const res = await withCredits(
+          user.id,
+          "compensation",
+          () => requestRewrite(draft, planUser, avoid, body.occasion, body.description),
+          `${AI_GUARD.compensation.reason}: ${body.occasion}`
+        );
+        const out = applyRewrite(res, draft, planUser, avoid);
+        if (out) {
+          message = out.message;
+          days = out.days;
+          ai = true;
+        } else {
+          // The AI did the work (and was paid for) — refund within the daily allowance only.
+          console.warn("[orza] compensation: AI rewrite was unusable for this user's diet/avoid-list");
+          const refunded = await refundEmptyResult(user.id, "compensation");
+          notice = `ÖRZA's AI couldn't personalise this plan for your diet, so here's the built-in plan. ${emptyResultCreditNote("compensation", refunded)}`;
+        }
+      } catch (e) {
+        if (!(e instanceof HttpError)) console.error("[orza] compensation AI failed", e);
+        notice =
+          e instanceof HttpError && e.code === "no_credits"
+            ? "You're out of AI credits, so here's ÖRZA's built-in plan — just as caring, a little less personal."
+            : "ÖRZA's AI was busy, so here's the built-in plan. No credits were used.";
+      } finally {
+        release();
+      }
       credits = (await col<User>("users").findOne({ id: user.id }))?.credits;
-    } catch (e) {
-      if (!(e instanceof HttpError)) console.error("[orza] compensation AI failed", e);
-      notice =
-        e instanceof HttpError && e.code === "no_credits"
-          ? "You're out of AI credits, so here's ÖRZA's built-in plan — just as caring, a little less personal."
-          : "ÖRZA's AI was busy, so here's the built-in plan. No credits were used.";
     }
   }
 

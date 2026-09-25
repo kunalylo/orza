@@ -3,6 +3,7 @@ import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CircleAlert, RotateCw } from "lucide-react";
 import { useUser } from "@/components/app/UserProvider";
+import { TodayMedsCard } from "@/components/care/TodayMedsCard";
 import { Reveal } from "@/components/orza/Reveal";
 import { GlassCard } from "@/components/orza/primitives";
 import { Button } from "@/components/ui/button";
@@ -182,6 +183,13 @@ export function TodayView() {
               </Reveal>
             </div>
           </div>
+
+          {/* Time-sensitive, so it sits high up. It always shows the real today's doses, so only on today's view. */}
+          {data.date === data.today && (
+            <Reveal delay={0.05} className="mt-4 lg:mt-6">
+              <TodayMedsCard />
+            </Reveal>
+          )}
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:mt-6 lg:grid-cols-3 lg:gap-6">
             <Reveal delay={0.05} className="h-full">

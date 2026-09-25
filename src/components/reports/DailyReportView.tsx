@@ -5,6 +5,7 @@ import { Eyebrow, GlassCard, Tag } from "@/components/orza/primitives";
 import { EmptyState, MacroRow, WellnessNote } from "@/components/app/ui";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Input, Skeleton } from "@/components/ui/form";
+import { formatWeight } from "@/components/goals/goal-math";
 import { addDays } from "@/lib/dates";
 import { formatNumber } from "@/lib/utils";
 import { DateStepper } from "./DateStepper";
@@ -40,6 +41,7 @@ export function DailyReportView({
   date,
   today,
   onDateChange,
+  imperial = false,
 }: {
   report: DailyReport | null;
   loading: boolean;
@@ -48,6 +50,8 @@ export function DailyReportView({
   date: string;
   today: string;
   onDateChange: (date: string) => void;
+  /** Show weights in lb (Settings → Units); reports stay kg underneath. */
+  imperial?: boolean;
 }) {
   // Keep the previous day on screen (dimmed) while the next one loads.
   const r = report;
@@ -114,7 +118,7 @@ export function DailyReportView({
               </div>
               {r.tracking.weight_kg ? (
                 <p className="mt-4 text-[13px] text-orza-muted">
-                  Weigh-in: <span className="font-medium tabular-nums text-orza-strong">{r.tracking.weight_kg} kg</span>
+                  Weigh-in: <span className="font-medium tabular-nums text-orza-strong">{formatWeight(r.tracking.weight_kg, imperial)}</span>
                 </p>
               ) : null}
             </GlassCard>

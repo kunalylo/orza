@@ -3,8 +3,8 @@
  * read model behind GET /api/integrations that the Reminders, Calendar and Health pages share.
  */
 import { col, nowISO } from "@/lib/db";
-import { SITE } from "@/lib/site";
 import { tzOf } from "@/lib/care/meds";
+import { feedLinks, publicBaseUrl } from "@/app/api/calendar/_lib/feed";
 import { pushConfigured, vapidPublicKey } from "@/lib/care/push";
 import { whatsappConfigured, whatsappMode } from "@/lib/care/whatsapp";
 import { inQuietWindow, isHHMM, type IntegrationsView } from "@/components/care/reminders/shared";
@@ -35,18 +35,11 @@ export function whatsappTarget(user: Pick<User, "integrations">): string | null 
 
 /**
  * Origin used for links shown to the user (calendar feed). Prefers the configured public site URL;
- * falls back to the origin of the incoming request when NEXT_PUBLIC_SITE_URL isn't set.
+ * falls back to the origin of the incoming request when NEXT_PUBLIC_SITE_URL isn't set. Same rules as
+ * the calendar routes (`publicBaseUrl`), so every page shows the identical feed link.
  */
 export function siteOrigin(req?: Request): string {
-  if (process.env.NEXT_PUBLIC_SITE_URL) return SITE.url.replace(/\/+$/, "");
-  if (req) {
-    try {
-      return new URL(req.url).origin;
-    } catch {
-      /* fall through */
-    }
-  }
-  return SITE.url.replace(/\/+$/, "");
+  return publicBaseUrl(req);
 }
 
 /* Per-instance cooldown for "send a test" buttons (tests hit paid / rate-limited third-party APIs). */
@@ -79,7 +72,7 @@ export async function integrationsView(user: User, origin: string): Promise<Inte
       opt_in: !!(i.whatsapp_opt_in && i.whatsapp_phone),
     },
     calendar: {
-      feed_url: i.calendar_token ? `${origin}/api/calendar/feed/${encodeURIComponent(i.calendar_token)}` : null,
+      feed_url: i.calendar_token ? feedLinks(i.calendar_token, origin).feed_url : null,
       external_url_set: !!i.external_ical_url,
     },
     health: {

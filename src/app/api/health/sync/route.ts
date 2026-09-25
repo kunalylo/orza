@@ -81,4 +81,5 @@ export const POST = route(async (req: Request) => {
 
   const { days_updated } = parsed.days.length ? await upsertHealthDays(user, parsed.source, parsed.days) : { days_updated: 0 };
   return json({ ok: true, days_updated, skipped: parsed.skipped }, { headers: noStore });
-});
+  // Bearer-token auth (no cookies): automation apps send no Origin and not always a JSON Content-Type.
+}, { tokenAuth: true });

@@ -6,6 +6,7 @@ import { EmptyState, StatCard, WellnessNote } from "@/components/app/ui";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/form";
 import { OrbSurface } from "@/components/recipes/KitchenProfile";
+import { formatWeight, kgToUnit } from "@/components/goals/goal-math";
 import { addDays } from "@/lib/dates";
 import { formatNumber } from "@/lib/utils";
 import { DateStepper } from "./DateStepper";
@@ -39,6 +40,7 @@ export function WeeklyReportView({
   end,
   today,
   onEndChange,
+  imperial = false,
 }: {
   report: WeeklyReport | null;
   loading: boolean;
@@ -47,6 +49,8 @@ export function WeeklyReportView({
   end: string;
   today: string;
   onEndChange: (end: string) => void;
+  /** Show weights in lb (Settings → Units); reports stay kg underneath. */
+  imperial?: boolean;
 }) {
   const r = report;
   const stale = !!r && r.end !== end;
@@ -189,8 +193,8 @@ export function WeeklyReportView({
                   <dd className="mt-1 text-[15px] tabular-nums text-white/90">
                     {r.weight
                       ? r.weight.entries > 1
-                        ? `${r.weight.first} → ${r.weight.last} kg`
-                        : `${r.weight.last} kg`
+                        ? `${kgToUnit(r.weight.first, imperial)} → ${formatWeight(r.weight.last, imperial)}`
+                        : formatWeight(r.weight.last, imperial)
                       : "No weigh-ins this week"}
                   </dd>
                 </div>

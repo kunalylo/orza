@@ -1,3 +1,4 @@
+import { kgToUnit, weightUnit } from "@/components/goals/goal-math";
 import { addDays } from "@/lib/dates";
 import type { DailyReport, WeeklyReport } from "@/lib/reports";
 
@@ -55,9 +56,9 @@ const csvCell = (v: string | number | null | undefined) => {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
-/** Weekly data as CSV (one row per day, then averages and targets). */
-export function weeklyCsv(w: WeeklyReport): string {
-  const header = ["Date", "Day", "Calories (kcal)", "Protein (g)", "Carbs (g)", "Fat (g)", "Fibre (g)", "Water (glasses)", "Steps", "Weight (kg)", "Meals logged", "Day score"];
+/** Weekly data as CSV (one row per day, then averages and targets). Weights in kg, or lb when `imperial`. */
+export function weeklyCsv(w: WeeklyReport, imperial = false): string {
+  const header = ["Date", "Day", "Calories (kcal)", "Protein (g)", "Carbs (g)", "Fat (g)", "Fibre (g)", "Water (glasses)", "Steps", `Weight (${weightUnit(imperial)})`, "Meals logged", "Day score"];
   const rows: (string | number | null | undefined)[][] = w.days.map((d) => [
     d.date,
     weekdayShort(d.date),
@@ -68,14 +69,14 @@ export function weeklyCsv(w: WeeklyReport): string {
     d.fiber_g,
     d.water_glasses,
     d.steps,
-    d.weight_kg ?? "",
+    d.weight_kg != null ? kgToUnit(d.weight_kg, imperial) : "",
     d.meals_count,
     d.meals_count ? d.score : "",
   ]);
   const a = w.averages;
   const t = w.targets;
   rows.push([]);
-  rows.push(["Average (logged days)", "", a.calories, a.protein_g, a.carbs_g, a.fat_g, a.fiber_g, a.water_glasses, a.steps, w.weight?.last ?? "", w.logged_days, ""]);
+  rows.push(["Average (logged days)", "", a.calories, a.protein_g, a.carbs_g, a.fat_g, a.fiber_g, a.water_glasses, a.steps, w.weight ? kgToUnit(w.weight.last, imperial) : "", w.logged_days, ""]);
   rows.push(["Daily target", "", t.calories, t.protein_g, t.carbs_g, t.fat_g, t.fiber_g, t.water_glasses, t.steps, "", "", ""]);
   rows.push([]);
   rows.push(["Days within ±10% of calorie target", "", w.adherence]);

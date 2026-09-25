@@ -2,6 +2,7 @@ import { z } from "zod";
 import { avoidList, memoryDiets } from "@/lib/allergens";
 import { requireUser } from "@/lib/auth";
 import { aiEnabled, aiJSON } from "@/lib/ai";
+import { AI_GUARD, emptyResultCreditNote, refundEmptyResult, reserveAi } from "@/lib/ai-guard";
 import { withCredits } from "@/lib/credits";
 import { col, newId, nowISO } from "@/lib/db";
 import { guessMealType } from "@/lib/domain/meals";
@@ -132,7 +133,7 @@ const DIET_RULES =
   "jain = vegetarian with NO onion, garlic, potato, carrot, beetroot, radish, fresh ginger, mushrooms, other root vegetables or honey (dry ginger powder and hing are fine); " +
   "non_vegetarian = anything.";
 
-async function aiRecipe(input: {
+type AiRecipeInput = {
   user: User;
   prompt?: string;
   cuisine?: string;
@@ -140,10 +141,13 @@ async function aiRecipe(input: {
   diets: Diet[];
   avoid: string[];
   recentTitles: string[];
-}): Promise<Draft> {
+};
+
+/** The paid AI call alone (run inside withCredits, so only AI failures are refunded). */
+function requestAiRecipe(input: AiRecipeInput): Promise<unknown> {
   const p = input.user.profile || {};
   const t = resolveTargets(input.user);
-  const res = await aiJSON<any>({
+  return aiJSON<any>({
     system:
       "You are ÖRZA's recipe creator. Create ONE practical, home-style recipe personalised to this person. " +
       "Prefer Indian regional home cooking (respect their region) unless they ask for another cuisine. " +
@@ -172,14 +176,20 @@ async function aiRecipe(input: {
     temperature: 0.7,
     maxTokens: 1500,
   });
+}
 
-  const draft = cleanAiRecipe(res, input.cuisine);
-  if (!draft) throw new HttpError(502, "ÖRZA's AI returned an incomplete recipe.", "ai_parse");
-  // Never show a recipe that breaks the person's diet or allergies — fall back to the curated collection instead.
+/**
+ * Clean and vet a completed AI recipe. Returns why it can't be used instead of a draft: an incomplete
+ * answer, a diet/allergy violation or a blown calorie cap all fall back to the curated collection.
+ */
+function vetAiRecipe(raw: unknown, input: AiRecipeInput): { draft: Draft } | { problem: string } {
+  const draft = cleanAiRecipe(raw, input.cuisine);
+  if (!draft) return { problem: "incomplete recipe" };
+  // Never show a recipe that breaks the person's diet or allergies.
   const problems = recipeViolations(draft, { diets: input.diets, allergies: input.avoid });
-  if (problems.length) throw new HttpError(502, `The AI recipe didn't fit your needs (${problems.join(", ")}).`, "ai_unsafe");
-  if (input.cap && draft.nutrition.calories > input.cap * 1.1) throw new HttpError(502, "The AI recipe went over your calorie cap.", "ai_calories");
-  return draft;
+  if (problems.length) return { problem: `didn't fit their needs (${problems.join(", ")})` };
+  if (input.cap && draft.nutrition.calories > input.cap * 1.1) return { problem: "over the calorie cap" };
+  return { draft };
 }
 
 /* ───────────────────────────── Library path ───────────────────────────── */
@@ -199,7 +209,9 @@ function relaxedNotice(pick: PickResult, cuisine?: string): string | undefined {
 /**
  * POST /api/recipes/generate → { recipe, ai, credits?, notice? }.
  * AI (2 credits) when configured, vetted against diet + allergies; otherwise — or if the AI
- * result can't be used — a deterministic pick from ÖRZA's curated library (free).
+ * result can't be used, or the user is over the per-user AI budget — a deterministic pick from
+ * ÖRZA's curated library (free). AI failures are refunded; a completed AI recipe that can't be used
+ * is refunded only within the daily allowance (see @/lib/ai-guard).
  */
 export const POST = route(async (req: Request) => {
   const user = await requireUser();
@@ -225,21 +237,42 @@ export const POST = route(async (req: Request) => {
   const notices: string[] = [];
 
   if (aiEnabled()) {
-    try {
-      draft = await withCredits(
-        user.id,
-        "recipe",
-        () => aiRecipe({ user, prompt: body.prompt, cuisine: body.cuisine, cap, diets, avoid, recentTitles: recent.map((r) => r.title) }),
-        `Recipe: ${(body.prompt || body.cuisine || "personalised recipe").slice(0, 60)}`
-      );
+    // Per-user rate + concurrency budget (see @/lib/ai-guard); over it, the free curated collection answers.
+    const release = await reserveAi(user.id, "recipe");
+    if (!release) {
+      notices.push("You're creating recipes faster than ÖRZA's AI can keep up, so here's one from the curated collection (free).");
+    } else {
+      const input: AiRecipeInput = { user, prompt: body.prompt, cuisine: body.cuisine, cap, diets, avoid, recentTitles: recent.map((r) => r.title) };
+      try {
+        // Only AI failures throw in here, so only they are refunded by withCredits.
+        const raw = await withCredits(
+          user.id,
+          "recipe",
+          () => requestAiRecipe(input),
+          `${AI_GUARD.recipe.reason}: ${(body.prompt || body.cuisine || "personalised recipe").slice(0, 60)}`
+        );
+        const vetted = vetAiRecipe(raw, input);
+        if ("draft" in vetted) {
+          draft = vetted.draft;
+        } else {
+          // The AI did the work (and was paid for) — refund within the daily allowance only.
+          console.warn(`[orza] recipe AI result not used: ${vetted.problem}`);
+          const refunded = await refundEmptyResult(user.id, "recipe");
+          notices.push(
+            `ÖRZA's AI couldn't create a recipe that fits right now, so here's one from the curated collection. ${emptyResultCreditNote("recipe", refunded)}`
+          );
+        }
+      } catch (e) {
+        if (!(e instanceof HttpError)) console.error("[orza] recipe AI failed", e);
+        notices.push(
+          e instanceof HttpError && e.code === "no_credits"
+            ? "You're out of AI credits, so here's a recipe from ÖRZA's curated collection."
+            : "ÖRZA's AI couldn't create a recipe that fits right now, so here's one from the curated collection. No credits were used."
+        );
+      } finally {
+        release();
+      }
       credits = (await col<User>("users").findOne({ id: user.id }))?.credits;
-    } catch (e) {
-      if (!(e instanceof HttpError)) console.error("[orza] recipe AI failed", e);
-      notices.push(
-        e instanceof HttpError && e.code === "no_credits"
-          ? "You're out of AI credits, so here's a recipe from ÖRZA's curated collection."
-          : "ÖRZA's AI couldn't create a recipe that fits right now, so here's one from the curated collection. No credits were used."
-      );
     }
   }
 

@@ -7,7 +7,7 @@ import { sumNutrients } from "@/lib/domain/meals";
 import { BODY_LIMIT_UPLOAD, HttpError, json, parseBody, route } from "@/lib/http";
 import { aiScanImage, type MealAIResult } from "@/lib/meal-ai";
 import type { Scan } from "@/lib/types";
-import { MEAL_AI, emptyResultCreditNote, rateLimited, refundEmptyResult, reserveMealAi } from "../_ai-guard";
+import { AI_GUARD, aiRateLimited, emptyResultCreditNote, refundEmptyResult, reserveAi } from "@/lib/ai-guard";
 import { currentCredits } from "../_shared";
 
 /** ≈ 6 MB of image bytes once base64-encoded (4/3 overhead) plus the data-URL prefix. */
@@ -24,7 +24,7 @@ const Body = z.object({
 
 /**
  * POST /api/meals/scan — Snap & Know. Costs 2 credits: refunded if the AI fails, and refunded for
- * photos with no food up to a daily allowance (see _ai-guard). Rate-limited per user (429).
+ * photos with no food up to a daily allowance (see @/lib/ai-guard). Rate-limited per user (429).
  * The photo is only sent to the AI; it is never stored. Returns an unconfirmed Scan to review.
  */
 export const POST = route(async (req: Request) => {
@@ -39,12 +39,12 @@ export const POST = route(async (req: Request) => {
   // A base64 photo up to ~6 MB: read under the upload cap, not the 1 MB default.
   const body = await parseBody(req, Body, { maxBytes: BODY_LIMIT_UPLOAD });
 
-  const release = await reserveMealAi(user.id, "scan");
-  if (!release) throw rateLimited();
+  const release = await reserveAi(user.id, "scan");
+  if (!release) throw aiRateLimited();
   let result: MealAIResult;
   try {
     // Only AI failures throw in here, so only they are refunded by withCredits.
-    result = await withCredits(user.id, "scan", () => aiScanImage(body.image, body.note, user.profile), MEAL_AI.scan.reason);
+    result = await withCredits(user.id, "scan", () => aiScanImage(body.image, body.note, user.profile), AI_GUARD.scan.reason);
   } finally {
     release();
   }

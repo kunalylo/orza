@@ -7,7 +7,7 @@ import { HttpError, json, parseBody, route } from "@/lib/http";
 import { aiParseMealText } from "@/lib/meal-ai";
 import { parseMealText } from "@/lib/nutrition";
 import type { MealItem, MealType } from "@/lib/types";
-import { MEAL_AI, emptyResultCreditNote, refundEmptyResult, reserveMealAi } from "../_ai-guard";
+import { AI_GUARD, emptyResultCreditNote, refundEmptyResult, reserveAi } from "@/lib/ai-guard";
 import { currentCredits, mealTypeSchema, optionalDate, resolveDate, userTz } from "../_shared";
 
 const Body = z.object({
@@ -25,7 +25,7 @@ const NOTHING_RECOGNISED = "Couldn't recognise any foods — try e.g. '2 roti an
 
 /**
  * POST /api/meals/text — log a meal from a typed or spoken description.
- * With AI on: 1 credit via withCredits, rate-limited per user (see _ai-guard). A completed AI call
+ * With AI on: 1 credit via withCredits, rate-limited per user (see @/lib/ai-guard). A completed AI call
  * that finds no food is refunded only within the daily allowance. Without AI (or if the AI is
  * unavailable, busy for this user, out of credits or finds nothing) the free built-in parser logs it,
  * with a `notice` explaining why. The parser uses the profile diet, so "biryani" is Veg Biryani for a vegetarian.
@@ -47,7 +47,7 @@ export const POST = route(async (req: Request) => {
   let emptyAiRefunded: boolean | undefined;
 
   if (aiEnabled()) {
-    const release = await reserveMealAi(user.id, "meal_text");
+    const release = await reserveAi(user.id, "meal_text");
     if (!release) {
       notice = "You're logging faster than ÖRZA's AI can keep up, so this one used the built-in food list (free).";
     } else {
@@ -57,7 +57,7 @@ export const POST = route(async (req: Request) => {
           user.id,
           "meal_text",
           () => aiParseMealText(body.text, user.profile),
-          MEAL_AI.meal_text.reason
+          AI_GUARD.meal_text.reason
         );
         if (out.items.length) {
           items = out.items;

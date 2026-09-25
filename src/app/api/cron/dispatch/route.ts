@@ -37,5 +37,6 @@ async function handler(req: Request): Promise<Response> {
   return json({ ok: true, ...summary }, { headers: { "Cache-Control": "no-store" } });
 }
 
-export const GET = route(handler);
-export const POST = route(handler);
+// Secret-authenticated (no cookies), so schedulers may POST without an Origin or JSON body.
+export const GET = route(handler, { tokenAuth: true });
+export const POST = route(handler, { tokenAuth: true });

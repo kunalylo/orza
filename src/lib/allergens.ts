@@ -173,3 +173,26 @@ export function effectiveDiet(profileDiet: Diet | null | undefined, memory: stri
   if (!all.length) return undefined;
   return all.reduce((a, b) => (DIET_STRICTNESS[b] < DIET_STRICTNESS[a] ? b : a));
 }
+
+/** A memory fact that food suggestions rely on: something {@link avoidList} or {@link memoryDiets} reads. */
+export function isFoodSafetyFact(fact: string): boolean {
+  return avoidList([], [fact]).length > 0 || memoryDiets([fact]).length > 0;
+}
+
+/**
+ * Trim a memory list to `cap` items. The oldest facts go first, but food-safety facts (allergies,
+ * avoided foods, diets learned in chat) are kept while anything else can go instead, so a burst of
+ * small talk never silently drops "Allergic to cashews" or "Is vegan".
+ */
+export function capMemory(memory: string[], cap: number): string[] {
+  let excess = memory.length - cap;
+  if (excess <= 0) return memory;
+  const kept = memory.filter((f) => {
+    if (excess > 0 && !isFoodSafetyFact(f)) {
+      excess--;
+      return false;
+    }
+    return true;
+  });
+  return kept.slice(-cap);
+}

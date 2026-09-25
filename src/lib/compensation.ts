@@ -345,6 +345,6 @@ export function estimateExtraDetails(
   return { calories: DEFAULT_EXTRA_CALORIES, matched: [], source: "default" };
 }
 
-export function estimateExtraCalories(description: string | undefined, targets: Targets): number {
-  return estimateExtraDetails(description, targets).calories;
+export function estimateExtraCalories(description: string | undefined, targets: Targets, diet?: Diet | null): number {
+  return estimateExtraDetails(description, targets, diet).calories;
 }

@@ -146,7 +146,7 @@ export function TodayMedsCard() {
               All done for today — nicely handled.
             </div>
           ) : (
-            <ul className="mt-4 space-y-2.5">
+            <ul className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
               {shown.map((d: DoseItem) => {
                 const meta = STATUS_META[d.status];
                 const pending = pendingFor(d);

@@ -15,6 +15,7 @@ import {
   type LearnedFacts,
 } from "@/lib/coach";
 import { MEMORY_MAX_ITEMS } from "@/components/account/options";
+import { AI_GUARD, emptyResultCreditNote, refundEmptyResult, reserveAi } from "@/lib/ai-guard";
 import { withCredits } from "@/lib/credits";
 import { col, newId, nowISO } from "@/lib/db";
 import { addDays } from "@/lib/dates";
@@ -67,8 +68,10 @@ async function saveLearnedFacts(userId: string, add: string[]): Promise<LearnedF
 
 /**
  * POST /api/chat/send — one turn of "Ask ÖRZA".
- * AI on: 1 credit (withCredits) for a JSON reply that may log a meal and learn durable facts.
- * AI off (or temporarily unavailable): the deterministic coach in lib/coach.ts, free.
+ * AI on: 1 credit (withCredits) for a JSON reply that may log a meal and learn durable facts. Refunded
+ * when the AI fails; an empty answer is refunded only within the daily allowance (see @/lib/ai-guard).
+ * AI off, temporarily unavailable, or over the per-user rate budget: the deterministic coach in
+ * lib/coach.ts, free.
  * The conversation is only created/written once a reply exists, so a 402 leaves nothing half-saved.
  */
 export const POST = route(async (req: Request) => {
@@ -90,46 +93,61 @@ export const POST = route(async (req: Request) => {
   let credits: number | undefined;
 
   if (aiEnabled()) {
-    try {
-      const history: HistoryTurn[] = earlier.map((m) => ({ role: m.role, content: m.content }));
-      const out = await withCredits(
-        user.id,
-        "chat",
-        async () => {
-          const raw = await aiJSON({
-            system: coachSystemPrompt(ctx, history),
-            prompt: body.message,
-            shape: COACH_REPLY_SHAPE,
-            temperature: 0.5,
-            maxTokens: 1000,
-          });
-          const parsed = normaliseAiOutput(raw, guessMealType(ctx.tz));
-          if (!parsed) throw new HttpError(502, "ÖRZA's AI returned an empty answer.", "ai_empty");
-          // Logged inside withCredits so a failed write refunds the credit.
-          const logged = parsed.log_meal
-            ? await createMeal({
-                userId: user.id,
-                date: parsed.log_meal.day === "yesterday" ? addDays(ctx.date, -1) : ctx.date,
-                mealType: parsed.log_meal.meal_type,
-                source: "chat",
-                description: parsed.log_meal.description,
-                items: parsed.log_meal.items,
-              })
-            : null;
-          return { ...parsed, logged };
-        },
-        "Ask ÖRZA"
-      );
-      reply = out.reply;
-      meal = out.logged;
-      // Trust the model's judgement of what is durable. Only when it learned nothing do the high-precision
-      // safety patterns (diet, allergy, intolerance) still apply, so "mujhe dudh se allergy hai" is never lost.
-      memoryAdd = out.memory_add.length ? out.memory_add : extractFacts(body.message, { safetyOnly: true });
-      ai = true;
-    } catch (e) {
-      // 402 (no credits), validation and server errors propagate; only AI outages fall back to the free coach.
-      if (!(e instanceof HttpError) || e.status < 502 || e.status > 504) throw e;
-      notice = "ÖRZA's AI was unavailable, so the built-in coach answered. No credits were used.";
+    // Per-user rate + concurrency budget (see @/lib/ai-guard); over it, the free built-in coach answers.
+    const release = await reserveAi(user.id, "chat");
+    if (!release) {
+      notice = "You're sending messages faster than ÖRZA's AI can keep up, so the built-in coach answered this one (free).";
+    } else {
+      try {
+        const history: HistoryTurn[] = earlier.map((m) => ({ role: m.role, content: m.content }));
+        // Only AI failures (and a failed meal write) throw in here, so only they are refunded by withCredits.
+        const out = await withCredits(
+          user.id,
+          "chat",
+          async () => {
+            const raw = await aiJSON({
+              system: coachSystemPrompt(ctx, history),
+              prompt: body.message,
+              shape: COACH_REPLY_SHAPE,
+              temperature: 0.5,
+              maxTokens: 1000,
+            });
+            const parsed = normaliseAiOutput(raw, guessMealType(ctx.tz));
+            if (!parsed) return null; // a completed but unusable answer — handled below
+            // Logged inside withCredits so a failed write refunds the credit.
+            const logged = parsed.log_meal
+              ? await createMeal({
+                  userId: user.id,
+                  date: parsed.log_meal.day === "yesterday" ? addDays(ctx.date, -1) : ctx.date,
+                  mealType: parsed.log_meal.meal_type,
+                  source: "chat",
+                  description: parsed.log_meal.description,
+                  items: parsed.log_meal.items,
+                })
+              : null;
+            return { ...parsed, logged };
+          },
+          AI_GUARD.chat.reason
+        );
+        if (out) {
+          reply = out.reply;
+          meal = out.logged;
+          // Trust the model's judgement of what is durable. Only when it learned nothing do the high-precision
+          // safety patterns (diet, allergy, intolerance) still apply, so "mujhe dudh se allergy hai" is never lost.
+          memoryAdd = out.memory_add.length ? out.memory_add : extractFacts(body.message, { safetyOnly: true });
+          ai = true;
+        } else {
+          // The AI ran (and was paid for) but its answer was empty — refund within the daily allowance only.
+          const refunded = await refundEmptyResult(user.id, "chat");
+          notice = `ÖRZA's AI didn't give a usable answer, so the built-in coach replied. ${emptyResultCreditNote("chat", refunded)}`;
+        }
+      } catch (e) {
+        // 402 (no credits), validation and server errors propagate; only AI outages fall back to the free coach.
+        if (!(e instanceof HttpError) || e.status < 502 || e.status > 504) throw e;
+        notice = "ÖRZA's AI was unavailable, so the built-in coach answered. No credits were used.";
+      } finally {
+        release();
+      }
     }
     credits = await currentCredits(user.id);
   }

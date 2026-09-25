@@ -49,7 +49,11 @@ export function WeightTrendCard({
           )}
         </div>
         {n > 1 && (
-          <Segmented<"chart" | "table"> aria-label="Show weigh-ins as"
+          <Segmented<"chart" | "table">
+            semantics="tabs"
+            id="weight-view"
+            panelId="weight-view-panel"
+            aria-label="Show weigh-ins as"
             size="sm"
             value={view}
             onChange={setView}
@@ -61,7 +65,10 @@ export function WeightTrendCard({
         )}
       </div>
 
-      <div className="mt-5 flex-1">
+      <div
+        className="mt-5 flex-1"
+        {...(n > 1 ? { role: "tabpanel", id: "weight-view-panel", "aria-labelledby": `weight-view-${view}` } : {})}
+      >
         {n === 0 ? (
           <div className="flex h-[230px] flex-col items-center justify-center rounded-orza-sm border border-dashed border-[rgba(20,20,20,0.14)] bg-white/40 px-6 text-center">
             <span className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/80 text-orza-muted shadow-orza-glass" aria-hidden>

@@ -209,15 +209,28 @@ export interface CreditTransaction {
   created_at: string;
 }
 
+/** "web": a browser signed in with the httpOnly cookie. "mobile": the ÖRZA iOS/Android app, signed in with a Bearer token. */
+export type SessionKind = "web" | "mobile";
+
+/** Platforms of the ÖRZA phone app. */
+export type AppPlatform = "ios" | "android";
+
 /**
- * A signed-in browser. The session cookie (a signed JWT) carries this id; deleting the document
- * revokes that cookie immediately, even if a copy of it is still within its 30-day lifetime.
+ * A signed-in browser or phone app. The session token (a signed JWT, sent as the cookie on the web or
+ * as `Authorization: Bearer` by the app) carries this id; deleting the document revokes that token
+ * immediately, even if a copy of it is still within its 30-day lifetime.
  */
 export interface Session {
   id: string;
   user_id: string;
+  /** How the session signs in. Sessions created before the phone app existed have none and are "web". */
+  kind?: SessionKind;
+  /** Phone app only: the device name the app reported (e.g. "Asha's iPhone"). */
+  device_label?: string;
+  /** Phone app only. */
+  platform?: AppPlatform;
   created_at: string;
-  expires_at: string; // ISO; matches the cookie's expiry
+  expires_at: string; // ISO; matches the token's expiry
 }
 
 export interface Lead {
@@ -345,6 +358,29 @@ export interface PushSubscriptionDoc {
   keys: { p256dh: string; auth: string };
   user_agent?: string;
   created_at: string;
+}
+
+/**
+ * A phone running the ÖRZA app (collection `devices`), registered by the app with `POST /api/devices`
+ * after sign-in and on every launch. One per app session; revoking the session removes it.
+ */
+export interface AppDevice {
+  id: string;
+  user_id: string;
+  /** The app's session (kind "mobile") that registered the device. */
+  session_id: string;
+  platform: AppPlatform;
+  label: string;
+  /** Expo push token (`ExponentPushToken[…]`), when the user allowed notifications. A credential — never returned to clients. */
+  push_token?: string;
+  app_version: string;
+  /** The phone's IANA timezone. */
+  timezone: string;
+  last_seen_at: string;
+  /** The app rings medicine alarms itself (local notifications), so the server skips Web Push for doses while it is active. */
+  alarms_local: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 /** Idempotency record: one per (source, occurrence) so a reminder is never sent twice. */

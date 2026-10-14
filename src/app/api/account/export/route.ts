@@ -3,7 +3,7 @@ import { col, type CollectionName } from "@/lib/db";
 import { dateInTz } from "@/lib/dates";
 import { route } from "@/lib/http";
 import { SITE } from "@/lib/site";
-import type { Media, PushSubscriptionDoc, Session } from "@/lib/types";
+import type { AppDevice, Media, PushSubscriptionDoc, Session } from "@/lib/types";
 import { CREDIT_REQUEST_TYPE, LEGACY_CREDIT_REQUEST_SOURCE, creditRequests, toOwnView } from "../../credits/requests";
 import { externalState } from "../../calendar/_lib/external";
 
@@ -42,18 +42,39 @@ function deviceEntry(p: PushSubscriptionDoc) {
   return { id: p.id, endpoint: p.endpoint, user_agent: p.user_agent, created_at: p.created_at };
 }
 
-/** Signed-in browsers: when each sign-in started and expires (session ids stay server-side). */
+/** Phones running the ÖRZA app, without their push token (a credential). */
+function appDeviceEntry(d: AppDevice) {
+  return {
+    id: d.id,
+    platform: d.platform,
+    label: d.label,
+    app_version: d.app_version,
+    timezone: d.timezone,
+    alarms_local: d.alarms_local,
+    push_notifications: !!d.push_token,
+    last_seen_at: d.last_seen_at,
+    created_at: d.created_at,
+  };
+}
+
+/** Signed-in browsers and phone apps: when each sign-in started and expires (session ids stay server-side). */
 function sessionEntry(s: Session) {
-  return { signed_in_at: s.created_at, expires_at: s.expires_at };
+  return {
+    kind: s.kind ?? "web",
+    ...(s.device_label ? { device: s.device_label } : {}),
+    ...(s.platform ? { platform: s.platform } : {}),
+    signed_in_at: s.created_at,
+    expires_at: s.expires_at,
+  };
 }
 
 /**
  * GET /api/account/export → JSON attachment with everything ÖRZA stores about the signed-in user
  * (the public user record plus all their meals, scans, tracking, chats, goals, plans, recipes,
  * credit history, credit requests, onboarding answers, medicines, prescriptions, dose history,
- * reminders, sent alerts, health data, photo list, notification devices and signed-in sessions).
- * Never includes the password hash, the health-sync token hash or other integration secrets
- * (see toPublicUser), image bytes, push encryption keys or session ids.
+ * reminders, sent alerts, health data, photo list, notification devices, phones running the ÖRZA app
+ * and signed-in sessions). Never includes the password hash, the health-sync token hash or other
+ * integration secrets (see toPublicUser), image bytes, push encryption keys, app push tokens or session ids.
  */
 export const GET = route(async () => {
   const user = await requireUser();
@@ -64,9 +85,10 @@ export const GET = route(async () => {
       return [key, rows] as const;
     })
   );
-  const [photos, devices, sessions, requests, legacyRequests] = await Promise.all([
+  const [photos, devices, appDevices, sessions, requests, legacyRequests] = await Promise.all([
     col<Media>("media").find({ user_id: user.id }, { sort: { created_at: 1 } }),
     col<PushSubscriptionDoc>("push_subscriptions").find({ user_id: user.id }, { sort: { created_at: 1 } }),
+    col<AppDevice>("devices").find({ user_id: user.id }, { sort: { created_at: 1 } }),
     col<Session>("sessions").find({ user_id: user.id }, { sort: { created_at: 1 } }),
     // "Request more credits" messages sent from the account.
     creditRequests().find({ type: CREDIT_REQUEST_TYPE, user_id: user.id }, { sort: { created_at: 1 } }),
@@ -80,6 +102,7 @@ export const GET = route(async () => {
     ...entries,
     ["photos", photos.map(photoEntry)],
     ["notification_devices", devices.map(deviceEntry)],
+    ["app_devices", appDevices.map(appDeviceEntry)],
     ["signed_in_sessions", sessions.map(sessionEntry)],
     ["credit_requests", requests.map(toOwnView)],
     [

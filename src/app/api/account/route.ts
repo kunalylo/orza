@@ -31,12 +31,14 @@ const USER_DATA: CollectionName[] = [
   "dispatches",
   "health_days",
   "media",
+  // Phones running the ÖRZA app (their app sessions are revoked below).
+  "devices",
 ];
 
 /**
  * DELETE /api/account {confirm:"DELETE"} → {ok:true}
- * Permanently deletes the signed-in user and all of their data (including credit requests they sent
- * and every signed-in session on other devices), then ends this session.
+ * Permanently deletes the signed-in user and all of their data (including credit requests they sent,
+ * registered phones and every signed-in session on other browsers and phones), then ends this session.
  * Data goes first and the user record last, so a failure part-way can simply be retried.
  */
 export const DELETE = route(async (req: Request) => {

@@ -1,6 +1,7 @@
-import { hashPassword, startSession, toPublicUser, verifyPassword } from "@/lib/auth";
+import { hashPassword, startMobileSession, startSession, toPublicUser, verifyPassword } from "@/lib/auth";
 import { col } from "@/lib/db";
 import { json, route, unauthorized } from "@/lib/http";
+import { mobileClientFrom } from "@/lib/session-token";
 import type { User } from "@/lib/types";
 import {
   ONE_HOUR,
@@ -24,7 +25,11 @@ const BAD_CREDENTIALS = "Incorrect email or password";
 let dummyHash: Promise<string> | null = null;
 const getDummyHash = () => (dummyHash ||= hashPassword("orza-timing-equaliser-not-a-password"));
 
-/** POST /api/auth/login {email, password} → {user} + session cookie; generic 401 on bad credentials. */
+/**
+ * POST /api/auth/login {email, password} → {user} + session cookie; generic 401 on bad credentials.
+ * The ÖRZA phone app sends `X-ORZA-Client: mobile` (optional `X-ORZA-Device`, `X-ORZA-Platform`) and
+ * gets `{user, token}` instead — an app session whose token it sends as `Authorization: Bearer`; no cookies.
+ */
 export const POST = route(async (req: Request) => {
   assertSameOriginJson(req);
   const ip = clientIp(req);
@@ -61,6 +66,11 @@ export const POST = route(async (req: Request) => {
   clearLimit(pairKey);
   clearLimit(accountKey);
   release(ipKey);
+  const mobile = mobileClientFrom(req.headers);
+  if (mobile) {
+    const { token } = await startMobileSession(user.id, mobile);
+    return json({ user: toPublicUser(user), token }, { headers: { "Cache-Control": "no-store" } });
+  }
   await startSession(user.id);
   return json({ user: toPublicUser(user) });
 });

@@ -35,7 +35,8 @@ export type CollectionName =
   | "reminders"
   | "push_subscriptions"
   | "dispatches"
-  | "health_days";
+  | "health_days"
+  | "devices";
 
 export type Filter = Record<string, any>;
 export type Update = {
@@ -118,6 +119,10 @@ async function ensureIndexes(db: Db) {
     db.collection("dispatches").createIndex({ id: 1 }, { unique: true }),
     db.collection("dispatches").createIndex({ created_at: 1 }),
     db.collection("health_days").createIndex({ user_id: 1, date: 1, source: 1 }, { unique: true }),
+    db.collection("devices").createIndex({ id: 1 }, { unique: true }),
+    db.collection("devices").createIndex({ user_id: 1, session_id: 1 }, { unique: true }),
+    db.collection("devices").createIndex({ user_id: 1, alarms_local: 1, last_seen_at: -1 }),
+    db.collection("devices").createIndex({ push_token: 1 }, { sparse: true }),
     db.collection("users").createIndex({ "integrations.calendar_token": 1 }, { sparse: true }),
     db.collection("users").createIndex({ "integrations.health_token_hash": 1 }, { sparse: true }),
   ]);

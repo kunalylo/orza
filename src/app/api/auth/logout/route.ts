@@ -10,7 +10,9 @@ const Body = z.object({ everywhere: z.boolean().optional() }).strip();
 /**
  * POST /api/auth/logout {everywhere?} → {ok:true}. Always succeeds for ÖRZA's own pages (clears the
  * cookie even if already signed out); cross-site form posts are refused so other sites can't sign
- * people out. `everywhere: true` also revokes every other session of the account (all devices).
+ * people out. With the phone app's `Authorization: Bearer <token>` (no cookie) it revokes that app
+ * session and forgets the phone registered with it. `everywhere: true` also revokes every other
+ * session of the account (all browsers and phones).
  */
 export const POST = route(async (req: Request) => {
   assertSameOriginJson(req);

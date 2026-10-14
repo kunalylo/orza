@@ -1,9 +1,10 @@
-import { hashPassword, startSession, toPublicUser } from "@/lib/auth";
+import { hashPassword, startMobileSession, startSession, toPublicUser } from "@/lib/auth";
 import { INITIAL_CREDITS } from "@/lib/credits";
 import { DEFAULT_TZ } from "@/lib/dates";
 import { col, newId, nowISO } from "@/lib/db";
 import { DEFAULT_TARGETS } from "@/lib/domain/targets";
 import { HttpError, json, route } from "@/lib/http";
+import { mobileClientFrom } from "@/lib/session-token";
 import type { CreditTransaction, User } from "@/lib/types";
 import { TEN_MINUTES, assertSameOriginJson, clientIp, parseAuthBody, registerSchema, reserve, tooManyRequests } from "../_lib";
 
@@ -11,7 +12,11 @@ export const dynamic = "force-dynamic";
 
 const emailTaken = () => new HttpError(409, "An account with this email already exists. Try signing in instead.", "email_taken");
 
-/** POST /api/auth/register {name, email, password} → {user} + session cookie. */
+/**
+ * POST /api/auth/register {name, email, password} → 201 {user} + session cookie.
+ * With `X-ORZA-Client: mobile` (the ÖRZA phone app; optional `X-ORZA-Device`, `X-ORZA-Platform`)
+ * → 201 {user, token}: an app session whose token is sent as `Authorization: Bearer`; no cookies.
+ */
 export const POST = route(async (req: Request) => {
   // Cross-site / non-JSON posts are refused before they can use up the network's sign-up budget.
   assertSameOriginJson(req);
@@ -60,6 +65,11 @@ export const POST = route(async (req: Request) => {
   };
   await col<CreditTransaction>("credit_transactions").insertOne(welcome);
 
+  const mobile = mobileClientFrom(req.headers);
+  if (mobile) {
+    const { token } = await startMobileSession(user.id, mobile);
+    return json({ user: toPublicUser(user), token }, { status: 201, headers: { "Cache-Control": "no-store" } });
+  }
   await startSession(user.id);
   return json({ user: toPublicUser(user) }, 201);
 });

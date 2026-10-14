@@ -10,6 +10,9 @@
  *   - reminders on the channels they were created with (push / WhatsApp);
  *   - a once-per-local-day low-stock refill alert (daytime only).
  * Quiet hours (integrations.quiet_hours, user's local time) suppress push and WhatsApp.
+ * When the user has the ÖRZA phone app active with on-phone alarms (src/lib/devices.ts `appRingsDoses`),
+ * medicine doses (and their snoozes) are rung by the phone itself, so Web Push is skipped for them —
+ * no double alarms. WhatsApp, reminders and refill alerts are unchanged.
  *
  * Idempotency: before sending, a `dispatches` document with a deterministic id is claimed with an
  * insert-if-absent; a second run (or a concurrent one) finds it and skips. Results are written back
@@ -23,6 +26,7 @@ import { occurrencesBetween } from "@/lib/care/schedule";
 import { pushConfigured, sendPushToSubscriptions, type PushPayload } from "@/lib/care/push";
 import { publicUrl, sendWhatsApp, whatsappConfigured, type WhatsAppMessage } from "@/lib/care/whatsapp";
 import { isQuietNow, whatsappTarget } from "@/lib/care/integrations";
+import { appRingsDoses } from "@/lib/devices";
 import {
   KIND_DEFAULT_BODY,
   KIND_EMOJI,
@@ -43,6 +47,8 @@ export const REFILL_WINDOW = { from: "08:00", to: "21:00" } as const;
 const RUN_BUDGET_MS = 45_000;
 const USER_CONCURRENCY = 6;
 const PHOTO_LINK_SECONDS = 86_400;
+/** Dispatch result for a dose whose Web Push was left to the ÖRZA app's on-phone alarm. */
+const APP_RINGS_NOTE = "rung on the phone by the ÖRZA app";
 
 export interface DispatchSummary {
   /** Users with active medicines or reminders that were checked. */
@@ -54,6 +60,8 @@ export interface DispatchSummary {
   /** Notifications where every channel failed, plus users that couldn't be processed. */
   errors: number;
   push: { sent: number; failed: number };
+  /** Medicine-dose Web Push notifications not sent because the user's ÖRZA app rings them on the phone. */
+  app_local: number;
   whatsapp: { sent: number; failed: number };
   /** Old dispatch records deleted in this run. */
   cleaned: number;
@@ -330,19 +338,15 @@ async function dispatchForUser(user: User, meds: Medication[], reminders: Remind
   const waTo = ctx.whatsappOn ? whatsappTarget(user) : null;
   const quiet = isQuietNow(user, now);
   const dispatches = col<Dispatch>("dispatches");
+  // The ÖRZA app rings medicine doses on the phone itself; Web Push for them would double the alarm.
+  const appRings =
+    subs.length > 0 && fresh.some((i) => i.source === "medication" && i.push) ? await appRingsDoses(user.id, now) : false;
 
   for (const item of fresh) {
-    const wantPush = !!item.push && subs.length > 0;
+    const leftToApp = appRings && item.source === "medication" && !!item.push;
+    const wantPush = !!item.push && subs.length > 0 && !leftToApp;
     const wantWhatsApp = !!item.whatsapp && !!waTo;
-    if (!wantPush && !wantWhatsApp) {
-      summary.skipped++; // nowhere to deliver; not claimed, so it goes out if a channel is connected within the window
-      continue;
-    }
-    if (quiet && item.quietBehaviour === "defer") {
-      summary.skipped++; // refill alert waits until quiet hours end
-      continue;
-    }
-
+    const appNote: Record<string, string> = leftToApp ? { push: APP_RINGS_NOTE } : {};
     const doc: Dispatch = {
       id: item.id,
       user_id: user.id,
@@ -350,20 +354,33 @@ async function dispatchForUser(user: User, meds: Medication[], reminders: Remind
       source_id: item.source_id,
       occurrence: item.occurrence,
       channels: [],
-      results: quiet ? { suppressed: "quiet hours" } : {},
+      results: quiet ? { ...appNote, suppressed: "quiet hours" } : { ...appNote },
       created_at: nowISO(),
     };
+    if (!wantPush && !wantWhatsApp) {
+      summary.skipped++;
+      // Rung by the phone app: recorded once, so later runs in the window don't look at it again.
+      // Otherwise there is nowhere to deliver it; not claimed, so it goes out if a channel is connected within the window.
+      if (leftToApp && (await claim(doc))) summary.app_local++;
+      continue;
+    }
+    if (quiet && item.quietBehaviour === "defer") {
+      summary.skipped++; // refill alert waits until quiet hours end
+      continue;
+    }
+
     if (!(await claim(doc))) {
       summary.skipped++;
       continue;
     }
+    if (leftToApp) summary.app_local++;
     if (quiet) {
       summary.skipped++; // recorded as suppressed so it isn't sent once quiet hours end
       continue;
     }
 
     const channels: string[] = [];
-    const results: Record<string, string> = {};
+    const results: Record<string, string> = { ...appNote };
     let delivered = false;
 
     if (wantPush && item.push) {
@@ -428,6 +445,7 @@ export async function runDispatch(now: Date = new Date()): Promise<DispatchSumma
     skipped: 0,
     errors: 0,
     push: { sent: 0, failed: 0 },
+    app_local: 0,
     whatsapp: { sent: 0, failed: 0 },
     cleaned: 0,
     truncated: false,

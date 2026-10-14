@@ -33,7 +33,7 @@ const WRONG_PASSWORD = "wrong_password";
  * POST /api/account/password {current_password, new_password} (any signed-in user) → {ok:true}
  * Checks the current password (401 `{error: "Current password is incorrect", code: "wrong_password"}`;
  * 429 `rate_limited` after 5 wrong tries in 15 minutes), saves the new one, and signs out every other
- * device — this browser stays signed in.
+ * browser and phone app — the session making the request (cookie or app Bearer token) stays signed in.
  *
  * Note for clients: `api` from `@/lib/api-client` sends a 401 to /login unless its code is
  * "wrong_password", so both `api.post` and a plain `fetch` (as ChangePasswordForm and PasswordSection do) work.
@@ -58,7 +58,7 @@ export const POST = route(async (req: Request) => {
     { $set: { password_hash: await hashPassword(new_password), updated_at: nowISO() } }
   );
   if (!matched) throw unauthorized();
-  // Anyone who knew the old password is signed out; this browser keeps its session.
+  // Anyone who knew the old password is signed out (browsers and phone apps); this session keeps going.
   const current = await getSessionId();
   await revokeAllSessions(user.id, current ? { except: current } : {});
 

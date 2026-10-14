@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError, type ZodTypeAny, type z } from "zod";
+import { SESSION_COOKIE } from "@/lib/cookie-names";
+import { cookieFromHeader, sessionBearerToken } from "@/lib/session-token";
 import { SITE } from "@/lib/site";
 
 export class HttpError extends Error {
@@ -32,7 +34,8 @@ export type RouteOptions = {
  *
  * Every state-changing request (anything but GET/HEAD/OPTIONS) must also pass
  * {@link assertSameOriginRequest} (CSRF hardening on top of the SameSite=Lax session cookie), unless the
- * route opts out with `{ tokenAuth: true }`.
+ * route opts out with `{ tokenAuth: true }`. Requests from the ÖRZA phone app (Bearer session token,
+ * no cookie) skip the same-origin part but must still be JSON — see {@link isBearerSessionRequest}.
  */
 export function route<A extends any[]>(fn: (...args: A) => Promise<Response>, opts: RouteOptions = {}) {
   return async (...args: A): Promise<Response> => {
@@ -78,6 +81,19 @@ const notJson = () => new HttpError(415, "Please send the request as JSON.", "un
 const mediaType = (req: Request) => (req.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
 
 /**
+ * True when the request is signed in the ÖRZA phone app's way — `Authorization: Bearer <session token>`
+ * — and carries no session cookie (a request with the cookie is authenticated by the cookie, see
+ * src/lib/auth.ts, so it gets the full guard). Such a request can't be forged by another site: the
+ * token isn't sent automatically like a cookie, and a cross-origin page can't set an Authorization
+ * header without a CORS preflight, which ÖRZA never grants. Looks at header shapes only (health-sync
+ * `orza_hs_` tokens and other non-session Bearers don't count); auth.ts verifies the token itself.
+ */
+export function isBearerSessionRequest(req: Request): boolean {
+  if (cookieFromHeader(req.headers.get("cookie"), SESSION_COOKIE)) return false;
+  return sessionBearerToken(req.headers.get("authorization")) !== null;
+}
+
+/**
  * Refuses requests a browser sent from another site. Browsers send `Sec-Fetch-Site` and `Origin` on
  * POST/PUT/PATCH/DELETE and a page can't forge them; non-browser clients (no such headers) can't ride
  * a victim's cookies, so they pass.
@@ -97,25 +113,33 @@ export function assertSameOrigin(req: Request) {
   }
 }
 
+/** {@link assertSameOrigin}, except for the phone app's Bearer-token requests, which no other site can forge. */
+function assertNotCrossSite(req: Request) {
+  if (!isBearerSessionRequest(req)) assertSameOrigin(req);
+}
+
 /**
  * {@link assertSameOrigin} plus a JSON `Content-Type`: HTML forms can't send one, and a cross-origin
- * `fetch` with it needs a CORS preflight that ÖRZA never grants.
+ * `fetch` with it needs a CORS preflight that ÖRZA never grants. App requests signed in with a Bearer
+ * session token (no cookie) skip the origin part but must still be JSON.
  */
 export function assertSameOriginJson(req: Request) {
-  assertSameOrigin(req);
+  assertNotCrossSite(req);
   if (mediaType(req) !== "application/json") throw notJson();
 }
 
 /**
- * The guard {@link route} applies to cookie-authenticated routes: safe methods pass; everything else
+ * The guard {@link route} applies to session-authenticated routes: safe methods pass; everything else
  * must be same-origin and JSON. A DELETE without a body (the api client's `del`) may omit the
  * Content-Type — browsers can't send a cross-site DELETE at all without a preflight.
  * Uploads are JSON too (photos travel as data URLs), so they pass unchanged.
+ * Phone-app requests (Bearer session token, no cookie — {@link isBearerSessionRequest}) aren't
+ * CSRF-able, so they pass without `Origin` / `Sec-Fetch-Site` checks, but bodies must still be JSON.
  */
 export function assertSameOriginRequest(req: Request) {
   const method = req.method.toUpperCase();
   if (SAFE_METHODS.has(method)) return;
-  assertSameOrigin(req);
+  assertNotCrossSite(req);
   const type = mediaType(req);
   if (type === "application/json" || (method === "DELETE" && !type)) return;
   throw notJson();

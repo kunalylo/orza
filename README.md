@@ -30,7 +30,7 @@ With no `MONGODB_URI`, data goes to `.data/orza-db.json`. That file store is for
 Every variable is documented in `.env.example`. For production:
 
 - **`MONGODB_URI`, `MONGODB_DB`**: required. Indexes are created on first connect.
-- **`JWT_SECRET`**: required, 32 or more random characters. It signs session cookies. Sessions are also recorded server-side, so signing out revokes them.
+- **`JWT_SECRET`**: required, 32 or more random characters. It signs session tokens (the website's cookie and the phone app's Bearer token). Sessions are also recorded server-side, so signing out revokes them.
 - **`NEXT_PUBLIC_SITE_URL`**: the public `https://` origin. Canonical links, Open Graph URLs, calendar feed links and notification links are built from it. If it is unset, page metadata uses the Vercel deployment host on Vercel. On any other host it falls back to `http://localhost:3100` and logs a warning.
 - **`OPENAI_API_KEY`**, plus optional `OPENAI_MODEL` and `OPENAI_VISION_MODEL` (both default to `gpt-4o-mini`). Reasoning models such as the o-series and gpt-5 work too, and `OPENAI_REASONING_EFFORT` tunes them. The vision model must accept images: it never falls back to the text model.
 - **Reminders**: `VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` are for Web Push (`npx web-push generate-vapid-keys`). `CRON_SECRET` protects `/api/cron/dispatch`. The WhatsApp Cloud API variables are optional.
@@ -64,11 +64,22 @@ A plain grant never demotes an existing super admin; pass `--sub` to do that. Gr
 
 - **Reminder dispatcher**: `vercel.json` runs `GET /api/cron/dispatch` every minute. Vercel Cron sends `Authorization: Bearer $CRON_SECRET`. Per-minute crons need Vercel Pro; on Hobby or other hosts, call the same URL every minute with that header or with `?secret=$CRON_SECRET` (for example from cron-job.org).
 - **Public URLs**: set `NEXT_PUBLIC_SITE_URL` in production. Without it, calendar feed links and alarm links fall back to the request origin, and WhatsApp messages carry no images or links.
-- **Cross-site guard**: `route()` in `src/lib/http.ts` refuses state-changing API requests (anything but GET/HEAD/OPTIONS) that come from another site (`Sec-Fetch-Site` / `Origin`) or aren't JSON (`415`; a bodyless DELETE may omit the Content-Type). Scripts calling the API must send `Content-Type: application/json`. Token-authenticated routes opt out with `route(handler, { tokenAuth: true })`: `POST /api/health/sync` (Bearer sync token) and `/api/cron/dispatch` (secret). The public calendar feed is GET-only.
+- **Cross-site guard**: `route()` in `src/lib/http.ts` refuses state-changing API requests (anything but GET/HEAD/OPTIONS) that come from another site (`Sec-Fetch-Site` / `Origin`) or aren't JSON (`415`; a bodyless DELETE may omit the Content-Type). Scripts calling the API must send `Content-Type: application/json`. Requests signed in with the phone app's Bearer session token and no session cookie can't be forged by another site, so they skip the origin check but must still be JSON. Token-authenticated routes opt out with `route(handler, { tokenAuth: true })`: `POST /api/health/sync` (Bearer sync token) and `/api/cron/dispatch` (secret). The public calendar feed is GET-only.
 - **Rate limits**: sign-in, sign-up, the leads form and health sync use in-memory counters (`src/lib/rate-limit.ts`), so on serverless hosting each warm instance keeps its own window; move them to a shared store (Redis/Upstash, or a Mongo collection with a TTL index) if the limits must hold across instances. Behind your own proxies, set `TRUSTED_PROXY_HOPS`. AI spend limits (`src/lib/ai-guard.ts`: per-user requests per minute, concurrency, and a daily allowance of refunded unusable answers) are counted from `credit_transactions`, so they already hold across instances.
 - **Request size**: API routes read bodies through a byte cap (`src/lib/http.ts`). The cap is 16 KB for public forms, 1 MB by default, and 12 MB for photo uploads and imports; larger bodies get `413`. Behind a reverse proxy, set a matching limit there too, for example nginx `client_max_body_size 12m`.
 - **Web Push on iPhone** only works after the site is added to the Home Screen (iOS 16.4+). `public/manifest.webmanifest` and `public/sw.js` provide the install and push support.
 - **Security headers** (`nosniff`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`) are set in `next.config.mjs`.
+
+## Mobile app (iOS / Android)
+
+The ÖRZA phone app (React Native) talks to the same API with a Bearer token instead of the website's cookie. Nothing changes for the website. The full contract is in `SPEC.md` under "Mobile app".
+
+1. **Sign in or sign up**: `POST /api/auth/login` or `/api/auth/register` with `Content-Type: application/json` and the header `X-ORZA-Client: mobile`. Optionally add `X-ORZA-Device: <device name>` (URL-encoded) and `X-ORZA-Platform: ios|android`. The response is `{user, token}` and sets no cookies. Store the token in the phone's secure storage (Keychain / Keystore, e.g. `expo-secure-store`).
+2. **Call the API** with `Authorization: Bearer <token>`, `Content-Type: application/json` for bodies, and `credentials: "omit"`. Every route that works for a signed-in browser works for the app, including photos (`GET /api/media/[id]`, so `<Image source={{ uri, headers: { Authorization } }} />` loads them). A 401 means the session ended (signed out elsewhere, password changed, or 30 days passed): sign in again.
+3. **Register the phone** with `POST /api/devices {platform, device_label, push_token?, app_version, timezone, alarms_local?}` after sign-in and on every launch. While the phone was seen in the last 7 days and rings medicine alarms itself (`alarms_local`, default true), the server stops sending Web Push for medicine doses, so nobody is alarmed twice. WhatsApp and reminders are unchanged. `DELETE /api/devices/[id]` unregisters the phone.
+4. **Sign out**: `POST /api/auth/logout` with the Bearer token and body `{}` (or `{"everywhere": true}`). This revokes the app session and removes the phone's registration.
+
+Sessions are server-side and revocable for both the website and the app. "Sign out everywhere", a password change, an admin reset and account deletion also end app sessions. Health sync keeps its own `orza_hs_` token on `POST /api/health/sync`. Session tokens are never accepted there, and sync tokens are never accepted as a session.
 
 ## Project layout
 

@@ -31,8 +31,10 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 | `src/components/app/ui.tsx` | `PageHeader`, `StatCard`, `MacroRow`, `EmptyState`, `WellnessNote` |
 | `src/lib/types.ts` | Data model (User, PublicUser, Profile, Targets, Meal, MealItem, Nutrients, Scan, TrackingDay, ChatSession, ChatMessage, Goal, CompensationPlan, Recipe, CreditTransaction …) |
 | `src/lib/db.ts` | `col<T>(name)` → Mongo-like collection (`findOne/find/insertOne/updateOne/findOneAndUpdate/deleteOne/deleteMany/countDocuments`), `newId()`, `nowISO()`, `usingMongo()`. MongoDB when `MONGODB_URI` is set, else `.data/orza-db.json`. Docs use string `id`; never touch `_id`. Only these operators: filters `$gt $gte $lt $lte $ne $in $exists`; updates `$set $inc $push($each,$slice) $unset $setOnInsert` (never put the same path in `$set` and `$setOnInsert`) |
-| `src/lib/auth.ts` | `hashPassword`, `verifyPassword`, `startSession(userId)`, `endSession({everywhere?})`, `revokeAllSessions(userId)`, `getSessionUserId()`, `getSessionId()`, `getCurrentUser()`, `requireUser()`, `requireAdmin()`, `requireSuperAdmin()`, `toPublicUser(user)` (drops `password_hash` and integration secrets: `health_token_hash`, `calendar_token`, `external_ical_url`; adds `admin_role` for admins), `isAdmin(user)` (`is_admin: true` only), `isSuperAdmin(user)`, `adminRoleOf(user)` |
-| `src/lib/http.ts` | `route(handler, {tokenAuth?})` wrapper (maps HttpError/ZodError → `{error, code}`; cross-site guard below), `json()`, `parseBody(req, zodSchema, {maxBytes?})`, `readJsonBody`, `readBodyText`, `BODY_LIMIT_SMALL` (16 KB) / `_DEFAULT` (1 MB) / `_UPLOAD` (12 MB), `assertSameOrigin(Json)`, `HttpError`, `badRequest/unauthorized/forbidden/notFound` |
+| `src/lib/auth.ts` | `hashPassword`, `verifyPassword`, `startSession(userId)` (website: cookie), `startMobileSession(userId, client)` (phone app: returns `{token}`, no cookies), `endSession({everywhere?})`, `revokeAllSessions(userId, {except?})` (browsers + app sessions + their `devices`), `getSessionUserId()`, `getSessionId()`, `getCurrentUser()`, `getCurrentSession()` → `{user, session, via: "cookie"\|"bearer"}`, `requireUser()`, `requireAdmin()`, `requireSuperAdmin()`, `requireMobileSession()`, `resolveCredential(cookie, authorization)` — every check takes the session cookie first, else `Authorization: Bearer <session token>`, then requires a live session (see "Mobile app"); `toPublicUser(user)` (drops `password_hash` and integration secrets: `health_token_hash`, `calendar_token`, `external_ical_url`; adds `admin_role` for admins), `isAdmin(user)` (`is_admin: true` only), `isSuperAdmin(user)`, `adminRoleOf(user)` |
+| `src/lib/http.ts` | `route(handler, {tokenAuth?})` wrapper (maps HttpError/ZodError → `{error, code}`; cross-site guard below), `json()`, `parseBody(req, zodSchema, {maxBytes?})`, `readJsonBody`, `readBodyText`, `BODY_LIMIT_SMALL` (16 KB) / `_DEFAULT` (1 MB) / `_UPLOAD` (12 MB), `assertSameOrigin(Json)`, `isBearerSessionRequest(req)`, `HttpError`, `badRequest/unauthorized/forbidden/notFound` |
+| `src/lib/session-token.ts` | Edge-safe: `signSessionToken`, `readSessionToken`, `SESSION_MAX_AGE` (30 days); phone-app header helpers `sessionBearerToken(authorization)` (ignores `orza_hs_` health-sync tokens and anything not JWT-shaped), `cookieFromHeader`, `mobileClientFrom(headers)`, `cleanDeviceLabel`, `CLIENT_HEADER`/`DEVICE_HEADER`/`PLATFORM_HEADER` |
+| `src/lib/devices.ts` | Phones running the ÖRZA app (`devices`): `appDevices()`, `appRingsDoses(userId, now)`, `ringsDosesLocally(device, now)`, `deviceView`, `APP_DEVICE_ACTIVE_DAYS` (7), `MAX_DEVICES_PER_USER` (10), `EXPO_PUSH_TOKEN_RE`, `isTimeZone` |
 | `src/lib/rate-limit.ts` | `clientIp(req)` (spoof-resistant, `TRUSTED_PROXY_HOPS`), in-memory `reserve/peek/release/clearLimit`, `tooManyRequests()` — public endpoints (auth, leads) |
 | `src/lib/ai.ts` | `aiEnabled()`, `aiText({system, messages})`, `aiJSON({system, prompt, shape, imageUrl?})`, `WELLNESS_GUARDRAIL`. Throws HttpError 502/503/504 with friendly messages |
 | `src/lib/credits.ts` | `INITIAL_CREDITS=100`, `CREDIT_COSTS` (scan 2, meal_text 1, chat 1, recipe 2, compensation 1, report_insight 1), `spendCredits`, `refundCredits`, `adjustCredits`, `withCredits(userId, action, fn)` (spend → run → refund on throw; 402 `no_credits` when empty). Spends/refunds record their `action` |
@@ -55,7 +57,9 @@ inside it (so only AI failures are refunded); reserve the call with `reserveAi` 
 Route params in Next 15 are async: `export const DELETE = route(async (req: Request, ctx: { params: Promise<{ id: string }> }) => { const { id } = await ctx.params; ... })`.
 **Cross-site guard**: `route()` rejects every non-GET/HEAD/OPTIONS request that is cross-site (`Sec-Fetch-Site`/`Origin` → 403 `cross_site`) or not
 `application/json` (415; a bodyless DELETE may omit it). Uploads are JSON data URLs. Only token-authenticated routes opt out with
-`route(handler, { tokenAuth: true })` (`/api/health/sync`, `/api/cron/dispatch`). Bodies are capped (413): pass `BODY_LIMIT_UPLOAD` for photos/imports,
+`route(handler, { tokenAuth: true })` (`/api/health/sync`, `/api/cron/dispatch`). Requests signed in with the phone app's `Authorization: Bearer <session token>`
+and **no** session cookie (`isBearerSessionRequest`) aren't CSRF-able, so they skip the `Origin`/`Sec-Fetch-Site` check (same in `assertSameOriginJson`) but still
+need `application/json` bodies; a request that carries the cookie always gets the full check. Bodies are capped (413): pass `BODY_LIMIT_UPLOAD` for photos/imports,
 `BODY_LIMIT_SMALL` for public forms.
 
 **Rules for UI**: App pages are client components (`"use client"`) that fetch via `api` and show skeletons while loading, friendly
@@ -76,6 +80,7 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 - `POST /api/auth/register {name, email, password(≥8)}` → `{user}` + session cookie. 409 if email exists. New user: `credits: INITIAL_CREDITS` (+ transaction "Welcome credits"), `targets: DEFAULT_TARGETS`, `profile: {timezone:"Asia/Kolkata"}`, `preferences: {units:"metric", reminders:true, weekly_report:true, tone:"gentle"}`, `memory: []`, `onboarding_complete:false`.
 - `POST /api/auth/login {email, password}` → `{user}`; 401 "Incorrect email or password". Emails are stored lowercase/trimmed.
 - `POST /api/auth/logout {everywhere?}` → `{ok:true}` (`everywhere: true` revokes every session of the account); `GET /api/auth/me` → `{user}` | 401.
+- Phone app: `X-ORZA-Client: mobile` on register/login → `{user, token}` and no cookies; every route accepts `Authorization: Bearer <token>` (see "Mobile app").
 - Auth bodies ≤16 KB; login/register are rate-limited per IP (+ per account for login) → 429 `rate_limited` with `Retry-After`; validation errors add `field`.
 
 ### Onboarding — `/onboarding` (`src/app/onboarding/page.tsx`, full-screen conversational UI)
@@ -118,8 +123,9 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
   so memory saved concurrently by chat/Settings is never overwritten); `PUT /api/settings/preferences {units?, reminders?, weekly_report?, tone?, ai_training_opt_out?}`,
   `PUT /api/settings/targets`, `PUT /api/settings/memory {memory}` → `{user}`.
 - `GET /api/account/export` → JSON attachment of all the user's data (incl. Care collections, photo metadata without bytes, notification devices without keys,
-  signed-in sessions, credit requests; never password/token hashes); `DELETE /api/account {confirm:"DELETE"}` → deletes the user and all their data
-  (incl. Care data and photos, credit requests) and signs out every device.
+  `app_devices` (phones running the app, without push tokens), signed-in sessions with `kind` web/mobile and device name, credit requests; never password/token
+  hashes); `DELETE /api/account {confirm:"DELETE"}` → deletes the user and all their data (incl. Care data and photos, registered phones, credit requests) and
+  signs out every browser and phone.
 - `POST /api/account/password {current_password, new_password (8–128, must differ)}` (any signed-in user, members and admins) → `{ok:true}`; wrong current password →
   401 `{error: "Current password is incorrect", code: "wrong_password"}` (an expired session's 401 has code `unauthorized`), 429 `rate_limited` after 5 wrong tries
   in 15 min per account. Saves a new hash and revokes every other session (this browser stays signed in). `api` skips its `/login` redirect for a 401 with code
@@ -212,6 +218,9 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
   (now−10 min, now], skip those already in `dispatches` (idempotent id) or already acted on, respect quiet hours and snoozes (a snoozed dose re-fires at
   `snooze_until`), send Web Push (title, body, `image` = signed URL of the medicine's first photo valid 24 h, `data.url` = alarm page, actions take/snooze)
   and WhatsApp (session text, or the template outside the 24 h window), record the dispatch. Also once-a-day low-stock refill alerts. `vercel.json` runs it every minute.
+  When the user has the ÖRZA phone app active with on-phone alarms (`appRingsDoses`: a `devices` doc with `alarms_local: true`, `last_seen_at` within 7 days and a
+  live mobile session), Web Push is skipped for medicine doses and their snoozes (the phone rings them; the dispatch is recorded with
+  `results.push: "rung on the phone by the ÖRZA app"`, counted in the summary's `app_local`). WhatsApp, reminders and refill alerts are unchanged.
 - `public/sw.js`: `push` → `showNotification` with image/icon/badge/actions/tag/`requireInteraction`; `notificationclick` → action "take"/"snooze" POSTs
   to `/api/meds/doses` (same-origin, credentials) else focuses or opens `data.url`.
 - `GET /api/alarms/due` → `{alarms: [{kind: "medication"|"reminder", id, title, body, photo_urls, scheduled_for, url}]}` (due within the last 30 min,
@@ -238,3 +247,38 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
 - `GET /api/health/days?from&to` (default last 30 days, ≤400) → `{from, to, days, sources, last_sync, last_sync_source}`, `days` merged per date. Page: connect cards (iPhone: export import + Health Auto Export / Shortcuts steps with the sync
   URL and token; Android: Health Connect via automation apps posting to the same API, plus CSV; a one-line note under the privacy note that the ÖRZA phone app
   will sync automatically later), charts, last sync.
+
+## Mobile app (React Native) — auth & devices
+
+The ÖRZA iOS/Android app (React Native / Expo) uses the same API as the website. Only how it signs in differs; the website's
+cookie flow is unchanged.
+
+- **Sessions stay server-side** (`sessions`). `Session.kind` is `"web"` (cookie) or `"mobile"` (app; older sessions without `kind` are web), plus
+  `device_label?` and `platform?: "ios" | "android"` for app sessions. Both kinds use the same signed session JWT (`signSessionToken`, 30-day lifetime) and are
+  revocable: signing out, "sign out everywhere", a password change (revokes every other session, browsers and phones), an admin reset/removal and account
+  deletion all apply to app sessions too. When a token expires (30 days) the API answers 401 and the app signs in again.
+- **Sign up / sign in**: `POST /api/auth/register` and `POST /api/auth/login` with the header `X-ORZA-Client: mobile` (optional `X-ORZA-Device: <name>`,
+  URL-encoded when it isn't ASCII, ≤ 80 chars kept; optional `X-ORZA-Platform: ios|android`) → `{user, token}` (register 201) with `Cache-Control: no-store`;
+  **no cookies are set**. Same bodies, validation, rate limits and errors as the website. Signing in again while sending an old app token replaces that session.
+- **Every other call**: `Authorization: Bearer <token>`. `getSessionUserId/getSessionId/getCurrentUser/requireUser/requireAdmin` take the session cookie
+  first (a validly signed one), else the Bearer token, and both must be a live session (`resolveCredential` in `src/lib/auth.ts` is the single place this is
+  decided). `orza_hs_…` health-sync tokens are never accepted as a session; `POST /api/health/sync` keeps its own token auth unchanged.
+  The app should send `credentials: "omit"` so the native cookie jar never mixes in a website cookie.
+- **Cross-site guard**: a Bearer-token request without a session cookie passes without `Origin`/`Sec-Fetch-Site` but must send `Content-Type: application/json`
+  for bodies (a bodyless DELETE may omit it). Requests carrying the cookie get the full same-origin check (a cross-site cookie request is still 403).
+- **Sign out**: `POST /api/auth/logout` with the Bearer token and `Content-Type: application/json` (body `{}` or `{everywhere: true}`) → `{ok:true}`; revokes
+  that app session (or all sessions) and removes the phone registered with it; no cookies are touched.
+- **Photos**: `GET /api/media/[id]` accepts the Bearer token, so `<Image source={{ uri, headers: { Authorization: "Bearer " + token } }} />` works with the
+  `photo_urls` the API returns (relative — prefix the API origin).
+- **Devices** (`devices` collection, `AppDevice` in `src/lib/types.ts`: `id, user_id, session_id, platform, label, push_token?, app_version, timezone,
+  last_seen_at, alarms_local, created_at, updated_at`; indexes `id` unique, `user_id+session_id` unique, `user_id+alarms_local+last_seen_at`, `push_token` sparse):
+  - `POST /api/devices {platform: "ios"|"android", device_label (1–80), push_token?: Expo push token | null, app_version, timezone (IANA), alarms_local?: boolean (default true)}`
+    → `{device: {id, platform, label, app_version, timezone, alarms_local, push_token_set, last_seen_at, created_at}}`. App sessions only (403 for a browser
+    cookie). Upserts the phone for this app session and sets `last_seen_at`; also names the session (`device_label`, `platform`). Omitting `push_token` removes a
+    stored one; a push token is kept on one registration only (older registrations of that phone are dropped); the newest 10 phones per account are kept.
+    The app calls it after sign-in and on every launch/foreground, and sends `alarms_local: false` when it can't ring alarms (notifications denied).
+  - `DELETE /api/devices/[id]` → `{ok:true}` (404 if not the user's) — unregisters the phone (doses go back to Web Push); it does not sign the app out.
+  - Push tokens are credentials: never returned by the API or included in the export.
+- **No double alarms**: the app schedules medicine alarms locally (from `GET /api/meds` / `GET /api/meds/today`) and reports Take/Skip/Snooze with
+  `POST /api/meds/doses`. While a phone with `alarms_local: true` was seen within 7 days and its app session is live, the dispatcher skips Web Push for medicine
+  doses; WhatsApp, reminders, refill alerts and the in-tab `AlarmWatcher` are unchanged.

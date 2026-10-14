@@ -6,7 +6,11 @@ import type { Media } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-/** Serves an uploaded image to its owner, or to holders of a valid signed URL (?exp=&sig=). */
+/**
+ * Serves an uploaded image to its owner — signed in with the website's cookie or the phone app's
+ * `Authorization: Bearer <session token>` (React Native `<Image source={{ uri, headers }} />`) — or to
+ * holders of a valid signed URL (?exp=&sig=).
+ */
 export const GET = route(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw notFound();

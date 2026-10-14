@@ -29,7 +29,7 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 | `src/app/dashboard/layout.tsx` + `src/components/app/AppShell.tsx` | Auth-guarded app shell (sidebar, mobile top bar + bottom tabs). Redirects members to `/onboarding` until onboarding is complete. Admin accounts get `src/components/admin/AdminShell.tsx` instead (see "Admin console") |
 | `src/components/app/UserProvider.tsx` | `useUser()` → `{ user, setUser, refresh, setCredits }` (client) |
 | `src/components/app/ui.tsx` | `PageHeader`, `StatCard`, `MacroRow`, `EmptyState`, `WellnessNote` |
-| `src/lib/types.ts` | Data model (User, PublicUser, Profile, Targets, Meal, MealItem, Nutrients, Scan, TrackingDay, ChatSession, ChatMessage, Goal, CompensationPlan, Recipe, CreditTransaction …) |
+| `src/lib/types.ts` | Data model (User, PublicUser, Profile, Targets, Meal, MealItem, Nutrients, Scan, TrackingDay, ChatSession, ChatMessage, Goal, CompensationPlan, Recipe, CreditTransaction, Session (`kind` web/mobile), AppDevice …) |
 | `src/lib/db.ts` | `col<T>(name)` → Mongo-like collection (`findOne/find/insertOne/updateOne/findOneAndUpdate/deleteOne/deleteMany/countDocuments`), `newId()`, `nowISO()`, `usingMongo()`. MongoDB when `MONGODB_URI` is set, else `.data/orza-db.json`. Docs use string `id`; never touch `_id`. Only these operators: filters `$gt $gte $lt $lte $ne $in $exists`; updates `$set $inc $push($each,$slice) $unset $setOnInsert` (never put the same path in `$set` and `$setOnInsert`) |
 | `src/lib/auth.ts` | `hashPassword`, `verifyPassword`, `startSession(userId)` (website: cookie), `startMobileSession(userId, client)` (phone app: returns `{token}`, no cookies), `endSession({everywhere?})`, `revokeAllSessions(userId, {except?})` (browsers + app sessions + their `devices`), `getSessionUserId()`, `getSessionId()`, `getCurrentUser()`, `getCurrentSession()` → `{user, session, via: "cookie"\|"bearer"}`, `requireUser()`, `requireAdmin()`, `requireSuperAdmin()`, `requireMobileSession()`, `resolveCredential(cookie, authorization)` — every check takes the session cookie first, else `Authorization: Bearer <session token>`, then requires a live session (see "Mobile app"); `toPublicUser(user)` (drops `password_hash` and integration secrets: `health_token_hash`, `calendar_token`, `external_ical_url`; adds `admin_role` for admins), `isAdmin(user)` (`is_admin: true` only), `isSuperAdmin(user)`, `adminRoleOf(user)` |
 | `src/lib/http.ts` | `route(handler, {tokenAuth?})` wrapper (maps HttpError/ZodError → `{error, code}`; cross-site guard below), `json()`, `parseBody(req, zodSchema, {maxBytes?})`, `readJsonBody`, `readBodyText`, `BODY_LIMIT_SMALL` (16 KB) / `_DEFAULT` (1 MB) / `_UPLOAD` (12 MB), `assertSameOrigin(Json)`, `isBearerSessionRequest(req)`, `HttpError`, `badRequest/unauthorized/forbidden/notFound` |
@@ -128,7 +128,7 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
   signs out every browser and phone.
 - `POST /api/account/password {current_password, new_password (8–128, must differ)}` (any signed-in user, members and admins) → `{ok:true}`; wrong current password →
   401 `{error: "Current password is incorrect", code: "wrong_password"}` (an expired session's 401 has code `unauthorized`), 429 `rate_limited` after 5 wrong tries
-  in 15 min per account. Saves a new hash and revokes every other session (this browser stays signed in). `api` skips its `/login` redirect for a 401 with code
+  in 15 min per account. Saves a new hash and revokes every other session, browsers and phone apps (the session making the request, cookie or app Bearer token, stays signed in). `api` skips its `/login` redirect for a 401 with code
   `wrong_password`, so `api.post` or a plain `fetch` both work (Settings → `PasswordSection`, admin My account → `ChangePasswordForm`).
 
 ### Admin console — `/dashboard/admin/**` (staff accounts only)
@@ -168,7 +168,7 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
 - Types in `src/lib/types.ts`: `Media`, `Medication`, `Schedule`, `MedForm`, `DoseTiming`, `ExtractedMedicine`, `Prescription`,
   `DoseLog`, `DoseStatus`, `Reminder`, `ReminderKind`, `ReminderChannels`, `PushSubscriptionDoc`, `Dispatch`, `HealthDay`,
   `HealthSource`, `Integrations` (on `User.integrations`).
-- Collections: `media`, `medications`, `prescriptions`, `dose_logs`, `reminders`, `push_subscriptions`, `dispatches`, `health_days`.
+- Collections: `media`, `medications`, `prescriptions`, `dose_logs`, `reminders`, `push_subscriptions`, `dispatches`, `health_days`, `devices` (phones running the ÖRZA app; see "Mobile app").
 - `src/lib/dates.ts`: `zonedToUtc(date, "HH:MM", tz)`, `utcToZoned(instant, tz)`, `tzOffsetMinutes`, `daysBetween`, `isHHMM`.
 - `src/lib/care/schedule.ts` (unit-tested): `activeOnDate`, `occurrencesOnDate`, `occurrencesBetween`, `nextOccurrence`,
   `normalizeTimes`, `timesForPattern("1-0-1" | "BD" | "TDS" | "HS" …)`, `DEFAULT_SLOT_TIMES`.

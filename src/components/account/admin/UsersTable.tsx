@@ -30,29 +30,16 @@ function Avatar({ user }: { user: AdminUserRow }) {
   return (
     <span
       aria-hidden
-      className={cn(
-        "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-editorial text-[15px] font-semibold",
-        user.is_admin ? "bg-orza-energy text-white" : "border border-[rgba(20,20,20,0.10)] bg-white/80 text-orza-strong"
-      )}
+      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[rgba(20,20,20,0.10)] bg-white/80 font-editorial text-[15px] font-semibold text-orza-strong"
     >
       {initialOf(user)}
     </span>
   );
 }
 
-function StatusTags({ user, isSelf }: { user: AdminUserRow; isSelf: boolean }) {
+function StatusTags({ user }: { user: AdminUserRow }) {
   return (
     <span className="flex flex-wrap items-center gap-1.5">
-      {isSelf && (
-        <Tag tone="energy" size="sm" dot={false}>
-          You
-        </Tag>
-      )}
-      {user.is_admin && (
-        <Tag tone="violet" size="sm">
-          Admin
-        </Tag>
-      )}
       {user.onboarding_complete ? (
         <Tag tone="success" size="sm">
           Onboarded
@@ -78,15 +65,14 @@ function RowsSkeleton() {
 
 /**
  * Member directory for admins: debounced name/email search across every member (newest first,
- * an exact email match on top), with a credit-adjust action per row. `refreshKey` forces a reload.
+ * an exact email match on top), with a credit-adjust action per row. Admin (staff) accounts are
+ * never listed — the API returns members only. `refreshKey` forces a reload.
  */
 export function UsersTable({
-  currentUserId,
   refreshKey,
   onAdjust,
   adjusted,
 }: {
-  currentUserId: string;
   refreshKey: number;
   onAdjust: (u: AdminUserRow) => void;
   /** The latest credit adjustment; its new balance is written into the loaded rows. */
@@ -145,11 +131,11 @@ export function UsersTable({
     <GlassCard as="section" aria-labelledby="admin-users-title" variant="strong">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <Eyebrow className="text-[11px]">Members</Eyebrow>
+          <Eyebrow className="text-[11px]">Directory</Eyebrow>
           <h2 id="admin-users-title" className="mt-1 font-editorial text-[22px] font-semibold leading-7 tracking-[-0.01em] text-orza-strong">
-            User management
+            All members
           </h2>
-          <p className="mt-1 text-[13px] text-orza-muted">Search by name or email and top up credits by hand.</p>
+          <p className="mt-1 text-[13px] text-orza-muted">Newest first. An exact email match is always listed on top.</p>
         </div>
         <div className="relative w-full md:w-[320px]">
           <label htmlFor="admin-user-search" className="sr-only">
@@ -244,7 +230,7 @@ export function UsersTable({
                       </span>
                     </th>
                     <td className="py-3 pr-4">
-                      <StatusTags user={u} isSelf={u.id === currentUserId} />
+                      <StatusTags user={u} />
                     </td>
                     <td className="whitespace-nowrap py-3 pr-4 text-[13px] text-orza-muted">
                       <time dateTime={u.created_at} title={formatDate(u.created_at)}>
@@ -282,7 +268,7 @@ export function UsersTable({
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <StatusTags user={u} isSelf={u.id === currentUserId} />
+                    <StatusTags user={u} />
                     <span className="text-[12px] text-orza-subtle">
                       · <time dateTime={u.created_at}>{joinedLabel(u.created_at)}</time>
                     </span>

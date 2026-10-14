@@ -26,12 +26,12 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 | `src/components/ui/button.tsx` | `Button` (variants primary/secondary/ghost/hero/hero-outline/danger/energy; sizes sm/md/lg/icon; `loading`), `ButtonLink`, `buttonVariants()` |
 | `src/components/ui/form.tsx` | `Input`, `Textarea`, `Select`, `Label`, `FieldHint`, `Segmented`, `Skeleton` |
 | `src/components/ui/dialog.tsx` | `Dialog`, `DialogTrigger`, `DialogClose`, `DialogContent({title, description, side})` |
-| `src/app/dashboard/layout.tsx` + `src/components/app/AppShell.tsx` | Auth-guarded app shell (sidebar, mobile top bar + bottom tabs). Redirects to `/onboarding` until onboarding is complete |
+| `src/app/dashboard/layout.tsx` + `src/components/app/AppShell.tsx` | Auth-guarded app shell (sidebar, mobile top bar + bottom tabs). Redirects members to `/onboarding` until onboarding is complete. Admin accounts get `src/components/admin/AdminShell.tsx` instead (see "Admin console") |
 | `src/components/app/UserProvider.tsx` | `useUser()` → `{ user, setUser, refresh, setCredits }` (client) |
 | `src/components/app/ui.tsx` | `PageHeader`, `StatCard`, `MacroRow`, `EmptyState`, `WellnessNote` |
 | `src/lib/types.ts` | Data model (User, PublicUser, Profile, Targets, Meal, MealItem, Nutrients, Scan, TrackingDay, ChatSession, ChatMessage, Goal, CompensationPlan, Recipe, CreditTransaction …) |
 | `src/lib/db.ts` | `col<T>(name)` → Mongo-like collection (`findOne/find/insertOne/updateOne/findOneAndUpdate/deleteOne/deleteMany/countDocuments`), `newId()`, `nowISO()`, `usingMongo()`. MongoDB when `MONGODB_URI` is set, else `.data/orza-db.json`. Docs use string `id`; never touch `_id`. Only these operators: filters `$gt $gte $lt $lte $ne $in $exists`; updates `$set $inc $push($each,$slice) $unset $setOnInsert` (never put the same path in `$set` and `$setOnInsert`) |
-| `src/lib/auth.ts` | `hashPassword`, `verifyPassword`, `startSession(userId)`, `endSession({everywhere?})`, `revokeAllSessions(userId)`, `getSessionUserId()`, `getCurrentUser()`, `requireUser()`, `requireAdmin()`, `toPublicUser(user)` (drops `password_hash` and integration secrets: `health_token_hash`, `calendar_token`, `external_ical_url`), `isAdmin(user)` (`is_admin: true` only) |
+| `src/lib/auth.ts` | `hashPassword`, `verifyPassword`, `startSession(userId)`, `endSession({everywhere?})`, `revokeAllSessions(userId)`, `getSessionUserId()`, `getSessionId()`, `getCurrentUser()`, `requireUser()`, `requireAdmin()`, `requireSuperAdmin()`, `toPublicUser(user)` (drops `password_hash` and integration secrets: `health_token_hash`, `calendar_token`, `external_ical_url`; adds `admin_role` for admins), `isAdmin(user)` (`is_admin: true` only), `isSuperAdmin(user)`, `adminRoleOf(user)` |
 | `src/lib/http.ts` | `route(handler, {tokenAuth?})` wrapper (maps HttpError/ZodError → `{error, code}`; cross-site guard below), `json()`, `parseBody(req, zodSchema, {maxBytes?})`, `readJsonBody`, `readBodyText`, `BODY_LIMIT_SMALL` (16 KB) / `_DEFAULT` (1 MB) / `_UPLOAD` (12 MB), `assertSameOrigin(Json)`, `HttpError`, `badRequest/unauthorized/forbidden/notFound` |
 | `src/lib/rate-limit.ts` | `clientIp(req)` (spoof-resistant, `TRUSTED_PROXY_HOPS`), in-memory `reserve/peek/release/clearLimit`, `tooManyRequests()` — public endpoints (auth, leads) |
 | `src/lib/ai.ts` | `aiEnabled()`, `aiText({system, messages})`, `aiJSON({system, prompt, shape, imageUrl?})`, `WELLNESS_GUARDRAIL`. Throws HttpError 502/503/504 with friendly messages |
@@ -42,7 +42,7 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 | `src/lib/domain/targets.ts` | `bmr`, `tdee`, `computeTargets(profile, {goal, weeklyRateKg})`, `DEFAULT_TARGETS` |
 | `src/lib/dates.ts` | `DEFAULT_TZ` (Asia/Kolkata), `dateInTz(tz)`, `addDays`, `dateRange`, `isISODate`, `hourInTz`, `weekdayShort` |
 | `src/lib/nutrition/index.ts` | **Interface stub** — `FOODS`, `findFood`, `searchFoods`, `nutrientsFor`, `parseMealText` (implemented by the meals stream; everyone else may import these exact signatures) |
-| `src/lib/api-client.ts` | Client: `api.get/post/put/patch/del`, `ApiError`, `errorMessage(e)`. 401 → redirects to `/login?next=` |
+| `src/lib/api-client.ts` | Client: `api.get/post/put/patch/del`, `ApiError`, `errorMessage(e)`. 401 → redirects to `/login?next=` (not for code `wrong_password`) |
 | `src/lib/site.ts` | `SITE.supportEmail`, `SITE.url` |
 | `src/middleware.ts` | Redirects signed-out users away from `/dashboard/**` and `/onboarding` |
 
@@ -111,7 +111,7 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 - `GET /api/reports/daily?date=` → `{date, totals, targets, meals, tracking, score, highlights, suggestions}`; `GET /api/reports/weekly?end=` → `{days, averages, adherence, best_day, summary}`
   (weights are kg in the data; the `summary` text uses the user's units, lb when `preferences.units` is "imperial").
 
-### Account — `/dashboard/credits`, `/dashboard/settings`, `/dashboard/admin`
+### Account — `/dashboard/credits`, `/dashboard/settings`
 - `GET /api/credits/balance` → `{credits, costs, ai_enabled}`; `GET /api/credits/transactions` → `{transactions}`.
 - `POST /api/credits/request {message?}` → `{request}` (201; 429 `rate_limited` after 3 in 24 h); `GET /api/credits/request` → `{requests, pending}`.
 - `GET/PUT /api/profile` → `{user}` (PUT also returns `targets_recomputed`; memory facts derived from profile fields are refreshed with a conditional write,
@@ -120,8 +120,31 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 - `GET /api/account/export` → JSON attachment of all the user's data (incl. Care collections, photo metadata without bytes, notification devices without keys,
   signed-in sessions, credit requests; never password/token hashes); `DELETE /api/account {confirm:"DELETE"}` → deletes the user and all their data
   (incl. Care data and photos, credit requests) and signs out every device.
-- Admin (requireAdmin): `GET /api/admin/stats`, `GET /api/admin/users?q=`, `POST /api/admin/credits/[userId]/adjust {amount, reason}` → `{balance, transaction, requests_closed}`
-  (a grant closes the member's open credit requests); `GET /api/admin/credit-requests` → `{requests}` (open, oldest first); `PATCH /api/admin/credit-requests/[id] {status: "open"|"done"}` → `{ok}`.
+- `POST /api/account/password {current_password, new_password (8–128, must differ)}` (any signed-in user, members and admins) → `{ok:true}`; wrong current password →
+  401 `{error: "Current password is incorrect", code: "wrong_password"}` (an expired session's 401 has code `unauthorized`), 429 `rate_limited` after 5 wrong tries
+  in 15 min per account. Saves a new hash and revokes every other session (this browser stays signed in). `api` skips its `/login` redirect for a 401 with code
+  `wrong_password`, so `api.post` or a plain `fetch` both work (Settings → `PasswordSection`, admin My account → `ChangePasswordForm`).
+
+### Admin console — `/dashboard/admin/**` (staff accounts only)
+- **Roles**: `User.is_admin: true` makes a staff account; `User.admin_role: "super" | "sub"` (no role = `"sub"`). `isAdmin(u)`, `isSuperAdmin(u)`, `adminRoleOf(u)`,
+  `requireAdmin()` (403 for members), `requireSuperAdmin()` (403 for members and sub-admins); `toPublicUser` sends `admin_role` for admins only.
+  Admin rights come only from `scripts/make-admin.mjs` or a super admin's Team page — never from an email address.
+- **Staff-only**: `src/app/dashboard/layout.tsx` renders `AdminShell` (`src/components/admin/AdminShell.tsx`) instead of the member `AppShell` for admins and never sends
+  them to onboarding; `AdminShell` replaces any non-console route with `/dashboard/admin` without rendering the member page. `/onboarding`, `/login` and sign-in (no console
+  `?next=`; `destinationFor` in `src/components/auth/safe-next.ts`) send admins to `/dashboard/admin`; `src/app/dashboard/admin/layout.tsx` sends members back to `/dashboard`. No credits pill, member nav or `AlarmWatcher`.
+- **Pages** (nav in `src/components/admin/routes.ts`): Overview `/dashboard/admin` (member stats, AI/DB status, shortcuts) · Members `/dashboard/admin/members` (search +
+  credit adjust) · Credit requests `/dashboard/admin/requests` · Team `/dashboard/admin/team` (super only; hidden from sub-admins) · My account `/dashboard/admin/account`
+  (profile, change password, sign out / everywhere).
+- **APIs** (all `requireAdmin()`; member numbers and lists exclude admin accounts): `GET /api/admin/stats` → `{users, new_users_7d, meals_today, meals_total, scans_total,
+  chat_messages_total, credits_spent_total, open_requests, ai_enabled, database}` (members' activity only); `GET /api/admin/users?q=&limit=` → `{users, total}` (members only);
+  `POST /api/admin/credits/[userId]/adjust {amount, reason}` → `{balance, transaction, requests_closed}` (members only — 400 for an admin; a grant closes the member's open
+  credit requests); `GET /api/admin/credit-requests` → `{requests}` (open, oldest first); `PATCH /api/admin/credit-requests/[id] {status: "open"|"done"}` → `{ok}`.
+- **Team APIs** (`requireSuperAdmin()`): `GET /api/admin/team` → `{admins:[{id, name, email, admin_role, created_at, last_sign_in?}]}` (super first; `last_sign_in` = newest
+  session start); `POST /api/admin/team {name (1–60), email, password? (8–128)}` → 201 `{admin, password, generated}` — a NEW staff account (409 if the email exists):
+  `is_admin`, `admin_role:"sub"`, `onboarding_complete:true`, `credits:0`, default profile/targets/preferences (reminders and weekly report off), `memory:[]`; without a password
+  a 14-character one is generated (no look-alikes I l 1 O 0 o). `POST /api/admin/team/[id]/reset-password` → `{admin, password}` (sub-admins only; revokes their sessions);
+  `DELETE /api/admin/team/[id]` → `{ok}` (sub-admins only: sessions + user record). Super admins can't be removed, demoted or reset from the panel; nobody can reset or
+  remove themselves there. Passwords are shown once in the UI with a copy button and "share it securely; change it after first sign-in".
 
 ## Care module (medicines, reminders, calendar, health sync)
 
@@ -182,6 +205,9 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
   `GET /api/integrations` → `{push: {configured, subscriptions, public_key}, whatsapp: {configured, mode, phone, opt_in}, calendar: {feed_url | null, external_url_set}, health: {token_preview | null, last_sync | null}, quiet_hours, reminders_enabled, timezone}`
   (`feed_url` is built with `feedLinks`/`publicBaseUrl` from `src/app/api/calendar/_lib/feed.ts`, identical to `/api/calendar`). `preferences.reminders === false` pauses
   meal/water/weigh-in/custom reminders only; medicine alarms keep ringing.
+  While `whatsapp.configured` is false the member UI hides every WhatsApp card, toggle, channel tag and mention (Reminders and its Quiet hours card read it from this
+  response; Medicines uses `useWhatsAppAvailable()` from `src/components/care/useWhatsAppAvailable.ts`, hidden until known) and shows them again once it is configured.
+  Member-facing copy never mentions setup (env vars, cron, Vercel, "your ÖRZA admin"); an unavailable channel simply reads "isn't available right now".
 - `GET|POST /api/cron/dispatch` (auth: `Authorization: Bearer ${CRON_SECRET}` or `?secret=`): for each user, find medication + reminder occurrences in
   (now−10 min, now], skip those already in `dispatches` (idempotent id) or already acted on, respect quiet hours and snoozes (a snoozed dose re-fires at
   `snooze_until`), send Web Push (title, body, `image` = signed URL of the medicine's first photo valid 24 h, `data.url` = alarm page, actions take/snooze)
@@ -210,4 +236,5 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
   streaming scan of `export.xml` for StepCount, ActiveEnergyBurned, DistanceWalkingRunning, SleepAnalysis, RestingHeartRate, HeartRate, BodyMass,
   DietaryWater); only daily aggregates are uploaded. CSV import maps a date column + metric columns.
 - `GET /api/health/days?from&to` (default last 30 days, ≤400) → `{from, to, days, sources, last_sync, last_sync_source}`, `days` merged per date. Page: connect cards (iPhone: export import + Health Auto Export / Shortcuts steps with the sync
-  URL and token; Android: Health Connect via automation apps posting to the same API, plus CSV; ÖRZA mobile app "coming soon"), charts, last sync.
+  URL and token; Android: Health Connect via automation apps posting to the same API, plus CSV; a one-line note under the privacy note that the ÖRZA phone app
+  will sync automatically later), charts, last sync.

@@ -19,7 +19,7 @@ const body = z.object({ endpoint: z.string().trim().max(1024).optional() });
  */
 export const POST = route(async (req: Request) => {
   const user = await requireUser();
-  if (!pushConfigured()) throw new HttpError(503, "Notifications aren't set up on this ÖRZA server yet.", "push_not_configured");
+  if (!pushConfigured()) throw new HttpError(503, "Notifications aren't available right now.", "push_not_configured");
   const { endpoint } = await parseBody(req, body);
 
   const all = await listSubscriptions(user.id);

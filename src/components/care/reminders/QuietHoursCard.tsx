@@ -72,7 +72,7 @@ export function QuietHoursCard({ integrations, onChange }: { integrations: Integ
       tone="violet"
       eyebrow="Do not disturb"
       title="Quiet hours"
-      description={`No notifications or WhatsApp messages during these hours (your time, ${integrations.timezone.replace(/_/g, " ")}). An open ÖRZA tab stays silent too.`}
+      description={`No notifications${integrations.whatsapp.configured ? " or WhatsApp messages" : ""} during these hours (your time, ${integrations.timezone.replace(/_/g, " ")}). An open ÖRZA tab stays silent too.`}
       actions={
         <Switch checked={enabled} onCheckedChange={toggle} disabled={busy} aria-label="Quiet hours" />
       }

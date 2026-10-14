@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ArrowUpRight, CalendarDays, ChevronDown, ListTree, Mail, Scale, type LucideIcon } from "lucide-react";
+import { ArrowUpRight, CalendarDays, ChevronDown, ListTree, Mail, type LucideIcon } from "lucide-react";
 import { SITE } from "@/lib/site";
 import { GlassCard, IconTile, Section } from "@/components/orza/primitives";
 import { Reveal } from "@/components/orza/Reveal";
@@ -23,27 +23,6 @@ function MetaChip({ icon: Icon, children }: { icon: LucideIcon; children: React.
       <Icon size={14} strokeWidth={1.75} className="text-orza-subtle" aria-hidden />
       {children}
     </span>
-  );
-}
-
-/** Visible notice that the document is a plain-language draft pending legal review. */
-function ReviewNote({ docName }: { docName: string }) {
-  return (
-    <div
-      role="note"
-      className="flex flex-col gap-3 rounded-orza-md border border-[rgba(176,106,0,0.22)] bg-[#FFF4E6]/80 p-4 sm:flex-row sm:items-center sm:gap-4 sm:p-5"
-    >
-      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[rgba(176,106,0,0.22)] bg-white/80 text-orza-warning">
-        <Scale size={16} strokeWidth={1.75} aria-hidden />
-      </span>
-      <div>
-        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-orza-warning">Draft · pending legal review</p>
-        <p className="mt-1 text-[14px] leading-relaxed text-orza-strong/85">
-          This {docName} describes, in plain language, how ÖRZA works today. It should be reviewed by qualified legal counsel
-          before launch.
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -83,8 +62,8 @@ function MobileToc({ sections }: { sections: LegalSection[] }) {
 }
 
 /**
- * Layout for the policy pages: hero with "last updated", legal-review note, optional
- * "at a glance" highlights, then numbered sections with a scroll-spy TOC and a contact card.
+ * Layout for the policy pages: hero with "last updated", optional "at a glance" highlights,
+ * then numbered sections with a scroll-spy TOC and a contact card.
  */
 export function LegalPage({
   docName,
@@ -120,12 +99,8 @@ export function LegalPage({
       </PageHero>
 
       <Section tone="canvas" className="pt-0 md:pt-0 lg:pt-0">
-        <Reveal>
-          <ReviewNote docName={docName} />
-        </Reveal>
-
         {highlights && highlights.length > 0 && (
-          <section aria-label="At a glance" className="mt-10">
+          <section aria-label="At a glance">
             <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-orza-subtle">At a glance</div>
             <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
               {highlights.map(({ icon: Icon, title: t, body }, i) => (

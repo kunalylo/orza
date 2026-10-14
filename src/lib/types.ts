@@ -50,6 +50,12 @@ export interface Preferences {
   ai_training_opt_out?: boolean;
 }
 
+/**
+ * Staff role of an admin account. "super" manages the team (adds/removes sub-admins); "sub" runs the
+ * day-to-day console (members, credits, credit requests). An admin without a role counts as "sub".
+ */
+export type AdminRole = "super" | "sub";
+
 export interface User {
   id: string;
   email: string;
@@ -58,7 +64,10 @@ export interface User {
   created_at: string;
   updated_at: string;
   onboarding_complete: boolean;
+  /** Staff account: uses the separate admin console only, never the member app. */
   is_admin?: boolean;
+  /** Only meaningful when `is_admin` is true (see {@link AdminRole}). */
+  admin_role?: AdminRole;
   credits: number;
   profile: Profile;
   targets: Targets;

@@ -224,32 +224,13 @@ export function AndroidSyncCard({ syncUrl, token, hasToken, today }: { syncUrl: 
   );
 }
 
-/** Honest "coming soon" card for the native companion app. */
-export function MobileAppCard() {
+/** Calm one-line note about the upcoming ÖRZA phone app. */
+export function MobileAppNote() {
   return (
-    <GlassCard variant="subtle" className="relative overflow-hidden">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full opacity-60 blur-2xl"
-        style={{ background: "radial-gradient(circle, rgba(255,180,84,0.45) 0%, rgba(255,122,106,0.25) 45%, rgba(255,95,162,0) 72%)" }}
-      />
-      <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
-        <IconTile tone="dark" className="!bg-[#141414] !text-white">
-          <Smartphone className="h-5 w-5" aria-hidden />
-        </IconTile>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-editorial text-[19px] font-semibold leading-6 text-orza-strong">ÖRZA app for iPhone &amp; Android</h3>
-            <span className="rounded-full bg-orza-energy px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-white">Coming soon</span>
-          </div>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-orza-muted">
-            Automatic Health sync is coming. With your permission, the ÖRZA app will read Apple Health and Health Connect directly and sync in
-            the background through this same secure sync API — no exports or automations needed. Until then, the options on this page keep
-            your data flowing.
-          </p>
-        </div>
-      </div>
-    </GlassCard>
+    <p className="flex items-start gap-2.5 px-1 text-[12.5px] leading-relaxed text-orza-muted">
+      <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-orza-subtle" aria-hidden />
+      <span>The ÖRZA phone app will sync Apple Health and Health Connect for you automatically. Until then, the options above keep your data flowing.</span>
+    </p>
   );
 }
 

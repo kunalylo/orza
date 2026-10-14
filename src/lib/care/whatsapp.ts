@@ -98,13 +98,22 @@ function templateParam(s: string, max = 900) {
   return cut || "—";
 }
 
+/**
+ * A setup problem only the operator can fix: log the technical hint for them and give people a plain
+ * message (member-facing copy never mentions env vars or admins).
+ */
+function operatorIssue(hint: string): string {
+  console.error(`[orza] WhatsApp setup problem: ${hint}`);
+  return "WhatsApp messages aren't available right now. Please try again later.";
+}
+
 function explain(err: any, status: number): string {
   const code = Number(err?.code);
   const e = env();
   const detail = String(err?.error_data?.details || err?.message || "").trim();
   switch (code) {
     case 190:
-      return "The WhatsApp access token is invalid or has expired. Your ÖRZA admin needs to renew WHATSAPP_TOKEN.";
+      return operatorIssue("the access token is invalid or has expired — renew WHATSAPP_TOKEN");
     case 10:
     case 200:
     case 294:
@@ -140,8 +149,8 @@ function explain(err: any, status: number): string {
     case 100:
       return `WhatsApp rejected the request: ${detail || "invalid parameter"}.`;
     default:
-      if (status === 401) return "WhatsApp rejected ÖRZA's credentials. Your ÖRZA admin needs to check WHATSAPP_TOKEN.";
-      if (status === 404) return "WhatsApp couldn't find the sender number. Your ÖRZA admin needs to check WHATSAPP_PHONE_NUMBER_ID.";
+      if (status === 401) return operatorIssue("credentials rejected (HTTP 401) — check WHATSAPP_TOKEN");
+      if (status === 404) return operatorIssue("sender number not found (HTTP 404) — check WHATSAPP_PHONE_NUMBER_ID");
       if (status >= 500) return "WhatsApp is having trouble right now. Please try again shortly.";
       return detail ? `WhatsApp error: ${detail.slice(0, 200)}` : `WhatsApp request failed (HTTP ${status}).`;
   }
@@ -149,7 +158,7 @@ function explain(err: any, status: number): string {
 
 async function graphSend(message: Record<string, unknown>): Promise<string | undefined> {
   const e = env();
-  if (!e.token || !e.phoneId) throw new WhatsAppError("WhatsApp isn't connected by your ÖRZA admin yet.", undefined, 503);
+  if (!e.token || !e.phoneId) throw new WhatsAppError("WhatsApp messages aren't available right now.", undefined, 503);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {

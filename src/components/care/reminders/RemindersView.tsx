@@ -2,7 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { BellPlus, CalendarDays, ChevronRight, Clock3, MessageCircle, Pencil, Pill, Plus, ScanLine, Server, Smartphone } from "lucide-react";
+import { BellPlus, CalendarDays, ChevronRight, Clock3, Info, MessageCircle, Pencil, Pill, Plus, ScanLine, Smartphone } from "lucide-react";
 import { api, errorMessage } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { PageHeader, EmptyState } from "@/components/app/ui";
@@ -49,7 +49,7 @@ export function RemindersSkeleton() {
 const sameTimes = (a: string[], b: string[]) => a.length === b.length && [...a].sort().every((t, i) => t === [...b].sort()[i]);
 
 export function RemindersView() {
-  const { user, setUser } = useUser();
+  const { setUser } = useUser();
   const [integrations, setIntegrations] = React.useState<IntegrationsView | null>(null);
   const [reminders, setReminders] = React.useState<ReminderView[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -86,7 +86,9 @@ export function RemindersView() {
   if (!integrations || !reminders) return <RemindersSkeleton />;
 
   const tz = integrations.timezone;
-  const whatsappReady = integrations.whatsapp.opt_in;
+  // WhatsApp only appears once the service is connected on the server; until then it's hidden everywhere.
+  const whatsappAvailable = integrations.whatsapp.configured;
+  const whatsappReady = whatsappAvailable && integrations.whatsapp.opt_in;
   const pushReady = integrations.push.subscriptions > 0;
 
   const upsert = (r: ReminderView) =>
@@ -242,6 +244,7 @@ export function RemindersView() {
                         key={r.id}
                         reminder={r}
                         tz={tz}
+                        whatsapp={whatsappAvailable}
                         busy={!!pending[r.id]}
                         onToggle={(v) => toggleActive(r, v)}
                         onEdit={() => setSheet({ open: true, reminder: r })}
@@ -260,14 +263,16 @@ export function RemindersView() {
         </div>
 
         <div className="space-y-6 lg:col-span-5">
-          <Reveal>
-            <WhatsAppCard integrations={integrations} onChange={setIntegrations} />
-          </Reveal>
+          {whatsappAvailable && (
+            <Reveal>
+              <WhatsAppCard integrations={integrations} onChange={setIntegrations} />
+            </Reveal>
+          )}
           <Reveal>
             <QuietHoursCard integrations={integrations} onChange={setIntegrations} />
           </Reveal>
           <Reveal>
-            <DeliveryHelp admin={!!user.is_admin} />
+            <DeliveryHelp whatsapp={whatsappAvailable} />
           </Reveal>
         </div>
       </div>
@@ -276,6 +281,7 @@ export function RemindersView() {
         open={sheet.open}
         onOpenChange={(open) => setSheet((s) => ({ ...s, open }))}
         reminder={sheet.reminder}
+        whatsappAvailable={whatsappAvailable}
         whatsappReady={whatsappReady}
         pushReady={pushReady}
         onSaved={(r) => upsert(r)}
@@ -300,10 +306,10 @@ function Header({ onNew, disabled }: { onNew: () => void; disabled?: boolean }) 
   );
 }
 
-function ChannelTags({ r }: { r: ReminderView }) {
+function ChannelTags({ r, whatsapp }: { r: ReminderView; whatsapp: boolean }) {
   const items = [
     r.channels.push && { key: "push", label: "App", icon: Smartphone },
-    r.channels.whatsapp && { key: "wa", label: "WhatsApp", icon: MessageCircle },
+    whatsapp && r.channels.whatsapp && { key: "wa", label: "WhatsApp", icon: MessageCircle },
     r.channels.calendar && { key: "cal", label: "Calendar", icon: CalendarDays },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
   return (
@@ -320,12 +326,14 @@ function ChannelTags({ r }: { r: ReminderView }) {
 function ReminderRow({
   reminder: r,
   tz,
+  whatsapp,
   busy,
   onToggle,
   onEdit,
 }: {
   reminder: ReminderView;
   tz: string;
+  whatsapp: boolean;
   busy: boolean;
   onToggle: (v: boolean) => void;
   onEdit: () => void;
@@ -347,7 +355,7 @@ function ReminderRow({
           {describeSchedule(r.schedule)}
         </span>
         <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <ChannelTags r={r} />
+          <ChannelTags r={r} whatsapp={whatsapp} />
           {next && <span className="text-[12px] text-orza-subtle">Next: {next}</span>}
           {!r.active && <span className="text-[12px] text-orza-subtle">Paused</span>}
           {r.active && !r.next_at && <span className="text-[12px] text-orza-subtle">Schedule ended</span>}
@@ -402,11 +410,11 @@ function MedicinesCard() {
   );
 }
 
-function DeliveryHelp({ admin }: { admin: boolean }) {
+function DeliveryHelp({ whatsapp }: { whatsapp: boolean }) {
   return (
     <SectionCard
       id="delivery"
-      icon={<Server size={18} strokeWidth={1.75} aria-hidden />}
+      icon={<Info size={18} strokeWidth={1.75} aria-hidden />}
       eyebrow="How it works"
       title="When reminders arrive"
       description="ÖRZA checks for due alarms every minute, so a notification can arrive up to a minute after its time."
@@ -416,10 +424,12 @@ function DeliveryHelp({ admin }: { admin: boolean }) {
           <Tag tone="energy" size="sm" dot={false}>App</Tag>
           <span>Notifications on each device where you enabled them, plus a full-screen alarm in any open ÖRZA tab.</span>
         </li>
-        <li className="flex gap-2">
-          <Tag tone="info" size="sm" dot={false}>WhatsApp</Tag>
-          <span>Messages from ÖRZA&apos;s WhatsApp number, with the medicine photo.</span>
-        </li>
+        {whatsapp && (
+          <li className="flex gap-2">
+            <Tag tone="info" size="sm" dot={false}>WhatsApp</Tag>
+            <span>Messages from ÖRZA&apos;s WhatsApp number, with the medicine photo.</span>
+          </li>
+        )}
         <li className="flex gap-2">
           <Tag tone="violet" size="sm" dot={false}>Calendar</Tag>
           <span>
@@ -431,26 +441,6 @@ function DeliveryHelp({ admin }: { admin: boolean }) {
           </span>
         </li>
       </ul>
-      <details className="group mt-5 rounded-orza-sm border border-[rgba(20,20,20,0.08)] bg-white/60 p-3.5" open={admin}>
-        <summary className="cursor-pointer list-none text-[13px] font-medium text-orza-strong [&::-webkit-details-marker]:hidden">
-          <span className="inline-flex items-center gap-1.5">
-            <ChevronRight size={14} aria-hidden className="transition-transform group-open:rotate-90" />
-            Setup notes for your ÖRZA admin
-          </span>
-        </summary>
-        <div className="mt-2.5 space-y-2 text-[13px] leading-relaxed text-orza-muted">
-          <p>
-            Scheduled delivery runs from <code className="rounded bg-black/5 px-1 py-0.5 text-[12px]">/api/cron/dispatch</code>, called every
-            minute. The included <code className="rounded bg-black/5 px-1 py-0.5 text-[12px]">vercel.json</code> schedules it on Vercel, but
-            per-minute cron jobs need Vercel&apos;s Pro plan.
-          </p>
-          <p>
-            On the free plan, use an external scheduler such as cron-job.org to call{" "}
-            <code className="break-all rounded bg-black/5 px-1 py-0.5 text-[12px]">/api/cron/dispatch?secret=YOUR_CRON_SECRET</code> every
-            minute (or send the secret as an <code className="rounded bg-black/5 px-1 py-0.5 text-[12px]">Authorization: Bearer</code> header).
-          </p>
-        </div>
-      </details>
     </SectionCard>
   );
 }

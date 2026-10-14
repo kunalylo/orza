@@ -22,7 +22,7 @@ const body = z.object({
  */
 export const POST = route(async (req: Request) => {
   const user = await requireUser();
-  if (!pushConfigured()) throw new HttpError(503, "Notifications aren't set up on this ÖRZA server yet.", "push_not_configured");
+  if (!pushConfigured()) throw new HttpError(503, "Notifications aren't available right now.", "push_not_configured");
   const input = await parseBody(req, body);
   if (!isAllowedPushEndpoint(input.endpoint)) throw badRequest("This browser's push service isn't supported.");
 

@@ -11,6 +11,7 @@ import { useUser } from "@/components/app/UserProvider";
 import { GlassCard, IconTile } from "@/components/orza/primitives";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/form";
+import { useWhatsAppAvailable } from "@/components/care/useWhatsAppAvailable";
 import { AdherenceStrip } from "./AdherenceStrip";
 import { MedicineCard } from "./MedicineCard";
 import { MedicineSheet } from "./MedicineSheet";
@@ -89,6 +90,7 @@ export function MedicinesView() {
   const pathname = usePathname();
   const params = useSearchParams();
   const [today, setToday] = React.useState(() => todayIn(tz));
+  const whatsappAvailable = useWhatsAppAvailable();
 
   const meds = useLoad<{ medications: MedicationClient[] }>("/meds");
   const todayRes = useLoad<TodayResponse>(`/meds/today?date=${today}`);
@@ -335,12 +337,14 @@ export function MedicinesView() {
                     <span className="font-medium text-orza-strong">Push notifications</span> with the photo and Take / Snooze buttons (on iPhone, add ÖRZA to your Home Screen first).
                   </span>
                 </li>
-                <li className="flex gap-2.5">
-                  <MessageCircle size={16} className="mt-0.5 shrink-0 text-[#127A56]" aria-hidden />
-                  <span>
-                    <span className="font-medium text-orza-strong">WhatsApp</span> messages, if you turn them on.
-                  </span>
-                </li>
+                {whatsappAvailable && (
+                  <li className="flex gap-2.5">
+                    <MessageCircle size={16} className="mt-0.5 shrink-0 text-[#127A56]" aria-hidden />
+                    <span>
+                      <span className="font-medium text-orza-strong">WhatsApp</span> messages, if you turn them on.
+                    </span>
+                  </li>
+                )}
                 <li className="flex gap-2.5">
                   <CalendarDays size={16} className="mt-0.5 shrink-0 text-[#6E3ED6]" aria-hidden />
                   <span>

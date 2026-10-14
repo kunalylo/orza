@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const POST = route(async () => {
   const user = await requireUser();
   if (!whatsappConfigured()) {
-    throw new HttpError(503, "WhatsApp isn't connected by your ÖRZA admin yet.", "whatsapp_not_configured");
+    throw new HttpError(503, "WhatsApp messages aren't available right now.", "whatsapp_not_configured");
   }
   const phone = user.integrations?.whatsapp_phone;
   if (!phone) throw badRequest("Save your WhatsApp number first.");

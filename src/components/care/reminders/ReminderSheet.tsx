@@ -72,6 +72,7 @@ export function ReminderSheet({
   open,
   onOpenChange,
   reminder,
+  whatsappAvailable,
   whatsappReady,
   pushReady,
   onSaved,
@@ -81,7 +82,9 @@ export function ReminderSheet({
   onOpenChange: (open: boolean) => void;
   /** null = create a new reminder */
   reminder: ReminderView | null;
-  /** WhatsApp is connected by the admin and the user saved + opted in a number. */
+  /** WhatsApp messaging is set up on the server. When false the WhatsApp channel isn't shown at all. */
+  whatsappAvailable: boolean;
+  /** WhatsApp is available and the user saved + opted in a number. */
   whatsappReady: boolean;
   /** At least one device has notifications on. */
   pushReady: boolean;
@@ -146,7 +149,7 @@ export function ReminderSheet({
     const valid = draft.times.filter(isHHMM);
     if (!valid.length) e.times = "Add at least one time.";
     else if (valid.length !== draft.times.length) e.times = "Fix or remove the empty time.";
-    if (!draft.channels.push && !draft.channels.whatsapp && !draft.channels.calendar) e.channels = "Pick at least one way to be reminded.";
+    if (!draft.channels.push && !(whatsappAvailable && draft.channels.whatsapp) && !draft.channels.calendar) e.channels = "Pick at least one way to be reminded.";
     setErrors(e);
     return !Object.keys(e).length;
   };
@@ -394,14 +397,16 @@ export function ReminderSheet({
                 checked={draft.channels.push}
                 onChange={(v) => set("channels", { ...draft.channels, push: v })}
               />
-              <ChannelRow
-                id={`${ids}-wa`}
-                title="WhatsApp"
-                hint={whatsappReady ? "Sent to your saved WhatsApp number." : "Save your WhatsApp number and consent first."}
-                checked={draft.channels.whatsapp}
-                disabled={!whatsappReady && !draft.channels.whatsapp}
-                onChange={(v) => set("channels", { ...draft.channels, whatsapp: v })}
-              />
+              {whatsappAvailable && (
+                <ChannelRow
+                  id={`${ids}-wa`}
+                  title="WhatsApp"
+                  hint={whatsappReady ? "Sent to your saved WhatsApp number." : "Save your WhatsApp number and consent first."}
+                  checked={draft.channels.whatsapp}
+                  disabled={!whatsappReady && !draft.channels.whatsapp}
+                  onChange={(v) => set("channels", { ...draft.channels, whatsapp: v })}
+                />
+              )}
               <ChannelRow
                 id={`${ids}-cal`}
                 title="Calendar"

@@ -55,10 +55,10 @@ export function CreditRequestsCard({ refreshKey, onTopUp }: { refreshKey: number
         <div>
           <Eyebrow className="text-[11px]">Inbox</Eyebrow>
           <h2 id="admin-requests-title" className="mt-1 font-editorial text-[22px] font-semibold leading-7 tracking-[-0.01em] text-orza-strong">
-            Credit requests
+            Open requests
           </h2>
           <p className="mt-1 text-[13px] text-orza-muted">
-            Sent from members&rsquo; Credits page. Adding credits closes their open requests; reply by email as well.
+            Oldest first, so the longest wait is answered first. Reply by email as well when you top up.
           </p>
         </div>
         {requests && requests.length > 0 && (
@@ -128,7 +128,7 @@ export function CreditRequestsCard({ refreshKey, onTopUp }: { refreshKey: number
                       {closing !== r.id && <Check size={14} strokeWidth={1.75} aria-hidden />}
                       Mark done
                     </Button>
-                    {r.user && (
+                    {r.user && !r.user.is_admin && (
                       <Button variant="primary" size="sm" onClick={() => onTopUp(r.user as AdminUserRow)} aria-label={`Add credits for ${who}`}>
                         <Coins size={14} strokeWidth={1.75} aria-hidden /> Top up
                       </Button>

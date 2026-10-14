@@ -11,7 +11,7 @@ import {
   signSessionToken,
   type SessionClaims,
 } from "@/lib/session-token";
-import type { PublicUser, Session, User } from "@/lib/types";
+import type { AdminRole, PublicUser, Session, User } from "@/lib/types";
 
 export const hashPassword = (pw: string) => bcrypt.hash(pw, 10);
 export const verifyPassword = (pw: string, hash: string) => bcrypt.compare(pw, hash);
@@ -95,11 +95,21 @@ export async function getSessionUserId(): Promise<string | null> {
 }
 
 /**
- * Admin access comes only from `is_admin: true` on the user document, granted out-of-band with
- * `node scripts/make-admin.mjs <email>`. Never derive it from the email address: ÖRZA doesn't verify
- * email ownership, so anyone could register a listed address first.
+ * Admin access comes only from `is_admin: true` on the user document — granted out-of-band with
+ * `node scripts/make-admin.mjs <email>`, or by a super admin creating a staff account on the Team
+ * page. Never derive it from the email address: ÖRZA doesn't verify email ownership, so anyone could
+ * register a listed address first. Admin accounts are staff-only (the admin console, no member app).
  */
 export const isAdmin = (u: Pick<User, "is_admin">) => u.is_admin === true;
+
+/** The admin's role ("super" | "sub"), or null for members. An admin without a stored role is a sub-admin. */
+export function adminRoleOf(u: Pick<User, "is_admin" | "admin_role">): AdminRole | null {
+  if (!isAdmin(u)) return null;
+  return u.admin_role === "super" ? "super" : "sub";
+}
+
+/** Super admins manage the team (create, reset and remove sub-admins). */
+export const isSuperAdmin = (u: Pick<User, "is_admin" | "admin_role">) => adminRoleOf(u) === "super";
 
 export function toPublicUser(u: User): PublicUser {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -109,7 +119,8 @@ export function toPublicUser(u: User): PublicUser {
   // address for their own calendar (only its connection state is shown, via /api/calendar).
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { health_token_hash, calendar_token, external_ical_url, ...integrations } = u.integrations || {};
-  return { ...rest, ...(u.integrations ? { integrations } : {}), is_admin: isAdmin(u) };
+  // `admin_role` is only sent for admins (a stray role on a member record means nothing).
+  return { ...rest, ...(u.integrations ? { integrations } : {}), is_admin: isAdmin(u), admin_role: adminRoleOf(u) ?? undefined };
 }
 
 /** Full user document (includes password_hash — never return it to clients). */
@@ -127,8 +138,16 @@ export async function requireUser(): Promise<User> {
   return u;
 }
 
+/** Use in admin route handlers: 401 when signed out, 403 for members. */
 export async function requireAdmin(): Promise<User> {
   const u = await requireUser();
   if (!isAdmin(u)) throw forbidden();
+  return u;
+}
+
+/** Use in team-management route handlers: 401 when signed out, 403 for members and sub-admins. */
+export async function requireSuperAdmin(): Promise<User> {
+  const u = await requireAdmin();
+  if (!isSuperAdmin(u)) throw forbidden("Only the super admin can manage the admin team");
   return u;
 }

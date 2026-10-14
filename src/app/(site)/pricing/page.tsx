@@ -91,14 +91,14 @@ export default function PricingPage() {
         </ul>
         <Reveal>
           <p className="mx-auto mt-8 max-w-2xl text-center text-[14px] leading-relaxed text-orza-muted">
-            Online payments are launching soon. Until then, if your credits run low, use{" "}
+            Running low on credits? Use{" "}
             <Link
               href="/dashboard/credits"
               className="font-medium text-orza-strong underline decoration-[rgba(20,20,20,0.25)] underline-offset-4 transition-colors hover:decoration-orza-strong"
             >
               Request more credits
             </Link>{" "}
-            on the Credits page in the app and the team will top you up.
+            on the Credits page in the app and we&rsquo;ll top up your account.
           </p>
         </Reveal>
       </Section>

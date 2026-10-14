@@ -308,7 +308,7 @@ export function PrescriptionsView() {
               {problem && <ProblemPanel problem={problem} onManual={startManual} onRetry={problem.kind === "error" ? scan : undefined} />}
               {aiOff && !problem && (
                 <div className="rounded-orza-md border border-[rgba(11,143,166,0.22)] bg-[#EAF6FF] p-3.5 text-[13px] leading-relaxed text-[#0B6F82]">
-                  Automatic reading isn&apos;t switched on yet. Type the medicines from your prescription — it takes a minute, and you can attach the photo for reference.
+                  Automatic reading isn&apos;t available right now. Type the medicines from your prescription — it takes a minute, and you can attach the photo for reference.
                 </div>
               )}
               <div className="flex flex-wrap gap-2">

@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { Brain, ShieldCheck, SlidersHorizontal, Target, UserRound, type LucideIcon } from "lucide-react";
+import { Brain, KeyRound, ShieldCheck, SlidersHorizontal, Target, UserRound, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const SETTINGS_SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
@@ -8,6 +8,7 @@ export const SETTINGS_SECTIONS: { id: string; label: string; icon: LucideIcon }[
   { id: "targets", label: "Daily targets", icon: Target },
   { id: "preferences", label: "Preferences", icon: SlidersHorizontal },
   { id: "memory", label: "Memory", icon: Brain },
+  { id: "security", label: "Password", icon: KeyRound },
   { id: "privacy", label: "Privacy & data", icon: ShieldCheck },
 ];
 

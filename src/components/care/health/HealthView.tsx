@@ -12,7 +12,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Segmented, Skeleton } from "@/components/ui/form";
 import { AppleImportCard } from "./AppleImportCard";
 import { CsvImportCard } from "./CsvImportCard";
-import { AndroidSyncCard, IphoneAutoSyncCard, MobileAppCard, PrivacyNote } from "./ConnectGuides";
+import { AndroidSyncCard, IphoneAutoSyncCard, MobileAppNote, PrivacyNote } from "./ConnectGuides";
 import { BarChart, ChartCard, LineChart, type ChartPoint } from "./HealthCharts";
 import { SyncTokenCard } from "./SyncTokenCard";
 import { formatDay, formatInt, formatKg, formatRelativeDay, formatSleep, sourceLabel, syncEndpoint, timeAgo } from "./format";
@@ -262,15 +262,13 @@ export function HealthView() {
           <AndroidSyncCard syncUrl={syncUrl} token={freshToken} hasToken={!!tokenStatus} today={today} />
         </div>
         <div className="grid min-w-0 grid-cols-1">{tokenCard}</div>
-        <div className="grid min-w-0 grid-cols-1">
+        <div className={cn("grid min-w-0 grid-cols-1", !isIphone && "lg:col-span-2")}>
           <CsvImportCard tz={tz} imperial={imperial} onImported={onImported} />
         </div>
-        <div className={cn("grid min-w-0 grid-cols-1", isIphone && "lg:col-span-2")}>
-          <MobileAppCard />
-        </div>
       </div>
-      <div className="mt-4">
+      <div className="mt-4 space-y-3">
         <PrivacyNote />
+        <MobileAppNote />
       </div>
     </section>
   );

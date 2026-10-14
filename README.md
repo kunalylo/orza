@@ -23,7 +23,7 @@ With no `MONGODB_URI`, data goes to `.data/orza-db.json`. That file store is for
 | `npm run dev` | Dev server on port 3100 |
 | `npm run build` / `npm start` | Production build / server (port 3100) |
 | `npm run typecheck` | `tsc --noEmit` |
-| `node scripts/make-admin.mjs <email>` | Grant admin access to an existing account (`--revoke`, `--list`) |
+| `node scripts/make-admin.mjs <email>` | Grant admin access to an existing account as a sub-admin (`--super`, `--sub`, `--revoke`, `--list`) |
 
 ## Configuration
 
@@ -35,17 +35,30 @@ Every variable is documented in `.env.example`. For production:
 - **`OPENAI_API_KEY`**, plus optional `OPENAI_MODEL` and `OPENAI_VISION_MODEL` (both default to `gpt-4o-mini`). Reasoning models such as the o-series and gpt-5 work too, and `OPENAI_REASONING_EFFORT` tunes them. The vision model must accept images: it never falls back to the text model.
 - **Reminders**: `VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` are for Web Push (`npx web-push generate-vapid-keys`). `CRON_SECRET` protects `/api/cron/dispatch`. The WhatsApp Cloud API variables are optional.
 
-### Admin access
+### Admin console and roles
 
-Admin rights come only from `is_admin: true` on a user record. They are never granted from an email address, because ÖRZA doesn't verify that people own the address they sign up with. To grant admin to someone who already has an account:
+Admin accounts are **staff-only**. Signing in with one opens the admin console at `/dashboard/admin`. The console has its own sidebar with Overview, Members, Credit requests, Team and My account. It never shows the member app: no Today page, meals, Care, onboarding or credits pill. If an admin opens a member page, they are sent back to the console. Member numbers and lists leave admin accounts out.
+
+There are two roles:
+
+| Role | Can |
+|---|---|
+| **Super admin** (`admin_role: "super"`) | Everything below, plus the **Team** page: add sub-admins, reset a sub-admin's password, remove a sub-admin |
+| **Sub-admin** (`admin_role: "sub"`, or no role) | Overview stats, Members (search, adjust credits), Credit requests, My account (change password, sign out) |
+
+**Adding a sub-admin.** On Team, choose **Add sub-admin** and enter a name and work email. You can let ÖRZA generate a strong 14-character password or set one yourself. This creates a new, separate staff account; the email must not already belong to an ÖRZA account. The password is shown once. Share it privately and ask the sub-admin to change it under **My account** after they first sign in. **Reset password** gives the sub-admin a new one-time password and signs them out on every device. **Remove** deletes their staff account. Super admins can't be removed, demoted or reset from the panel, and nobody can remove their own account there.
+
+Admin rights come only from `is_admin: true` on a user record, set by the Team page or the script below. They are never granted from an email address, because ÖRZA doesn't verify that people own the address they sign up with. Use the script to set up the first super admin, or to change roles:
 
 ```bash
-node scripts/make-admin.mjs person@example.com           # grant
-node scripts/make-admin.mjs person@example.com --revoke  # remove
-node scripts/make-admin.mjs --list                       # list admins
+node scripts/make-admin.mjs person@example.com           # grant (sub-admin)
+node scripts/make-admin.mjs person@example.com --super   # grant as super admin
+node scripts/make-admin.mjs person@example.com --sub     # make a super admin a sub-admin
+node scripts/make-admin.mjs person@example.com --revoke  # remove admin access
+node scripts/make-admin.mjs --list                       # list admins and their roles
 ```
 
-The script reads `MONGODB_URI` and `MONGODB_DB` from the environment, `.env.local` or `.env`. Without them it edits the local `.data/orza-db.json`; stop the dev server first so the server doesn't overwrite the change.
+A plain grant never demotes an existing super admin; pass `--sub` to do that. Granting admin to an existing account turns it into a staff account, so its member features disappear. Use a separate work email for staff. The script reads `MONGODB_URI` and `MONGODB_DB` from the environment, `.env.local` or `.env`. Without them it edits the local `.data/orza-db.json`; stop the dev server first so the server doesn't overwrite the change.
 
 ## Deployment notes
 
@@ -62,9 +75,9 @@ The script reads `MONGODB_URI` and `MONGODB_DB` from the environment, `.env.loca
 ```
 src/app/(site)/        marketing pages (/, /pricing, /faq, /trust, /privacy, /terms)
 src/app/login, onboarding
-src/app/dashboard/     the signed-in app (Today, Meals, Snap & Know, Ask ÖRZA, Care, Goals, Recipes, Reports, Account)
+src/app/dashboard/     the signed-in app (Today, Meals, Snap & Know, Ask ÖRZA, Care, Goals, Recipes, Reports, Account); admin/ is the staff console
 src/app/api/           route handlers: route() + requireUser() + zod parseBody(), always scoped by user_id
-src/components/        orza/ (design primitives), ui/ (Button, form, Dialog), app/ (shell), one folder per feature
+src/components/        orza/ (design primitives), ui/ (Button, form, Dialog), app/ (member shell), admin/ (admin shell + console), one folder per feature
 src/lib/               auth, db, http, ai, credits, dates, allergens, domain/, care/, nutrition/
 scripts/               operational scripts (make-admin)
 ```

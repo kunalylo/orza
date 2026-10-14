@@ -13,6 +13,9 @@ const Query = z.object({
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** Members only: admin (staff) accounts are managed on the Team page and never listed here. */
+const MEMBERS: Filter = { is_admin: { $ne: true } };
+
 /** Explicit allow-list of fields — never spread the stored document (it holds the password hash). */
 function toRow(u: User) {
   return {
@@ -28,9 +31,9 @@ function toRow(u: User) {
 
 /**
  * GET /api/admin/users?q=&limit= (admin only) → {users, total}
- * Searches every member by name or email (case-insensitive, anywhere in the text). An exact email
- * match is always listed first; the rest are newest first. `total` (additive) is how many members
- * match in all, before `limit` is applied.
+ * Searches every member by name or email (case-insensitive, anywhere in the text). Admin (staff)
+ * accounts are never listed. An exact email match is always listed first; the rest are newest first.
+ * `total` (additive) is how many members match in all, before `limit` is applied.
  */
 export const GET = route(async (req: Request) => {
   await requireAdmin();
@@ -41,24 +44,24 @@ export const GET = route(async (req: Request) => {
   const headers = { "Cache-Control": "no-store" };
 
   if (!q) {
-    const [rows, total] = await Promise.all([users.find({}, { sort: newestFirst, limit }), users.countDocuments({})]);
+    const [rows, total] = await Promise.all([users.find(MEMBERS, { sort: newestFirst, limit }), users.countDocuments(MEMBERS)]);
     return json({ users: rows.map(toRow), total }, { headers });
   }
 
   const needle = q.toLowerCase();
   // Emails are stored lowercase + trimmed, so an exact match is a single lookup on the unique index.
-  const exact = needle.includes("@") ? await users.findOne({ email: needle }) : null;
+  const exact = needle.includes("@") ? await users.findOne({ ...MEMBERS, email: needle }) : null;
 
   let matches: User[];
   let total: number;
   if (usingMongo()) {
     // Server-side search over the whole collection. The input is escaped, so it is matched literally.
     const rx = { $regex: escapeRegex(q), $options: "i" };
-    const filter: Filter = { $or: [{ email: rx }, { name: rx }] };
+    const filter: Filter = { ...MEMBERS, $or: [{ email: rx }, { name: rx }] };
     [matches, total] = await Promise.all([users.find(filter, { sort: newestFirst, limit }), users.countDocuments(filter)]);
   } else {
     // Local development store (a JSON file): filter in code.
-    const all = await users.find({}, { sort: newestFirst });
+    const all = await users.find(MEMBERS, { sort: newestFirst });
     const hit = all.filter((u) => (u.email || "").toLowerCase().includes(needle) || (u.name || "").toLowerCase().includes(needle));
     matches = hit.slice(0, limit);
     total = hit.length;

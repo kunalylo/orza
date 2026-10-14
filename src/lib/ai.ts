@@ -41,7 +41,7 @@ export const WELLNESS_GUARDRAIL =
   "Never shame the user about food. Keep answers concise and practical. Reply in the user's language (English, Hindi, or Hinglish).";
 
 async function callOpenAI(body: Record<string, unknown>, timeoutMs = 45000): Promise<string> {
-  if (!aiEnabled()) throw new HttpError(503, "AI is not configured on this server yet.", "ai_disabled");
+  if (!aiEnabled()) throw new HttpError(503, "ÖRZA's AI isn't available right now.", "ai_disabled");
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {

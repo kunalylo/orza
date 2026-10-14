@@ -15,7 +15,6 @@ import {
   Menu,
   MessageCircle,
   Settings,
-  Shield,
   Sparkles,
   Sun,
   Target,
@@ -53,11 +52,10 @@ function isActive(pathname: string, href: string) {
 
 function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { user } = useUser();
-  const items = user.is_admin ? [...APP_NAV, { href: "/dashboard/admin", label: "Admin", icon: Shield }] : APP_NAV;
+  // Members only: admin accounts get the separate AdminShell (src/components/admin/AdminShell.tsx).
   return (
     <nav aria-label="App" className="flex flex-col gap-0.5">
-      {items.map(({ href, label, icon: Icon }) => {
+      {APP_NAV.map(({ href, label, icon: Icon }) => {
         const active = isActive(pathname, href);
         return (
           <Link

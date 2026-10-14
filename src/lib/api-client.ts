@@ -1,7 +1,8 @@
 "use client";
 /**
  * Browser fetch wrapper for /api/*. Throws ApiError with the server's message.
- * On 401 it sends the user to /login (except for auth endpoints themselves).
+ * On 401 it sends the user to /login (except for auth endpoints themselves and a 401 with code
+ * "wrong_password", which only means the current password typed on a password change was wrong).
  */
 export class ApiError extends Error {
   constructor(public status: number, message: string, public code?: string) {
@@ -34,7 +35,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     /* empty body */
   }
   if (!res.ok) {
-    if (res.status === 401 && typeof window !== "undefined" && !path.includes("/auth/")) {
+    // A 401 means "signed out" — except a mistyped current password on a password change, which the
+    // caller shows inline (the session is still valid).
+    if (res.status === 401 && data?.code !== "wrong_password" && typeof window !== "undefined" && !path.includes("/auth/")) {
       const next = encodeURIComponent(window.location.pathname + window.location.search);
       window.location.href = `/login?next=${next}`;
     }

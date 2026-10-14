@@ -119,7 +119,7 @@ export function AiDisabledPanel({ message, mealsHref }: { message?: string; meal
       icon={<WifiOff size={17} strokeWidth={1.75} aria-hidden />}
       tone="neutral"
       eyebrow="Snap & Know"
-      title="Photo scanning isn't switched on yet"
+      title="Photo scanning isn't available right now"
       actions={
         <>
           <ButtonLink href={mealsHref} variant="primary">
@@ -130,7 +130,7 @@ export function AiDisabledPanel({ message, mealsHref }: { message?: string; meal
     >
       <p>
         {message ||
-          "Photo scanning needs ÖRZA's AI, which isn't switched on yet. You can type or speak your meal instead."}
+          "Photo scanning isn't available right now. You can type or speak your meal instead."}
       </p>
       <p className="mt-2">
         The meal log understands English, Hindi and Hinglish — &ldquo;do roti, ek katori dal&rdquo; works — and the food list is always free.

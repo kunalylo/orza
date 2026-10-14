@@ -18,7 +18,7 @@ type Plan = {
   current?: boolean;
 };
 
-/** Plan preview — copy from the ÖRZA pricing page. Payments aren't live yet, so there is no checkout here. */
+/** Plan preview — copy from the ÖRZA pricing page. There is no checkout here; members ask for more credits instead. */
 const PLANS: Plan[] = [
   {
     id: "free",
@@ -83,15 +83,12 @@ export function PlansPreview({ requested, onRequest, className }: { requested: b
             Plans that grow with your <em className="orza-energy-text pr-[0.06em] italic">wellness journey</em>
           </h2>
           <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-orza-muted">
-            Start free. Upgrade when ready. Online payments are coming soon — until then, ask us and we&rsquo;ll top up your credits.
+            Start free. Upgrade when ready. Need more credits? Ask us and we&rsquo;ll top up your account.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Tag tone="violet">Online payments coming soon</Tag>
-          <Button variant="secondary" size="sm" onClick={onRequest} disabled={requested}>
-            {requested ? "Request sent" : "Request more credits"}
-          </Button>
-        </div>
+        <Button variant="secondary" size="sm" onClick={onRequest} disabled={requested} className="self-start sm:self-auto">
+          {requested ? "Request sent" : "Request more credits"}
+        </Button>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -142,7 +139,7 @@ export function PlansPreview({ requested, onRequest, className }: { requested: b
           );
         })}
       </div>
-      <p className="mt-4 text-xs text-orza-subtle">Prices shown are a preview. Nothing is charged today — ÖRZA has no card payments yet.</p>
+      <p className="mt-4 text-xs text-orza-subtle">Premium plans are launching soon. Nothing is charged today.</p>
     </section>
   );
 }

@@ -83,7 +83,7 @@ export function CostsCard({ costs, aiEnabled, className }: { costs: CreditCosts;
         <li className="flex gap-2.5">
           <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#127A56]" aria-hidden />
           <span>
-            <span className="font-medium">{aiEnabled ? "When AI is off" : "AI is off right now"}</span>, ÖRZA&rsquo;s built-in engine handles
+            <span className="font-medium">{aiEnabled ? "If AI is ever unavailable" : "While AI is unavailable"}</span>, ÖRZA&rsquo;s built-in engine handles
             logging, chat, recipes and plans — for free.
           </span>
         </li>

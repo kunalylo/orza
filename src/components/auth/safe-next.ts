@@ -1,3 +1,5 @@
+import { ADMIN_HOME, isConsolePath } from "@/components/admin/routes";
+
 /**
  * `?next=` handling for /login. Only same-site relative paths are allowed:
  * must start with "/", never "//" or "/\" (protocol-relative → open redirect),
@@ -20,8 +22,17 @@ export function parseAuthMode(raw: string | string[] | null | undefined): AuthMo
   return value === "signup" || value === "register" || value === "sign-up" ? "signup" : "signin";
 }
 
-/** Where to send a signed-in user: sign-ups always onboard first; sign-ins honour `next`. */
-export function destinationFor(user: { onboarding_complete: boolean }, next: string | null, mode: AuthMode = "signin") {
+/**
+ * Where to send a signed-in user. Admin (staff) accounts only use the admin console, so they land on
+ * /dashboard/admin unless `next` already points inside it. Sign-ups always onboard first; other
+ * sign-ins honour `next`.
+ */
+export function destinationFor(
+  user: { onboarding_complete: boolean; is_admin?: boolean },
+  next: string | null,
+  mode: AuthMode = "signin"
+) {
+  if (user.is_admin === true) return next && isConsolePath(next) ? next : ADMIN_HOME;
   if (mode === "signup") return "/onboarding";
   return next || (user.onboarding_complete ? "/dashboard" : "/onboarding");
 }

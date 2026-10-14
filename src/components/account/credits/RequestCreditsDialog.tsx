@@ -11,9 +11,8 @@ import { CREDIT_REQUEST_MESSAGE_MAX as MAX } from "@/components/account/options"
 import type { CreditRequestResponse, CreditRequestView } from "@/components/account/types";
 
 /**
- * "Request more credits" — there's no payment gateway yet, so the request goes to the team from the
- * signed-in account (POST /api/credits/request, which records the email and balance server-side)
- * and they top the account up by hand.
+ * "Request more credits" — the request goes to the team from the signed-in account
+ * (POST /api/credits/request, which records the email and balance server-side) and they top the account up.
  */
 export function RequestCreditsDialog({
   open,
@@ -58,7 +57,7 @@ export function RequestCreditsDialog({
     <Dialog open={open} onOpenChange={(o) => !sending && onOpenChange(o)}>
       <DialogContent
         title="Request more credits"
-        description="Online payments are coming soon. Tell us a little about how you use ÖRZA and the team will top up your credits."
+        description="Need more credits? Tell us a little about how you use ÖRZA and we'll top up your account."
       >
         <form onSubmit={submit} noValidate>
           <div className="flex items-center gap-3 rounded-orza-sm border border-[rgba(20,20,20,0.08)] bg-white/70 px-3.5 py-3">

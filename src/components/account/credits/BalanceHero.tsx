@@ -129,7 +129,7 @@ export function BalanceHero({
               "You've used all your AI credits. Manual logging keeps working for free — request more and we'll top you up."
             )
           ) : (
-            "AI is switched off on this server, so ÖRZA's built-in engine handles meal logging, chat, recipes and plans for free. Your credits stay untouched."
+            "ÖRZA's built-in engine is handling meal logging, chat, recipes and plans for free right now. Your credits stay untouched."
           )}
         </p>
 

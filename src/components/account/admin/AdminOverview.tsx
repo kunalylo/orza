@@ -136,14 +136,14 @@ function OverviewHero({ stats }: { stats: AdminStats }) {
 }
 
 const TILES: { key: keyof AdminStats; label: string; icon: LucideIcon; hint: (s: AdminStats) => string }[] = [
-  { key: "meals_today", label: "Meals today", icon: UtensilsCrossed, hint: () => "Logged by anyone, India time" },
+  { key: "meals_today", label: "Meals today", icon: UtensilsCrossed, hint: () => "Logged by members, India time" },
   { key: "meals_total", label: "Meals logged", icon: ClipboardList, hint: (s) => (s.users ? `≈ ${formatNumber(s.meals_total / s.users)} per member` : "All time") },
   { key: "scans_total", label: "Photo scans", icon: Camera, hint: () => "Snap & Know, all time" },
   { key: "chat_messages_total", label: "Chat messages", icon: MessageCircle, hint: () => "From members and ÖRZA" },
-  { key: "credits_spent_total", label: "Credits used", icon: Coins, hint: () => "Sum of all deductions" },
+  { key: "credits_spent_total", label: "Credits used", icon: Coins, hint: () => "Sum of members’ deductions" },
 ];
 
-/** Admin overview: hero + five stat tiles. */
+/** Admin overview: hero + five stat tiles. Every number counts members only (staff accounts are excluded). */
 export function AdminOverview({ stats }: { stats: AdminStats }) {
   return (
     <div className="flex flex-col gap-4 lg:gap-5">

@@ -63,7 +63,7 @@ export function NotificationsCard({
   const enable = async () => {
     if (busy) return;
     if (!publicKey) {
-      toast.error("Notifications aren't set up on this ÖRZA server yet.");
+      toast.error("Notifications aren't available right now. Alarms still ring in any open ÖRZA tab.");
       return;
     }
     setBusy("enable");
@@ -126,7 +126,7 @@ export function NotificationsCard({
 
   let status: React.ReactNode;
   if (loading) status = null;
-  else if (!push.configured) status = <Tag tone="warning">Not set up</Tag>;
+  else if (!push.configured) status = <Tag tone="neutral">Unavailable</Tag>;
   else if (on) status = <Tag tone="success">On for this device</Tag>;
   else if (blocked) status = <Tag tone="danger">Blocked</Tag>;
   else if (!support?.supported) status = <Tag tone="neutral">{needsInstall ? "Install first" : "Not supported"}</Tag>;
@@ -146,7 +146,7 @@ export function NotificationsCard({
         <div className="orza-skeleton h-11 w-48 rounded-full" aria-hidden />
       ) : !push.configured ? (
         <Notice>
-          Notifications aren&apos;t set up on this ÖRZA server yet, so alarms can only ring in an open ÖRZA tab. Your ÖRZA admin needs to add the VAPID keys.
+          Notifications aren&apos;t available right now. Alarms still ring in any open ÖRZA tab, and the calendar feed below can ring your phone.
         </Notice>
       ) : needsInstall ? (
         <IphoneSteps emphasised />

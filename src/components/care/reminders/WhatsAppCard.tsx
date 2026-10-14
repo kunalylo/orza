@@ -9,6 +9,7 @@ import { FieldHint, Input, Label, Select } from "@/components/ui/form";
 import { FieldError, SectionCard } from "@/components/account/ui";
 import { COUNTRY_CODES, formatPhone, splitE164, toE164, type IntegrationsView } from "./shared";
 
+/** WhatsApp number + consent. Only shown when WhatsApp is set up on the server (`integrations.whatsapp.configured`). */
 export function WhatsAppCard({ integrations, onChange }: { integrations: IntegrationsView; onChange: (v: IntegrationsView) => void }) {
   const wa = integrations.whatsapp;
   const initial = splitE164(wa.phone);
@@ -100,9 +101,7 @@ export function WhatsAppCard({ integrations, onChange }: { integrations: Integra
     }
   };
 
-  const status = !wa.configured ? (
-    <Tag tone="warning">Not connected</Tag>
-  ) : wa.opt_in ? (
+  const status = wa.opt_in ? (
     <Tag tone="success">On</Tag>
   ) : wa.phone ? (
     <Tag tone="neutral">Paused</Tag>
@@ -120,12 +119,6 @@ export function WhatsAppCard({ integrations, onChange }: { integrations: Integra
       description="Get medicine alarms (with the photo) and the reminders you choose on WhatsApp."
       actions={status}
     >
-      {!wa.configured && (
-        <p className="mb-4 rounded-orza-sm border border-[rgba(176,106,0,0.2)] bg-[#FFF4E6] p-3.5 text-[13px] leading-relaxed text-[#7A4A00]">
-          WhatsApp isn&apos;t connected by your ÖRZA admin yet. You can save your number now — messages start once it&apos;s connected.
-        </p>
-      )}
-
       {wa.phone && !editing ? (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-orza-sm border border-[rgba(20,20,20,0.08)] bg-white/70 px-4 py-3">
@@ -140,7 +133,7 @@ export function WhatsAppCard({ integrations, onChange }: { integrations: Integra
           <div className="flex flex-wrap gap-2">
             {wa.opt_in ? (
               <>
-                <Button variant="primary" onClick={test} loading={busy === "test"} disabled={!!busy || !wa.configured}>
+                <Button variant="primary" onClick={test} loading={busy === "test"} disabled={!!busy}>
                   {busy !== "test" && <Send size={15} aria-hidden />} Send test
                 </Button>
                 <Button variant="secondary" onClick={() => setOptIn(false)} loading={busy === "pause"} disabled={!!busy}>
@@ -156,7 +149,7 @@ export function WhatsAppCard({ integrations, onChange }: { integrations: Integra
               Remove number
             </Button>
           </div>
-          {wa.configured && wa.mode === "session" && (
+          {wa.mode === "session" && (
             <FieldHint className="leading-relaxed">
               WhatsApp only delivers ÖRZA&apos;s messages within 24 hours of your last message to ÖRZA&apos;s WhatsApp number. Send it a quick
               &ldquo;Hi&rdquo; each day, or use notifications as your main alarm.

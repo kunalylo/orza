@@ -4,10 +4,11 @@ import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { useUser } from "@/components/app/UserProvider";
 import { PageHeader } from "@/components/app/ui";
-import { GlassCard, Tag } from "@/components/orza/primitives";
+import { GlassCard } from "@/components/orza/primitives";
 import { Reveal } from "@/components/orza/Reveal";
 import { formatDate } from "@/components/account/ui";
 import { MemorySection } from "@/components/account/settings/MemorySection";
+import { PasswordSection } from "@/components/account/settings/PasswordSection";
 import { PreferencesSection } from "@/components/account/settings/PreferencesSection";
 import { PrivacySection } from "@/components/account/settings/PrivacySection";
 import { ProfileSection } from "@/components/account/settings/ProfileSection";
@@ -31,14 +32,7 @@ function AccountSummary() {
             {initial}
           </span>
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="truncate font-editorial text-[22px] font-semibold leading-7 text-orza-strong">{user.name || "You"}</span>
-              {user.is_admin && (
-                <Tag tone="violet" size="sm">
-                  Admin
-                </Tag>
-              )}
-            </div>
+            <div className="truncate font-editorial text-[22px] font-semibold leading-7 text-orza-strong">{user.name || "You"}</div>
             <div className="truncate text-[14px] text-orza-muted">{user.email}</div>
             {user.created_at && <div className="mt-0.5 text-[12px] text-orza-subtle">Member since {formatDate(user.created_at)}</div>}
           </div>
@@ -54,7 +48,7 @@ function AccountSummary() {
   );
 }
 
-/** Settings — profile, daily targets, preferences, ÖRZA's memory, privacy & data. */
+/** Settings — profile, daily targets, preferences, ÖRZA's memory, password, privacy & data. */
 export default function SettingsPage() {
   return (
     <div>
@@ -70,6 +64,7 @@ export default function SettingsPage() {
           <TargetsSection />
           <PreferencesSection />
           <MemorySection />
+          <PasswordSection />
           <PrivacySection />
         </div>
       </div>

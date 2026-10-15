@@ -11,6 +11,9 @@ import type { User } from "@/lib/types";
 import { compact, imageSchema } from "../../meds/_shared";
 import { prescriptionToClient, type PrescriptionDoc } from "../_shared";
 
+/** Room for the AI's own timeout (vision AI ≤ 60 s + saving the prescription) so a slow answer still reaches the fallback instead of a platform 504. */
+export const maxDuration = 90;
+
 /**
  * POST /api/prescriptions/scan {image: dataUrl} → { prescription, credits }
  * Reads the prescription with AI vision (2 credits, refunded if the AI fails), stores the photo as

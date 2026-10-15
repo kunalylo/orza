@@ -10,6 +10,9 @@ import type { Scan } from "@/lib/types";
 import { AI_GUARD, aiRateLimited, emptyResultCreditNote, refundEmptyResult, reserveAi } from "@/lib/ai-guard";
 import { currentCredits } from "../_shared";
 
+/** Room for the AI's own timeout (vision AI ≤ 60 s + saving the scan) so a slow answer still reaches the fallback instead of a platform 504. */
+export const maxDuration = 90;
+
 /** ≈ 6 MB of image bytes once base64-encoded (4/3 overhead) plus the data-URL prefix. */
 const MAX_IMAGE_CHARS = 8_500_000;
 

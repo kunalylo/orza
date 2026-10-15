@@ -17,6 +17,9 @@ import {
   type StoredCompensationPlan,
 } from "@/lib/compensation";
 
+/** Room for the AI's own timeout (text AI ≤ 45 s + saving the plan) so a slow answer still reaches the fallback instead of a platform 504. */
+export const maxDuration = 60;
+
 export const dynamic = "force-dynamic";
 
 const optional = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((v) => (v === null || v === "" ? undefined : v), schema.optional());

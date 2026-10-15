@@ -10,6 +10,9 @@ import type { MealItem, MealType } from "@/lib/types";
 import { AI_GUARD, emptyResultCreditNote, refundEmptyResult, reserveAi } from "@/lib/ai-guard";
 import { currentCredits, mealTypeSchema, optionalDate, resolveDate, userTz } from "../_shared";
 
+/** Room for the AI's own timeout (text AI ≤ 45 s + the parser fallback and the meal write) so a slow answer still reaches the fallback instead of a platform 504. */
+export const maxDuration = 60;
+
 const Body = z.object({
   text: z
     .string({ required_error: "Tell ÖRZA what you ate" })

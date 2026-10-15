@@ -24,6 +24,9 @@ import { HttpError, json, parseBody, route } from "@/lib/http";
 import type { ChatSession, Meal, User } from "@/lib/types";
 import { DEFAULT_TITLE, currentCredits, getOwnedSession, messagesCol, recentMessages, sessionIdSchema, sessionsCol } from "../_shared";
 
+/** Room for the AI's own timeout (text AI ≤ 45 s + the built-in fallback and DB writes) so a slow answer still reaches the fallback instead of a platform 504. */
+export const maxDuration = 60;
+
 const Body = z.object({
   message: z
     .string({ required_error: "Type a message for ÖRZA", invalid_type_error: "Message must be text" })

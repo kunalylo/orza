@@ -241,7 +241,7 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
   iOS app REST format `{data:{metrics:[{name, units, data:[{date, qty | Avg | …}]}]}}`; aggregates per day; upserts `health_days`; mirrors steps (max) and
   weight into `tracking` → `{ok, days_updated, skipped}` (≤1 MB; 401 with `WWW-Authenticate` for a missing/invalid token; 429 when a token or IP is over its budget).
   `GET /api/health/token` → `{token: {preview, created_at} | null}`; `POST /api/health/token` → `{token, preview, created_at}` (shown once; store sha256 + preview); `DELETE` revokes → `{ok}`.
-- `POST /api/health/import {source: "apple_health" | "csv", days:[…] (≤400)}` (session) → `{ok, days_updated, skipped}`. Apple Health `export.zip` is parsed **in the browser** (fflate unzip +
+- `POST /api/health/import {source: "apple_health" | "health_connect" | "csv", days:[…] (≤400)}` (session) → `{ok, days_updated, skipped}`. Apple Health `export.zip` is parsed **in the browser** (fflate unzip +
   streaming scan of `export.xml` for StepCount, ActiveEnergyBurned, DistanceWalkingRunning, SleepAnalysis, RestingHeartRate, HeartRate, BodyMass,
   DietaryWater); only daily aggregates are uploaded. CSV import maps a date column + metric columns.
 - `GET /api/health/days?from&to` (default last 30 days, ≤400) → `{from, to, days, sources, last_sync, last_sync_source}`, `days` merged per date. Page: connect cards (iPhone: export import + Health Auto Export / Shortcuts steps with the sync

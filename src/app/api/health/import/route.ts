@@ -30,8 +30,9 @@ const Body = z.object({
 });
 
 /**
- * POST /api/health/import {source: "apple_health" | "csv", days: [...] (≤ 400)} → `{ok, days_updated, skipped}`.
- * Daily aggregates prepared in the browser (Apple Health export.zip or a CSV) — raw files never leave the device.
+ * POST /api/health/import {source: "apple_health" | "health_connect" | "csv", days: [...] (≤ 400)} → `{ok, days_updated, skipped}`.
+ * Daily aggregates prepared on the device (Apple Health export.zip or a CSV in the browser; HealthKit / Health Connect
+ * in the phone app) — raw records never leave the device.
  */
 export const POST = route(async (req: Request) => {
   const user = await requireUser();

@@ -153,8 +153,8 @@ export const APPLE_IMPORT_DAYS = 365;
 
 /** Sources an automation client may name when posting to /api/health/sync (anything else is recorded as "api"). */
 export const SYNC_SOURCES = ["health_connect", "health_auto_export", "shortcut", "api"] as const satisfies readonly HealthSource[];
-/** Sources the signed-in importers use with /api/health/import. */
-export const IMPORT_SOURCES = ["apple_health", "csv"] as const satisfies readonly HealthSource[];
+/** Sources the signed-in importers use with /api/health/import (the web importers and the phone app's HealthKit / Health Connect sync). */
+export const IMPORT_SOURCES = ["apple_health", "health_connect", "csv"] as const satisfies readonly HealthSource[];
 
 /* ───────────────────────────── API shapes ───────────────────────────── */
 

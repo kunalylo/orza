@@ -115,7 +115,8 @@ export function fromDraft(d: DraftItem): MealItem {
     carbs_g: round(n(d.carbs_g), 1),
     fat_g: round(n(d.fat_g), 1),
     fiber_g: Math.min(ITEM_LIMITS.fiber_g, round(d.fiber_g || 0, 1)),
-    confidence: d.confidence,
+    // A stored item can carry `confidence: null` (MongoDB keeps a missing value as null) — never send null back.
+    confidence: typeof d.confidence === "number" ? d.confidence : undefined,
   };
 }
 

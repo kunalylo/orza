@@ -19,6 +19,12 @@ const amount = (label: string, max: number) =>
     .max(max, `${label} looks too high`);
 
 /**
+ * An optional field that also accepts `null`: MongoDB stores an item's missing optional values (grams, confidence, …)
+ * as null, and edit forms send the stored item back — so null means exactly "not given".
+ */
+const optional = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((v) => (v === null ? undefined : v), schema.optional());
+
+/**
  * A meal item as sent by clients (manual entry, edits, scan confirmation). The limits are the same
  * ITEM_LIMITS every creation path is held to, so anything ÖRZA logs can be edited and saved again.
  */
@@ -29,14 +35,14 @@ export const itemSchema = z.object({
     .finite()
     .positive("Quantity must be more than 0")
     .max(ITEM_LIMITS.quantity, "Quantity looks too high"),
-  unit: z.string().trim().max(24).optional(),
-  grams: amount("Grams", ITEM_LIMITS.grams).optional(),
+  unit: optional(z.string().trim().max(24)),
+  grams: optional(amount("Grams", ITEM_LIMITS.grams)),
   calories: amount("Calories", ITEM_LIMITS.calories),
-  protein_g: amount("Protein", ITEM_LIMITS.protein_g).optional(),
-  carbs_g: amount("Carbs", ITEM_LIMITS.carbs_g).optional(),
-  fat_g: amount("Fat", ITEM_LIMITS.fat_g).optional(),
-  fiber_g: amount("Fibre", ITEM_LIMITS.fiber_g).optional(),
-  confidence: z.number().min(0).max(1).optional(),
+  protein_g: optional(amount("Protein", ITEM_LIMITS.protein_g)),
+  carbs_g: optional(amount("Carbs", ITEM_LIMITS.carbs_g)),
+  fat_g: optional(amount("Fat", ITEM_LIMITS.fat_g)),
+  fiber_g: optional(amount("Fibre", ITEM_LIMITS.fiber_g)),
+  confidence: optional(z.number().min(0).max(1)),
 });
 
 export const itemsSchema = z.array(itemSchema).min(1, "Add at least one item").max(20, "A meal can have up to 20 items");

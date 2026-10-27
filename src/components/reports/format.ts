@@ -1,6 +1,7 @@
 import { kgToUnit, weightUnit } from "@/components/goals/goal-math";
 import { addDays } from "@/lib/dates";
 import type { DailyReport, WeeklyReport } from "@/lib/reports";
+import { round } from "@/lib/utils";
 
 export type { DailyReport, WeeklyReport, WeeklyDay, ScorePart } from "@/lib/reports";
 
@@ -75,8 +76,15 @@ export function weeklyCsv(w: WeeklyReport, imperial = false): string {
   ]);
   const a = w.averages;
   const t = w.targets;
+  // The average row holds averages in every column (not the last weigh-in / the number of logged days),
+  // with the same maths as the phone app's export so both files agree.
+  const weights = w.days.map((d) => d.weight_kg).filter((v): v is number => v != null);
+  const avgWeight = weights.length ? kgToUnit(weights.reduce((s, v) => s + v, 0) / weights.length, imperial) : "";
+  const loggedDays = w.days.filter((d) => d.meals_count > 0);
+  const avgMeals = loggedDays.length ? round(loggedDays.reduce((s, d) => s + d.meals_count, 0) / loggedDays.length, 1) : "";
+  const avgScore = loggedDays.length ? Math.round(loggedDays.reduce((s, d) => s + d.score, 0) / loggedDays.length) : "";
   rows.push([]);
-  rows.push(["Average (logged days)", "", a.calories, a.protein_g, a.carbs_g, a.fat_g, a.fiber_g, a.water_glasses, a.steps, w.weight ? kgToUnit(w.weight.last, imperial) : "", w.logged_days, ""]);
+  rows.push(["Average (logged days)", "", a.calories, a.protein_g, a.carbs_g, a.fat_g, a.fiber_g, a.water_glasses, a.steps, avgWeight, avgMeals, avgScore]);
   rows.push(["Daily target", "", t.calories, t.protein_g, t.carbs_g, t.fat_g, t.fiber_g, t.water_glasses, t.steps, "", "", ""]);
   rows.push([]);
   rows.push(["Days within ±10% of calorie target", "", w.adherence]);

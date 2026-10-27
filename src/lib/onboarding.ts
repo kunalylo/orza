@@ -6,7 +6,7 @@
  * short acknowledgement in ÖRZA's voice (`ackFor`). The API routes persist
  * `{ step, answers }` in the `onboarding` collection and call into this module.
  */
-import { healthyFloorKg, planGoal } from "@/components/goals/goal-math";
+import { formatPace, healthyFloorKg, planGoal } from "@/components/goals/goal-math";
 import { capMemory } from "@/lib/allergens";
 import { computeTargets } from "@/lib/domain/targets";
 import type { ActivityLevel, Diet, GoalType, HouseholdMode, Language, Profile, Sex, Targets } from "@/lib/types";
@@ -333,6 +333,14 @@ export function formatWeight(kg: number, unit: "kg" | "lb" = "kg") {
   return unit === "lb" ? `${Math.round(kg / 0.45359237)} lb (${formatKg(kg)})` : formatKg(kg);
 }
 
+/** Weight in the user's unit only ("170 lb" / "77.1 kg") — for compact spots (chat answers, the plan summary). */
+function weightIn(kg: number, unit: "kg" | "lb" = "kg") {
+  return unit === "lb" ? `${Math.round(kg / 0.45359237)} lb` : formatKg(kg);
+}
+
+/** The accepted 25–300 kg weight range, led by the user's unit. */
+const weightRangeText = (unit: "kg" | "lb") => (unit === "lb" ? "55 and 660 lb (25–300 kg)" : "25 and 300 kg (55–660 lb)");
+
 export function cmToFtIn(cm: number) {
   const totalIn = Math.round(cm / 2.54);
   return { ft: Math.floor(totalIn / 12), inch: totalIn % 12 };
@@ -487,7 +495,8 @@ export function progressOf(step: StepId, answers: OnboardingAnswers) {
   const total = seq.length;
   if (step === "complete") return { index: total, total, value: 1 };
   const index = Math.max(0, seq.indexOf(step as QuestionStep));
-  return { index, total, value: round(index / total, 3) };
+  // Counts the current step, like the "Step N of total" header, so the summary (the last step) shows a full bar.
+  return { index, total, value: round((index + 1) / total, 3) };
 }
 
 export const isQuestionStep = (s: unknown): s is QuestionStep => typeof s === "string" && (STEPS as readonly string[]).includes(s);
@@ -611,10 +620,10 @@ export function answerLabel(step: QuestionStep, a: OnboardingAnswers): string {
       return a.height_unit === "ft" ? `${ft} ft ${inch} in` : `${Math.round(a.height_cm)} cm`;
     }
     case "weight":
-      return a.weight_unit === "lb" ? `${Math.round((a.weight_kg ?? 0) / 0.45359237)} lb` : formatKg(a.weight_kg ?? 0);
+      return weightIn(a.weight_kg ?? 0, a.weight_unit);
     case "target_weight":
       if (a.target_weight_kg == null) return "Not sure yet";
-      return a.weight_unit === "lb" ? `${Math.round(a.target_weight_kg / 0.45359237)} lb` : formatKg(a.target_weight_kg);
+      return weightIn(a.target_weight_kg, a.weight_unit);
     case "activity":
       return labelOf(ACTIVITY_OPTIONS, a.activity_level);
     case "diet":
@@ -749,7 +758,8 @@ export function applyAnswer(step: QuestionStep, raw: Raw, prev: OnboardingAnswer
     case "height": {
       const h = parseHeight(raw);
       if (!h) return err("I couldn't read that height. Try something like 165 cm or 5'6\".");
-      if (h.cm < 100 || h.cm > 250) return err("That height looks a little off — please enter it between 100 and 250 cm (3′3″–8′2″).");
+      if (h.cm < 100 || h.cm > 250)
+        return err(`That height looks a little off — please enter it between ${h.unit === "ft" ? "3′3″ and 8′2″ (100–250 cm)" : "100 and 250 cm (3′3″–8′2″)"}.`);
       a.height_cm = round(h.cm, 1);
       a.height_unit = h.unit;
       return { ok: true, answers: a };
@@ -757,7 +767,7 @@ export function applyAnswer(step: QuestionStep, raw: Raw, prev: OnboardingAnswer
     case "weight": {
       const w = parseWeight(raw);
       if (!w) return err("I couldn't read that weight. Try something like 68 kg or 150 lb.");
-      if (w.kg < 25 || w.kg > 300) return err("Please enter a weight between 25 and 300 kg (55–660 lb).");
+      if (w.kg < 25 || w.kg > 300) return err(`Please enter a weight between ${weightRangeText(w.unit)}.`);
       a.weight_kg = round(w.kg, 1);
       a.weight_unit = w.unit;
       if (a.goal_focus === "lose") {
@@ -773,21 +783,24 @@ export function applyAnswer(step: QuestionStep, raw: Raw, prev: OnboardingAnswer
         a.target_weight_kg = null;
         return { ok: true, answers: a };
       }
-      const w = parseWeight(raw, a.weight_unit || "kg");
-      if (!w) return err("I couldn't read that. Try a number like 62 kg — or tap “Not sure yet”.");
-      if (w.kg < 25 || w.kg > 300) return err("Please enter a target between 25 and 300 kg.");
+      const unit = a.weight_unit || "kg";
+      const w = parseWeight(raw, unit);
+      if (!w) return err(`I couldn't read that. Try a number like ${unit === "lb" ? "137 lb" : "62 kg"} — or tap “Not sure yet”.`);
+      if (w.kg < 25 || w.kg > 300) return err(`Please enter a target between ${weightRangeText(w.unit)}.`);
       const target = round(w.kg, 1);
       const current = a.weight_kg ?? 0;
       if (a.goal === "lose" && target >= current)
-        return err(`For a weight-loss goal, your target should be below your current ${formatKg(current)}. Want to try another number?`);
+        return err(`For a weight-loss goal, your target should be below your current ${formatWeight(current, unit)}. Want to try another number?`);
       if (a.goal === "gain" && target <= current)
-        return err(`For a gain goal, your target should be above your current ${formatKg(current)}. Want to try another number?`);
+        return err(`For a gain goal, your target should be above your current ${formatWeight(current, unit)}. Want to try another number?`);
       // Same floor as the Goals calculator: never plan a loss below a healthy BMI (18.5).
       if (a.goal === "lose" && a.height_cm) {
         const floor = healthyFloorKg(a.height_cm);
+        // Pounds round up, so typing the suggested number clears the floor.
+        const suggest = unit === "lb" ? Math.ceil(floor / 0.45359237) * 0.45359237 : floor;
         if (target < floor)
           return err(
-            `That target sits below the healthy range for your height. Try ${formatWeight(floor, a.weight_unit)} or above — or check with your doctor first.`
+            `That target sits below the healthy range for your height. Try ${formatWeight(suggest, unit)} or above — or check with your doctor first.`
           );
       }
       a.target_weight_kg = target;
@@ -984,9 +997,6 @@ export function targetsFor(answers: OnboardingAnswers) {
   return { targets: plan.targets, bmr: plan.bmr, tdee: plan.tdee, goal: plan.goal };
 }
 
-/** "0.5", "0.25", "0.06" — kg per week without trailing zeros. */
-const kgPerWeek = (rate: number) => `${round(Math.abs(rate), 2)}`;
-
 /** "10 weeks", "5 months", "about 2 years". */
 function durationText(weeks: number): string {
   if (weeks <= 26) return `${weeks} week${weeks === 1 ? "" : "s"}`;
@@ -1001,11 +1011,13 @@ function goalLine(a: OnboardingAnswers, plan: OnboardingPlan): string {
   if (plan.held === "energy_floor")
     return "Your daily energy needs are already close to the safe minimum, so I've set balanced targets instead of a deficit. A little more movement is a kinder place to start — or chat with a nutritionist.";
   const floorNote = plan.paceAdjusted ? " I've kept the pace gentle so your daily energy never drops below a safe minimum — a little more movement will speed things up." : "";
+  // "0.5 kg" / "1.1 lb" a week, in the unit the user answered in.
+  const pace = formatPace(plan.weeklyRate, a.weight_unit === "lb");
   if ((plan.goal === "lose" || plan.goal === "gain") && plan.target != null && plan.weeks) {
-    return `Aiming for ${formatWeight(plan.target, a.weight_unit)} at about ${kgPerWeek(plan.weeklyRate)} kg a week — roughly ${durationText(plan.weeks)}.${floorNote}`;
+    return `Aiming for ${formatWeight(plan.target, a.weight_unit)} at about ${pace} a week — roughly ${durationText(plan.weeks)}.${floorNote}`;
   }
-  if (plan.goal === "lose") return `A gentle deficit of about ${kgPerWeek(plan.weeklyRate)} kg a week.${floorNote}`;
-  if (plan.goal === "gain") return `A gentle surplus of about ${kgPerWeek(plan.weeklyRate)} kg a week.`;
+  if (plan.goal === "lose") return `A gentle deficit of about ${pace} a week.${floorNote}`;
+  if (plan.goal === "gain") return `A gentle surplus of about ${pace} a week.`;
   if (a.goal_focus === "healthier") return "Balanced targets to help you eat a little better every day.";
   if (a.goal_focus === "track") return "Balanced targets to track against — no pressure.";
   return "Balanced targets to keep you steady.";
@@ -1017,7 +1029,15 @@ export function planSummary(a: OnboardingAnswers): PlanSummary {
   const facts = [
     a.age != null && a.sex ? { label: "You", value: `${labelOf(SEX_OPTIONS, a.sex).split(" /")[0]}, ${a.age}` } : null,
     a.height_cm ? { label: "Height", value: formatHeight(a.height_cm, a.height_unit) } : null,
-    a.weight_kg ? { label: "Weight", value: plan.target != null ? `${formatKg(a.weight_kg)} → ${formatKg(plan.target)}` : formatKg(a.weight_kg) } : null,
+    a.weight_kg
+      ? {
+          label: "Weight",
+          value:
+            plan.target != null
+              ? `${weightIn(a.weight_kg, a.weight_unit)} → ${weightIn(plan.target, a.weight_unit)}`
+              : formatWeight(a.weight_kg, a.weight_unit),
+        }
+      : null,
     a.activity_level ? { label: "Activity", value: labelOf(ACTIVITY_OPTIONS, a.activity_level) } : null,
     a.diet ? { label: "Diet", value: labelOf(DIET_OPTIONS, a.diet) } : null,
     a.region ? { label: "Region", value: a.region } : null,

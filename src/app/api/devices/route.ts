@@ -2,6 +2,7 @@ import { z } from "zod";
 import { requireMobileSession } from "@/lib/auth";
 import { col, newId, nowISO } from "@/lib/db";
 import { EXPO_PUSH_TOKEN_RE, MAX_DEVICES_PER_USER, appDevices, deviceView, isTimeZone } from "@/lib/devices";
+import { parseClientInstant } from "@/lib/care/meds";
 import { BODY_LIMIT_SMALL, json, parseBody, route } from "@/lib/http";
 import { cleanDeviceLabel } from "@/lib/session-token";
 import type { AppDevice, Session } from "@/lib/types";
@@ -35,17 +36,29 @@ const Body = z.object({
     .refine(isTimeZone, "timezone must be an IANA timezone such as Asia/Kolkata"),
   /** The app rings medicine alarms itself (default true). Send false when the phone can't (notifications denied). */
   alarms_local: z.boolean().optional(),
+  /**
+   * The phone's scheduled alarms cover doses before this instant (ISO, the app's `coveredUntil`); later doses get Web
+   * Push again. Omitted = keep the stored value; null = remove it (no limit — what older app versions get).
+   */
+  alarms_local_until: z
+    .string()
+    .trim()
+    .max(64)
+    .refine((s) => parseClientInstant(s) !== null, "alarms_local_until must be an ISO date-time such as 2026-10-30T08:00:00.000Z")
+    .nullable()
+    .optional(),
 });
 
 const isDuplicateKey = (e: unknown) => (e as { code?: number } | null)?.code === 11000;
 
 /**
- * POST /api/devices {platform: "ios"|"android", device_label, push_token?, app_version, timezone, alarms_local?}
- * → {device} (the push token is never returned; `push_token_set` says whether one is stored).
+ * POST /api/devices {platform: "ios"|"android", device_label, push_token?, app_version, timezone, alarms_local?,
+ * alarms_local_until?} → {device} (the push token is never returned; `push_token_set` says whether one is stored).
  * Phone app only (`Authorization: Bearer <app session token>`; 403 for a browser cookie). Upserts the
  * phone registered with this app session and marks it seen now — the app calls it after sign-in and
  * on every launch. While a phone with `alarms_local` (default true) was seen within 7 days, the
- * dispatcher leaves medicine-dose alarms to the app and skips Web Push for them.
+ * dispatcher leaves medicine-dose alarms to the app and skips Web Push for them — for doses before
+ * `alarms_local_until` when the phone sent one (omitted: the stored one stays; null removes it: no limit).
  */
 export const POST = route(async (req: Request) => {
   const { user, session } = await requireMobileSession();
@@ -53,6 +66,9 @@ export const POST = route(async (req: Request) => {
   const store = appDevices();
   const now = nowISO();
   const pushToken = input.push_token || undefined;
+  // Missing a dose alarm is worse than a second one: an omitted coverage keeps the last one the phone declared.
+  const coveredUntil = input.alarms_local_until ? parseClientInstant(input.alarms_local_until)?.toISOString() : undefined;
+  const unset = { ...(pushToken ? {} : { push_token: "" }), ...(input.alarms_local_until === null ? { alarms_local_until: "" } : {}) };
 
   // A push token belongs to one phone, and a phone runs one app session: drop older registrations of it.
   if (pushToken) await store.deleteMany({ push_token: pushToken, session_id: { $ne: session.id } });
@@ -67,8 +83,9 @@ export const POST = route(async (req: Request) => {
       last_seen_at: now,
       updated_at: now,
       ...(pushToken ? { push_token: pushToken } : {}),
+      ...(coveredUntil ? { alarms_local_until: coveredUntil } : {}),
     },
-    ...(pushToken ? {} : { $unset: { push_token: "" } }),
+    ...(Object.keys(unset).length ? { $unset: unset } : {}),
     $setOnInsert: { id: newId(), created_at: now },
   };
   const filter = { user_id: user.id, session_id: session.id };

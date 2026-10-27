@@ -401,8 +401,8 @@ function AlarmOverlay({ alarms, quiet, feed }: { alarms: DueAlarm[]; quiet: bool
           ...(action === "snooze" ? { snooze_minutes: SNOOZE_MIN } : {}),
         });
       } catch (e) {
-        // The medicine was deleted or its schedule changed — this alarm can't be acted on any more.
-        if (e instanceof ApiError && (e.status === 404 || e.status === 400)) {
+        // The medicine was deleted or its schedule changed, or the dose was taken elsewhere (409) — this alarm can't be acted on any more.
+        if (e instanceof ApiError && (e.status === 404 || e.status === 400 || e.status === 409)) {
           feed.dismiss([a.key], 12 * 3600000);
           feed.removeFromServerList([a.id]);
         }

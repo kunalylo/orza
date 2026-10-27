@@ -3,7 +3,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { AlarmClockOff, Check, SkipForward } from "lucide-react";
 import type { DoseLog } from "@/lib/types";
-import { api, errorMessage } from "@/lib/api-client";
+import { ApiError, api, errorMessage } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { Button, type ButtonSize } from "@/components/ui/button";
 import { clockIn, type DoseAction, type DoseItem, type DoseStatusView } from "./shared";
@@ -76,6 +76,8 @@ export function useDoseActions({ tz, onDone, quiet }: { tz: string; onDone?: (up
         return true;
       } catch (e) {
         toast.error(errorMessage(e));
+        // 409: taken elsewhere meanwhile (another tab, the phone app) — refresh the lists that still show it open.
+        if (e instanceof ApiError && e.status === 409) setTimeout(() => window.dispatchEvent(new CustomEvent(DOSE_UPDATED_EVENT)), 0);
         return false;
       } finally {
         inflight.current.delete(key);

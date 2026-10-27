@@ -63,6 +63,23 @@ export function normalizeTimes(times: string[]): string[] {
   return [...new Set(times.filter((t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t)))].sort();
 }
 
+/** Do two schedules produce the same occurrences? (Ignores time / weekday order and duplicates; no end date = ongoing; every 1 day = daily.) */
+export function sameSchedule(a: Schedule, b: Schedule): boolean {
+  const times = (s: Schedule) => [...new Set(s.times || [])].sort().join(",");
+  const days = (s: Schedule) => {
+    const d = [...new Set(s.days || [])].sort((x, y) => x - y);
+    return d.length === 7 ? "" : d.join(",");
+  };
+  const every = (s: Schedule) => Math.max(1, Math.floor(s.every_n_days || 1));
+  return (
+    times(a) === times(b) &&
+    days(a) === days(b) &&
+    a.start_date === b.start_date &&
+    (a.end_date || "") === (b.end_date || "") &&
+    every(a) === every(b)
+  );
+}
+
 /**
  * Default clock times for common Indian prescription patterns, e.g. "1-0-1" → ["08:00","20:00"].
  * Slots are morning / afternoon / night (a 4-slot "1-1-1-1" adds evening).

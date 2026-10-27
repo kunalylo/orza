@@ -284,8 +284,23 @@ export interface Medication {
   stock?: { count: number; unit: string; refill_alert_at?: number };
   prescription_id?: string;
   for_person?: string; // caregiver mode, e.g. "Mom"
+  /**
+   * Earlier versions of `schedule` / `active` / `as_needed` (oldest first), each kept when an edit replaced it, so
+   * adherence rebuilds past days from the schedule that applied then. Absent on medicines not edited since this was
+   * added (their current schedule then stands for the whole past). Server only — not sent to clients.
+   */
+  schedule_history?: MedicationScheduleVersion[];
   created_at: string;
   updated_at: string;
+}
+
+/** One past version of a medicine's schedule: it applied from the previous version's `until` (or creation) to `until`. */
+export interface MedicationScheduleVersion {
+  schedule: Schedule;
+  active: boolean;
+  as_needed: boolean;
+  /** ISO UTC instant of the edit that replaced it. */
+  until: string;
 }
 
 export interface ExtractedMedicine {
@@ -327,6 +342,8 @@ export interface DoseLog {
   status: DoseStatus;
   acted_at?: string;
   snooze_until?: string; // ISO UTC
+  /** This Take used one unit of the medicine's stock (an override of the Take gives it back). Server only. */
+  stock_used?: boolean;
   created_at: string;
 }
 
@@ -379,6 +396,11 @@ export interface AppDevice {
   last_seen_at: string;
   /** The app rings medicine alarms itself (local notifications), so the server skips Web Push for doses while it is active. */
   alarms_local: boolean;
+  /**
+   * ISO UTC: the alarms scheduled on the phone cover doses before this instant (the app's `coveredUntil` — iOS keeps only
+   * 64 pending notifications). Later doses get Web Push again. Absent (older app versions) = no limit.
+   */
+  alarms_local_until?: string;
   created_at: string;
   updated_at: string;
 }

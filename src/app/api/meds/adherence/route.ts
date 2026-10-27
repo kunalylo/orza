@@ -1,8 +1,10 @@
 import { requireUser } from "@/lib/auth";
 import { addDays, dateInTz, dateRange, zonedToUtc } from "@/lib/dates";
+import { col } from "@/lib/db";
 import { badRequest, json, route } from "@/lib/http";
-import { activeMedications, dosesBetween, tzOf, type DoseView } from "@/lib/care/meds";
+import { doseHistoryBetween, tzOf, type DoseView } from "@/lib/care/meds";
 import { mediaUrl } from "@/lib/media";
+import type { Medication } from "@/lib/types";
 
 type Tally = { scheduled: number; taken: number; skipped: number; missed: number; pending: number; upcoming: number; total: number };
 
@@ -23,8 +25,10 @@ const rate = (t: Tally) => (t.total ? Math.round((t.taken / t.total) * 100) / 10
 
 /**
  * GET /api/meds/adherence?days=7|30 → { days, from, to, overall, daily: [...], medicines: [...] }
- * Per local day and per active medicine: scheduled, taken, skipped, missed, pending (due/snoozed),
- * upcoming, total (= doses whose time has come) and rate (taken / total, null when nothing was due).
+ * Per local day and per medicine (active or paused, with a dose in the range): scheduled, taken, skipped, missed,
+ * pending (due/snoozed), upcoming, total (= doses whose time has come) and rate (taken / total, null when nothing
+ * was due). Past days keep what was due then — the schedule of the time (`doseHistoryBetween`) plus every recorded
+ * Take / Skip / Snooze — so editing a medicine's times or pausing it doesn't rewrite them.
  */
 export const GET = route(async (req: Request) => {
   const user = await requireUser();
@@ -36,8 +40,8 @@ export const GET = route(async (req: Request) => {
   const today = dateInTz(tz);
   const from = addDays(today, -(days - 1));
   const now = new Date();
-  const meds = await activeMedications(user.id);
-  const doses = await dosesBetween(user, zonedToUtc(from, "00:00", tz), zonedToUtc(addDays(today, 1), "00:00", tz), now, meds);
+  const meds = await col<Medication>("medications").find({ user_id: user.id }, { sort: { created_at: 1 }, limit: 500 });
+  const doses = await doseHistoryBetween(user, zonedToUtc(from, "00:00", tz), zonedToUtc(addDays(today, 1), "00:00", tz), now, meds);
 
   const byDay = new Map(dateRange(from, days).map((d) => [d, empty()]));
   const byMed = new Map<string, Tally>();
@@ -58,7 +62,7 @@ export const GET = route(async (req: Request) => {
     overall: { ...overall, rate: rate(overall) },
     daily: [...byDay.entries()].map(([date, t]) => ({ date, ...t, rate: rate(t) })),
     medicines: meds
-      .filter((m) => !m.as_needed && byMed.has(m.id))
+      .filter((m) => byMed.has(m.id))
       .map((m) => {
         const t = byMed.get(m.id)!;
         return {

@@ -10,9 +10,10 @@
  *   - reminders on the channels they were created with (push / WhatsApp);
  *   - a once-per-local-day low-stock refill alert (daytime only).
  * Quiet hours (integrations.quiet_hours, user's local time) suppress push and WhatsApp.
- * When the user has the ÖRZA phone app active with on-phone alarms (src/lib/devices.ts `appRingsDoses`),
+ * When the user has the ÖRZA phone app active with on-phone alarms (src/lib/devices.ts `appDoseCoverage`),
  * medicine doses (and their snoozes) are rung by the phone itself, so Web Push is skipped for them —
- * no double alarms. WhatsApp, reminders and refill alerts are unchanged.
+ * no double alarms — up to the phone's `alarms_local_until` (the end of the alarms it has scheduled), after
+ * which Web Push takes over again. WhatsApp, reminders and refill alerts are unchanged.
  *
  * Idempotency: before sending, a `dispatches` document with a deterministic id is claimed with an
  * insert-if-absent; a second run (or a concurrent one) finds it and skips. Results are written back
@@ -26,7 +27,7 @@ import { occurrencesBetween } from "@/lib/care/schedule";
 import { pushConfigured, sendPushToSubscriptions, type PushPayload } from "@/lib/care/push";
 import { publicUrl, sendWhatsApp, whatsappConfigured, type WhatsAppMessage } from "@/lib/care/whatsapp";
 import { isQuietNow, whatsappTarget } from "@/lib/care/integrations";
-import { appRingsDoses } from "@/lib/devices";
+import { appDoseCoverage, phoneRingsAt } from "@/lib/devices";
 import {
   KIND_DEFAULT_BODY,
   KIND_EMOJI,
@@ -338,12 +339,13 @@ async function dispatchForUser(user: User, meds: Medication[], reminders: Remind
   const waTo = ctx.whatsappOn ? whatsappTarget(user) : null;
   const quiet = isQuietNow(user, now);
   const dispatches = col<Dispatch>("dispatches");
-  // The ÖRZA app rings medicine doses on the phone itself; Web Push for them would double the alarm.
-  const appRings =
-    subs.length > 0 && fresh.some((i) => i.source === "medication" && i.push) ? await appRingsDoses(user.id, now) : false;
+  // The ÖRZA app rings medicine doses on the phone itself (as far ahead as its scheduled alarms reach);
+  // Web Push for them would double the alarm.
+  const appCoverage =
+    subs.length > 0 && fresh.some((i) => i.source === "medication" && i.push) ? await appDoseCoverage(user.id, now) : null;
 
   for (const item of fresh) {
-    const leftToApp = appRings && item.source === "medication" && !!item.push;
+    const leftToApp = item.source === "medication" && !!item.push && phoneRingsAt(appCoverage, item.occurrence);
     const wantPush = !!item.push && subs.length > 0 && !leftToApp;
     const wantWhatsApp = !!item.whatsapp && !!waTo;
     const appNote: Record<string, string> = leftToApp ? { push: APP_RINGS_NOTE } : {};

@@ -34,7 +34,7 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 | `src/lib/auth.ts` | `hashPassword`, `verifyPassword`, `startSession(userId)` (website: cookie), `startMobileSession(userId, client)` (phone app: returns `{token}`, no cookies), `endSession({everywhere?})`, `revokeAllSessions(userId, {except?})` (browsers + app sessions + their `devices`), `getSessionUserId()`, `getSessionId()`, `getCurrentUser()`, `getCurrentSession()` → `{user, session, via: "cookie"\|"bearer"}`, `requireUser()`, `requireAdmin()`, `requireSuperAdmin()`, `requireMobileSession()`, `resolveCredential(cookie, authorization)` — every check takes the session cookie first, else `Authorization: Bearer <session token>`, then requires a live session (see "Mobile app"); `toPublicUser(user)` (drops `password_hash` and integration secrets: `health_token_hash`, `calendar_token`, `external_ical_url`; adds `admin_role` for admins), `isAdmin(user)` (`is_admin: true` only), `isSuperAdmin(user)`, `adminRoleOf(user)` |
 | `src/lib/http.ts` | `route(handler, {tokenAuth?})` wrapper (maps HttpError/ZodError → `{error, code}`; cross-site guard below), `json()`, `parseBody(req, zodSchema, {maxBytes?})`, `readJsonBody`, `readBodyText`, `BODY_LIMIT_SMALL` (16 KB) / `_DEFAULT` (1 MB) / `_UPLOAD` (12 MB), `assertSameOrigin(Json)`, `isBearerSessionRequest(req)`, `HttpError`, `badRequest/unauthorized/forbidden/notFound` |
 | `src/lib/session-token.ts` | Edge-safe: `signSessionToken`, `readSessionToken`, `SESSION_MAX_AGE` (30 days); phone-app header helpers `sessionBearerToken(authorization)` (ignores `orza_hs_` health-sync tokens and anything not JWT-shaped), `cookieFromHeader`, `mobileClientFrom(headers)`, `cleanDeviceLabel`, `CLIENT_HEADER`/`DEVICE_HEADER`/`PLATFORM_HEADER` |
-| `src/lib/devices.ts` | Phones running the ÖRZA app (`devices`): `appDevices()`, `appRingsDoses(userId, now)`, `ringsDosesLocally(device, now)`, `deviceView`, `APP_DEVICE_ACTIVE_DAYS` (7), `MAX_DEVICES_PER_USER` (10), `EXPO_PUSH_TOKEN_RE`, `isTimeZone` |
+| `src/lib/devices.ts` | Phones running the ÖRZA app (`devices`): `appDevices()`, `appDoseCoverage(userId, now)` (epoch ms the phones' alarms reach — the earliest among several phones; Infinity = no limit, null = none), `phoneRingsAt(coverage, iso)`, `alarmsCoverUntil(device)`, `ringsDosesLocally(device, now)`, `deviceView`, `APP_DEVICE_ACTIVE_DAYS` (7), `MAX_DEVICES_PER_USER` (10), `EXPO_PUSH_TOKEN_RE`, `isTimeZone` |
 | `src/lib/rate-limit.ts` | `clientIp(req)` (spoof-resistant, `TRUSTED_PROXY_HOPS`), in-memory `reserve/peek/release/clearLimit`, `tooManyRequests()` — public endpoints (auth, leads) |
 | `src/lib/ai.ts` | `aiEnabled()`, `aiText({system, messages})`, `aiJSON({system, prompt, shape, imageUrl?})`, `WELLNESS_GUARDRAIL`. Throws HttpError 502/503/504 with friendly messages |
 | `src/lib/credits.ts` | `INITIAL_CREDITS=100`, `CREDIT_COSTS` (scan 2, meal_text 1, chat 1, recipe 2, compensation 1, report_insight 1), `spendCredits`, `refundCredits`, `adjustCredits`, `withCredits(userId, action, fn)` (spend → run → refund on throw; 402 `no_credits` when empty). Spends/refunds record their `action` |
@@ -171,7 +171,7 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
 - Collections: `media`, `medications`, `prescriptions`, `dose_logs`, `reminders`, `push_subscriptions`, `dispatches`, `health_days`, `devices` (phones running the ÖRZA app; see "Mobile app").
 - `src/lib/dates.ts`: `zonedToUtc(date, "HH:MM", tz)`, `utcToZoned(instant, tz)`, `tzOffsetMinutes`, `daysBetween`, `isHHMM`.
 - `src/lib/care/schedule.ts` (unit-tested): `activeOnDate`, `occurrencesOnDate`, `occurrencesBetween`, `nextOccurrence`,
-  `normalizeTimes`, `timesForPattern("1-0-1" | "BD" | "TDS" | "HS" …)`, `DEFAULT_SLOT_TIMES`.
+  `normalizeTimes`, `sameSchedule`, `timesForPattern("1-0-1" | "BD" | "TDS" | "HS" …)`, `DEFAULT_SLOT_TIMES`.
 - `src/lib/media.ts`: `saveImage(userId, dataUrl, kind)` (JPEG/PNG/WebP ≤1.5 MB), `getOwnedMedia`, `deleteMedia`,
   `mediaUrl(id, signedForSeconds?)`, `verifyMediaSignature`; route `GET /api/media/[id]` (owner or signed URL).
   Client photo prep: `preparePhoto(file)` in `src/components/meals/image.ts` (downscales to 1280px JPEG).
@@ -184,14 +184,24 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
 ### Medicines & prescriptions — `/dashboard/medicines`, `/dashboard/medicines/prescriptions`, `/dashboard/alarm`
 - `GET /api/meds` → `{medications}` (active first); `POST /api/meds {name, strength?, form, dose, timing, instructions?, schedule, as_needed?, stock?, for_person?, photos?: dataUrl[] (≤4)}` → `{medication}`;
   `GET /api/meds/[id]` → `{medication}`; `PATCH /api/meds/[id]` (partial) → `{medication}`; `DELETE /api/meds/[id]` → `{ok}` (also deletes its photos and dose logs).
+  A PATCH that changes the schedule, `active` or `as_needed` appends the replaced version to `medication.schedule_history`
+  (`[{schedule, active, as_needed, until}]`, oldest first, last 50; server only — never in responses) so adherence keeps past days as they were.
   Medicine responses also carry `uses_prescription_photo` (true while the prescription photo is its only photo).
 - `POST /api/meds/[id]/photos {image: dataUrl}` → `{medication}`; `DELETE /api/meds/[id]/photos/[mediaId]` → `{medication}`.
   Every medication in a response carries `photo_urls: string[]` (owner URLs via `mediaUrl(id)`).
 - `GET /api/meds/today?date=` → `{date, doses: [{medication_id, name, strength, dose, timing, form, photo_urls, scheduled_for, local_time, status: "due"|"upcoming"|"taken"|"skipped"|"snoozed"|"missed", for_person}]}`
-  (a dose is "missed" if unacted 60 min after its time). `POST /api/meds/doses {medication_id, scheduled_for, action: "take"|"skip"|"snooze", snooze_minutes?: 5–60}` → `{dose}`
-  (upserts `dose_logs` id `${medication_id}:${scheduled_for}`; "take" decrements `stock.count` when set). `GET /api/meds/doses?at=<iso>` → `{now, doses}` (every dose at that
-  instant — the alarm screen); `GET /api/meds/doses` → `{now, doses, next}` (due now + the next dose within 24 h).
-  `GET /api/meds/adherence?days=7|30` → `{days, from, to, overall, daily, medicines}` (per-day and per-medicine taken/total).
+  (a dose is "missed" if unacted 60 min after its time). `POST /api/meds/doses {medication_id, scheduled_for, action: "take"|"skip"|"snooze", snooze_minutes?: 5–60,
+  snooze_until?: iso, acted_at?: iso, override?: boolean}` → `{dose}` (upserts `dose_logs` id `${medication_id}:${scheduled_for}`; "take" decrements `stock.count`
+  when set). `acted_at` = when the button was pressed (offline / asleep), stored clamped to [scheduled_for − 36 h, now] (absent / unparsable → now); a snooze ends at
+  `snooze_until` clamped to now + 1…60 min, else now + `snooze_minutes` (default 10). Skip / Snooze over a dose already "taken" → 409 `dose_already_taken`
+  (a user-facing message) unless `override: true` (then the stock unit that Take used, flagged `stock_used` on the log, is given back once). `GET /api/meds/doses?at=<iso>` → `{now, doses}` (every dose at that
+  instant — the alarm screen); `GET /api/meds/doses?from=YYYY-MM-DD&to=YYYY-MM-DD` (local days, ≤ 14) → `{from, to, now, doses: [{medication_id, scheduled_for,
+  local_date, local_time, status: "taken"|"skipped"|"snoozed", acted_at?, snooze_until?}]}` (recorded actions only); `GET /api/meds/doses` → `{now, doses, next}`
+  (due now + the next dose within 24 h).
+  `GET /api/meds/adherence?days=7|30` → `{days, from, to, overall, daily, medicines}` (per-day and per-medicine taken/total, paused medicines included). Built by
+  `doseHistoryBetween`: the schedule that applied at the time (`schedule_history`, else the current one) plus every recorded Take / Skip / Snooze, even for a slot
+  no longer in the schedule; a snooze that lapsed over an hour ago counts as missed. A dose still open (under an hour old, not acted on) when an edit removed
+  it doesn't count. A log joins its slot by instant, else by its stored local date + time (the profile timezone changed since), so no dose counts twice.
 - `POST /api/prescriptions/scan {image: dataUrl}` → `{prescription, credits}` (AI vision via `withCredits(…, "scan")`; stores the photo as media kind
   "prescription"; normalises Indian notation 1-0-1 / BD / TDS / OD / HS / SOS / AC / PC / "x 5 days" via `timesForPattern`; status "review").
   AI disabled → 503 `ai_disabled` and the UI offers manual entry; 429 `rate_limited` over the photo-scan budget shared with meal scans.
@@ -218,8 +228,8 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
   (now−10 min, now], skip those already in `dispatches` (idempotent id) or already acted on, respect quiet hours and snoozes (a snoozed dose re-fires at
   `snooze_until`), send Web Push (title, body, `image` = signed URL of the medicine's first photo valid 24 h, `data.url` = alarm page, actions take/snooze)
   and WhatsApp (session text, or the template outside the 24 h window), record the dispatch. Also once-a-day low-stock refill alerts. `vercel.json` runs it every minute.
-  When the user has the ÖRZA phone app active with on-phone alarms (`appRingsDoses`: a `devices` doc with `alarms_local: true`, `last_seen_at` within 7 days and a
-  live mobile session), Web Push is skipped for medicine doses and their snoozes (the phone rings them; the dispatch is recorded with
+  When the user has the ÖRZA phone app active with on-phone alarms (`appDoseCoverage`: a `devices` doc with `alarms_local: true`, `last_seen_at` within 7 days and a
+  live mobile session), Web Push is skipped for medicine doses and their snoozes before the phone's `alarms_local_until` (no limit when absent; with several phones the earliest) (the phone rings them; the dispatch is recorded with
   `results.push: "rung on the phone by the ÖRZA app"`, counted in the summary's `app_local`). WhatsApp, reminders and refill alerts are unchanged.
 - `public/sw.js`: `push` → `showNotification` with image/icon/badge/actions/tag/`requireInteraction`; `notificationclick` → action "take"/"snooze" POSTs
   to `/api/meds/doses` (same-origin, credentials) else focuses or opens `data.url`.
@@ -271,9 +281,10 @@ cookie flow is unchanged.
 - **Photos**: `GET /api/media/[id]` accepts the Bearer token, so `<Image source={{ uri, headers: { Authorization: "Bearer " + token } }} />` works with the
   `photo_urls` the API returns (relative — prefix the API origin).
 - **Devices** (`devices` collection, `AppDevice` in `src/lib/types.ts`: `id, user_id, session_id, platform, label, push_token?, app_version, timezone,
-  last_seen_at, alarms_local, created_at, updated_at`; indexes `id` unique, `user_id+session_id` unique, `user_id+alarms_local+last_seen_at`, `push_token` sparse):
-  - `POST /api/devices {platform: "ios"|"android", device_label (1–80), push_token?: Expo push token | null, app_version, timezone (IANA), alarms_local?: boolean (default true)}`
-    → `{device: {id, platform, label, app_version, timezone, alarms_local, push_token_set, last_seen_at, created_at}}`. App sessions only (403 for a browser
+  last_seen_at, alarms_local, alarms_local_until?, created_at, updated_at`; indexes `id` unique, `user_id+session_id` unique, `user_id+alarms_local+last_seen_at`, `push_token` sparse):
+  - `POST /api/devices {platform: "ios"|"android", device_label (1–80), push_token?: Expo push token | null, app_version, timezone (IANA), alarms_local?: boolean (default true),
+    alarms_local_until?: iso | null}` → `{device: {id, platform, label, app_version, timezone, alarms_local, alarms_local_until (iso | null), push_token_set, last_seen_at, created_at}}`.
+    `alarms_local_until` = the app's `coveredUntil` (its scheduled alarms cover doses before it); omitted keeps the stored value, null removes it (no limit). App sessions only (403 for a browser
     cookie). Upserts the phone for this app session and sets `last_seen_at`; also names the session (`device_label`, `platform`). Omitting `push_token` removes a
     stored one; a push token is kept on one registration only (older registrations of that phone are dropped); the newest 10 phones per account are kept.
     The app calls it after sign-in and on every launch/foreground, and sends `alarms_local: false` when it can't ring alarms (notifications denied).
@@ -281,4 +292,4 @@ cookie flow is unchanged.
   - Push tokens are credentials: never returned by the API or included in the export.
 - **No double alarms**: the app schedules medicine alarms locally (from `GET /api/meds` / `GET /api/meds/today`) and reports Take/Skip/Snooze with
   `POST /api/meds/doses`. While a phone with `alarms_local: true` was seen within 7 days and its app session is live, the dispatcher skips Web Push for medicine
-  doses; WhatsApp, reminders, refill alerts and the in-tab `AlarmWatcher` are unchanged.
+  doses before its `alarms_local_until` (all of them when it sent none; with several such phones, before the earliest); WhatsApp, reminders, refill alerts and the in-tab `AlarmWatcher` are unchanged.

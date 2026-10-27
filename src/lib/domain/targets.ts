@@ -48,6 +48,9 @@ export function computeTargets(p: Profile, opts: { goal?: GoalType; weeklyRateKg
   let calories = t + (rate * 7700) / 7;
   const floor = Math.max(1200, b ?? 1200);
   if (calories < floor) calories = floor;
+  // Rounded after flooring, so a floor-bound target can sit up to 4 kcal under BMR (1,694 → 1,690). Kept on purpose:
+  // the phone's goal preview (features/goals/math.ts) mirrors this exactly, and rebalance plans treat anything within
+  // 10 kcal of the floor as "at" it (`noRoomToTrim` / `belowSafeFloor` in lib/compensation).
   calories = Math.round(calories / 10) * 10;
 
   const weight = p.weight_kg || 65;

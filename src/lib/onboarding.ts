@@ -6,7 +6,17 @@
  * short acknowledgement in ÖRZA's voice (`ackFor`). The API routes persist
  * `{ step, answers }` in the `onboarding` collection and call into this module.
  */
-import { formatPace, healthyFloorKg, planGoal } from "@/components/goals/goal-math";
+import {
+  KG_PER_LB,
+  MAX_HEIGHT_CM,
+  MIN_HEIGHT_CM,
+  MIN_WEIGHT_KG,
+  formatPace,
+  healthyFloorKg,
+  heightRangeFtIn,
+  planGoal,
+  weightRange,
+} from "@/components/goals/goal-math";
 import { capMemory } from "@/lib/allergens";
 import { computeTargets } from "@/lib/domain/targets";
 import type { ActivityLevel, Diet, GoalType, HouseholdMode, Language, Profile, Sex, Targets } from "@/lib/types";
@@ -338,8 +348,30 @@ function weightIn(kg: number, unit: "kg" | "lb" = "kg") {
   return unit === "lb" ? `${Math.round(kg / 0.45359237)} lb` : formatKg(kg);
 }
 
-/** The accepted 25–300 kg weight range, led by the user's unit. */
-const weightRangeText = (unit: "kg" | "lb") => (unit === "lb" ? "55 and 660 lb (25–300 kg)" : "25 and 300 kg (55–660 lb)");
+/** Onboarding takes 25–300 kg (the Goals calculator allows up to 350 kg). */
+const MAX_ANSWER_WEIGHT_KG = 300;
+
+/** The accepted weight range, led by the user's unit, in whole numbers that are accepted themselves: "56 and 661 lb (25–300 kg)". */
+function weightRangeText(unit: "kg" | "lb") {
+  const kg = weightRange(false, MAX_ANSWER_WEIGHT_KG);
+  const lb = weightRange(true, MAX_ANSWER_WEIGHT_KG);
+  return unit === "lb" ? `${lb.min} and ${lb.max} lb (${kg.min}–${kg.max} kg)` : `${kg.min} and ${kg.max} kg (${lb.min}–${lb.max} lb)`;
+}
+
+/** The accepted height range, led by the user's unit, with both ends accepted themselves: "3′4″ and 8′2″ (100–250 cm)". */
+function heightRangeText(unit: "cm" | "ft") {
+  const { min, max } = heightRangeFtIn();
+  const ftIn = (h: { ft: number; inches: number }) => `${h.ft}′${h.inches}″`;
+  return unit === "ft"
+    ? `${ftIn(min)} and ${ftIn(max)} (${MIN_HEIGHT_CM}–${MAX_HEIGHT_CM} cm)`
+    : `${MIN_HEIGHT_CM} and ${MAX_HEIGHT_CM} cm (${ftIn(min)}–${ftIn(max)})`;
+}
+
+/** The lowest whole number of pounds that, kept to 0.1 kg like a typed answer, is at least `kg`. */
+function lowestWholeLb(kg: number) {
+  const lb = Math.ceil(kg / KG_PER_LB);
+  return round((lb - 1) * KG_PER_LB, 1) >= kg ? lb - 1 : lb;
+}
 
 export function cmToFtIn(cm: number) {
   const totalIn = Math.round(cm / 2.54);
@@ -667,16 +699,16 @@ export function promptFor(step: StepId, answers: OnboardingAnswers, opts: { name
     case "age":
       return { ...base, input: "number", unit_hint: "years", min: 13, max: 100, placeholder: "e.g. 32" };
     case "height":
-      return { ...base, input: "number", units: ["cm", "ft"], min: 100, max: 250, placeholder: "e.g. 165 cm or 5'6\"" };
+      return { ...base, input: "number", units: ["cm", "ft"], min: MIN_HEIGHT_CM, max: MAX_HEIGHT_CM, placeholder: "e.g. 165 cm or 5'6\"" };
     case "weight":
-      return { ...base, input: "number", units: ["kg", "lb"], min: 25, max: 300, placeholder: "e.g. 68 kg or 150 lb" };
+      return { ...base, input: "number", units: ["kg", "lb"], min: MIN_WEIGHT_KG, max: MAX_ANSWER_WEIGHT_KG, placeholder: "e.g. 68 kg or 150 lb" };
     case "target_weight":
       return {
         ...base,
         input: "number",
         units: answers.weight_unit === "lb" ? ["lb", "kg"] : ["kg", "lb"],
-        min: 25,
-        max: 300,
+        min: MIN_WEIGHT_KG,
+        max: MAX_ANSWER_WEIGHT_KG,
         optional: true,
         options: [{ value: "skip", label: "Not sure yet" }],
         placeholder: answers.goal === "gain" ? "e.g. 72 kg" : "e.g. 62 kg",
@@ -758,8 +790,7 @@ export function applyAnswer(step: QuestionStep, raw: Raw, prev: OnboardingAnswer
     case "height": {
       const h = parseHeight(raw);
       if (!h) return err("I couldn't read that height. Try something like 165 cm or 5'6\".");
-      if (h.cm < 100 || h.cm > 250)
-        return err(`That height looks a little off — please enter it between ${h.unit === "ft" ? "3′3″ and 8′2″ (100–250 cm)" : "100 and 250 cm (3′3″–8′2″)"}.`);
+      if (h.cm < MIN_HEIGHT_CM || h.cm > MAX_HEIGHT_CM) return err(`That height looks a little off — please enter it between ${heightRangeText(h.unit)}.`);
       a.height_cm = round(h.cm, 1);
       a.height_unit = h.unit;
       return { ok: true, answers: a };
@@ -767,7 +798,7 @@ export function applyAnswer(step: QuestionStep, raw: Raw, prev: OnboardingAnswer
     case "weight": {
       const w = parseWeight(raw);
       if (!w) return err("I couldn't read that weight. Try something like 68 kg or 150 lb.");
-      if (w.kg < 25 || w.kg > 300) return err(`Please enter a weight between ${weightRangeText(w.unit)}.`);
+      if (w.kg < MIN_WEIGHT_KG || w.kg > MAX_ANSWER_WEIGHT_KG) return err(`Please enter a weight between ${weightRangeText(w.unit)}.`);
       a.weight_kg = round(w.kg, 1);
       a.weight_unit = w.unit;
       if (a.goal_focus === "lose") {
@@ -786,7 +817,7 @@ export function applyAnswer(step: QuestionStep, raw: Raw, prev: OnboardingAnswer
       const unit = a.weight_unit || "kg";
       const w = parseWeight(raw, unit);
       if (!w) return err(`I couldn't read that. Try a number like ${unit === "lb" ? "137 lb" : "62 kg"} — or tap “Not sure yet”.`);
-      if (w.kg < 25 || w.kg > 300) return err(`Please enter a target between ${weightRangeText(w.unit)}.`);
+      if (w.kg < MIN_WEIGHT_KG || w.kg > MAX_ANSWER_WEIGHT_KG) return err(`Please enter a target between ${weightRangeText(w.unit)}.`);
       const target = round(w.kg, 1);
       const current = a.weight_kg ?? 0;
       if (a.goal === "lose" && target >= current)
@@ -796,12 +827,19 @@ export function applyAnswer(step: QuestionStep, raw: Raw, prev: OnboardingAnswer
       // Same floor as the Goals calculator: never plan a loss below a healthy BMI (18.5).
       if (a.goal === "lose" && a.height_cm) {
         const floor = healthyFloorKg(a.height_cm);
-        // Pounds round up, so typing the suggested number clears the floor.
-        const suggest = unit === "lb" ? Math.ceil(floor / 0.45359237) * 0.45359237 : floor;
-        if (target < floor)
+        if (target < floor) {
+          // The lowest target to suggest, as it would be stored if typed: the floor itself, or in pounds the
+          // first whole pound that clears it.
+          const suggest = unit === "lb" ? round(lowestWholeLb(floor) * KG_PER_LB, 1) : floor;
+          // Suggest it only if it's also below the current weight, so the two rules never contradict each other.
+          if (suggest < current)
+            return err(
+              `That target sits below the healthy range for your height. Try ${formatWeight(suggest, unit)} or above — or check with your doctor first.`
+            );
           return err(
-            `That target sits below the healthy range for your height. Try ${formatWeight(suggest, unit)} or above — or check with your doctor first.`
+            "That target sits below the healthy range for your height, and you're already close to its lower end — so there's very little left to lose safely. Tap “Not sure yet” to skip a target for now, or check with your doctor first."
           );
+        }
       }
       a.target_weight_kg = target;
       return { ok: true, answers: a };
@@ -1096,7 +1134,8 @@ export function memoryFacts(a: OnboardingAnswers, plan?: Pick<OnboardingPlan, "h
       track: "Goal: track what they eat",
       healthier: "Goal: eat healthier",
     }[focus];
-    facts.push(target != null ? `${goalText} (target ${formatKg(target)})` : goalText);
+    // In the member's unit (Settings → Memory shows it as is); nothing parses the number back.
+    facts.push(target != null ? `${goalText} (target ${weightIn(target, a.weight_unit)})` : goalText);
   }
   if (a.diet) facts.push(`Diet: ${labelOf(DIET_OPTIONS, a.diet).toLowerCase()}`);
   if (a.allergies) facts.push(a.allergies.length ? `Allergies / avoids: ${a.allergies.join(", ")}` : "No food allergies");

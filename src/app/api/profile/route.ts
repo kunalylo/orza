@@ -137,7 +137,7 @@ const FACT_PATTERNS: Partial<Record<keyof Profile, RegExp[]>> = {
   lifestyle: [/^routine:/i],
 };
 
-function syncMemory(memory: string[], profile: Profile, changed: Set<keyof Profile>): string[] | null {
+function syncMemory(memory: string[], profile: Profile, changed: Set<keyof Profile>, weightUnit: "kg" | "lb" = "kg"): string[] | null {
   const fields = (Object.keys(FACT_PATTERNS) as (keyof Profile)[]).filter((k) => changed.has(k));
   if (!fields.length) return null;
   const patterns = fields.flatMap((k) => FACT_PATTERNS[k] ?? []);
@@ -145,6 +145,7 @@ function syncMemory(memory: string[], profile: Profile, changed: Set<keyof Profi
   const answers: OnboardingAnswers = {};
   if (changed.has("goal") && profile.goal) {
     answers.goal = profile.goal;
+    answers.weight_unit = weightUnit; // the goal fact's target reads in the member's unit, like onboarding's
     if (profile.goal !== "maintain" && profile.target_weight_kg != null) answers.target_weight_kg = profile.target_weight_kg;
   }
   if (changed.has("diet") && profile.diet) answers.diet = profile.diet;
@@ -206,7 +207,8 @@ export const PUT = route(async (req: Request) => {
   }
 
   let seenMemory = user.memory;
-  let memory = syncMemory(seenMemory || [], merged, changed);
+  const weightUnit = user.preferences?.units === "imperial" ? "lb" : "kg";
+  let memory = syncMemory(seenMemory || [], merged, changed, weightUnit);
 
   if (!Object.keys($set).length && !Object.keys($unset).length && !memory) {
     return json({ user: toPublicUser(user), targets_recomputed: recompute });
@@ -225,7 +227,7 @@ export const PUT = route(async (req: Request) => {
     const fresh = await users.findOne({ id: user.id });
     if (!fresh) break;
     seenMemory = fresh.memory;
-    memory = attempt < MEMORY_SAVE_ATTEMPTS ? syncMemory(seenMemory || [], merged, changed) : null;
+    memory = attempt < MEMORY_SAVE_ATTEMPTS ? syncMemory(seenMemory || [], merged, changed, weightUnit) : null;
   }
 
   // A new weight in Settings counts as today's weigh-in, like /api/track/weight.

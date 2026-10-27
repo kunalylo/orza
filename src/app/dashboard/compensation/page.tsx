@@ -19,7 +19,7 @@ const PRINCIPLES = [
   {
     icon: Leaf,
     title: "Gentle trims, never starving",
-    body: "At most 15% off your usual calories on any day — and never below a safe floor for your body.",
+    body: "At most 15% off your usual calories on any day, and never below a safe floor for your body — if your target is already at or under it, meals stay as they are.",
   },
   {
     icon: Footprints,

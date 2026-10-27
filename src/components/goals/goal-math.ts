@@ -86,11 +86,21 @@ export function formatPace(kgPerWeek: number, imperial: boolean): string {
   return imperial ? `${round(v / KG_PER_LB, 1)} lb` : `${round(v, 2)} kg`;
 }
 
-/** Accepted weight range in the user's unit (whole numbers that stay inside 25–350 kg). */
-export function weightRange(imperial: boolean): { min: number; max: number } {
+/**
+ * Accepted weight range in the user's unit: whole numbers that stay inside 25 kg – `maxKg` (350 by default),
+ * the low end rounded up and the high end down, so both are accepted themselves.
+ */
+export function weightRange(imperial: boolean, maxKg = MAX_WEIGHT_KG): { min: number; max: number } {
   return imperial
-    ? { min: Math.ceil(MIN_WEIGHT_KG / KG_PER_LB), max: Math.floor(MAX_WEIGHT_KG / KG_PER_LB) }
-    : { min: MIN_WEIGHT_KG, max: MAX_WEIGHT_KG };
+    ? { min: Math.ceil(MIN_WEIGHT_KG / KG_PER_LB), max: Math.floor(maxKg / KG_PER_LB) }
+    : { min: MIN_WEIGHT_KG, max: maxKg };
+}
+
+/** Accepted height range in whole feet and inches (3′4″–8′2″): rounded inward so both ends stay inside 100–250 cm. */
+export function heightRangeFtIn(): { min: { ft: number; inches: number }; max: { ft: number; inches: number } } {
+  const lo = Math.ceil(MIN_HEIGHT_CM / CM_PER_IN);
+  const hi = Math.floor(MAX_HEIGHT_CM / CM_PER_IN);
+  return { min: { ft: Math.floor(lo / 12), inches: lo % 12 }, max: { ft: Math.floor(hi / 12), inches: hi % 12 } };
 }
 
 export function cmToFeetInches(cm: number): { ft: number; inches: number } {

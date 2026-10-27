@@ -127,6 +127,11 @@ export function RebalancePlanView({
   const backTo = s?.back_to_usual;
   const trimTotal = s?.food_kcal ?? plan.days.reduce((a, d) => a + Math.max(0, -d.adjustment), 0);
   const avgTrim = s?.avg_daily_trim ?? (n ? Math.round(trimTotal / n / 10) * 10 : 0);
+  // No room for even a 10 kcal trim above the safety floor (`noRoomToTrim` in lib/compensation): the usual target is
+  // already at, or under, the floor, so "never below {floor} kcal" next to days at the usual target would contradict itself.
+  const atFloor = !!s && s.usual_calories - s.floor_calories < 10;
+  // …and clearly under it (`belowSafeFloor`, e.g. a hand-set 1,400 with a floor of 1,700), where "sits at the floor" isn't true.
+  const belowFloor = !!s && s.floor_calories - s.usual_calories >= 10;
 
   const stats = [
     {
@@ -137,8 +142,8 @@ export function RebalancePlanView({
     },
     {
       k: "Gentle trim",
-      v: avgTrim > 0 ? `~${formatNumber(avgTrim)} kcal/day` : "None needed",
-      note: `Over ${n} day${n === 1 ? "" : "s"}, no skipped meals`,
+      v: avgTrim > 0 ? `~${formatNumber(avgTrim)} kcal/day` : atFloor ? "None" : "None needed",
+      note: belowFloor ? "Already below your safe minimum" : atFloor ? "Already at your safe minimum" : `Over ${n} day${n === 1 ? "" : "s"}, no skipped meals`,
       icon: <Leaf size={15} strokeWidth={1.75} aria-hidden />,
     },
     {
@@ -176,10 +181,19 @@ export function RebalancePlanView({
 
       {showMessage && <OrzaSays message={plan.message} className="mt-5" />}
 
-      {s && s.released_kcal > 0 && (
+      {s && (atFloor || s.released_kcal > 0) && (
         <p className="mt-4 text-[13px] leading-relaxed text-orza-muted">
-          Trims stay within a gentle range (never below {formatNumber(s.floor_calories)} kcal a day) and walks stay comfortable, so the last ~
-          {formatNumber(s.released_kcal)} kcal is simply left to even out naturally over the week.
+          {atFloor
+            ? `${
+                belowFloor
+                  ? `Your usual ${formatNumber(s.usual_calories)} kcal is already below the safe floor for your body (${formatNumber(s.floor_calories)} kcal), so ÖRZA won't trim further`
+                  : `Your usual ${formatNumber(s.usual_calories)} kcal already sits at your body's safe floor, so ÖRZA doesn't trim meals`
+              }${
+                s.released_kcal > 0
+                  ? `, and walks stay comfortable — the last ~${formatNumber(s.released_kcal)} kcal is simply left to even out naturally over the week.`
+                  : " — a little extra movement balances this instead."
+              }`
+            : `Trims stay within a gentle range (never below ${formatNumber(s.floor_calories)} kcal a day) and walks stay comfortable, so the last ~${formatNumber(s.released_kcal)} kcal is simply left to even out naturally over the week.`}
         </p>
       )}
 

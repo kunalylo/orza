@@ -5,6 +5,8 @@
  * ≤ 15% of the usual target (10% on a gain goal) and never takes calories below
  * max(1200, BMR). Whatever the trims don't cover becomes a little added movement
  * (capped at a comfortable walk); anything beyond that is simply left to even out.
+ * When the usual target already sits at (or under) that floor there is no room to trim:
+ * the plan says so plainly and leans on movement alone (see `noRoomToTrim` / `belowSafeFloor`).
  * The AI route may reword the message and meal ideas, but never these numbers — and every
  * meal idea (built-in or AI) must pass `mealIdeaIsSafe` for the user's diet and avoid-list.
  */
@@ -31,6 +33,25 @@ export interface CompensationSummary {
   walk_minutes_per_day: number;
   extra_steps_per_day: number;
   back_to_usual: string; // first day after the plan (YYYY-MM-DD)
+}
+
+/**
+ * True when the usual target leaves no room for even a 10 kcal trim above the safety floor, so every
+ * day stays at the usual target and the plan is movement only. Works on stored summaries too (no new
+ * field); RebalancePlanView (a client component that shouldn't import this module) inlines the same check.
+ */
+export function noRoomToTrim(s: Pick<CompensationSummary, "usual_calories" | "floor_calories">): boolean {
+  return s.usual_calories - s.floor_calories < 10;
+}
+
+/**
+ * True when the usual target sits clearly under the safety floor (e.g. a hand-set 1,400 with a floor of 1,700),
+ * not just at it: computed targets are rounded after flooring, so one can sit up to 4 kcal under BMR and is
+ * still "at" the floor. Only the wording changes (the plan is the same movement-only one); RebalancePlanView
+ * inlines the same check.
+ */
+export function belowSafeFloor(s: Pick<CompensationSummary, "usual_calories" | "floor_calories">): boolean {
+  return s.floor_calories - s.usual_calories >= 10;
 }
 
 /** What gets stored in `compensation_plans` (CompensationPlan + a few display extras). */
@@ -95,7 +116,7 @@ const DINNERS: Idea[] = [
   { text: "Grilled tofu with stir-fried vegetables", kind: "vegan", allergens: ["soy"] },
   { text: "Egg bhurji with sautéed vegetables and 1 phulka", kind: "egg", allergens: ["egg", "gluten"] },
   { text: "Chicken clear soup with grilled chicken tikka", kind: "nonveg", allergens: ["dairy"] },
-  { text: "Steamed fish with sautéed greens and a small portion of rice", kind: "nonveg", allergens: ["fish"] },
+  { text: "Steamed fish with sautéed greens and 1 katori rice", kind: "nonveg", allergens: ["fish"] },
 ];
 
 /** An ingredient word the shared allergen matcher (lib/allergens) recognises for each hidden-allergen tag. */
@@ -143,8 +164,16 @@ function fitsDiet(idea: Idea, diet?: Diet): boolean {
 /** Last resort when every curated idea for a meal clashes with the diet or avoid-list. */
 const GENTLE_FALLBACK: Record<"Breakfast" | "Lunch" | "Dinner", string> = {
   Breakfast: "A light home-cooked breakfast you know agrees with you, with a portion of protein and some fruit or vegetables",
-  Lunch: "Your usual home-cooked lunch in a slightly smaller portion, with half the plate vegetables or salad",
+  // No "smaller portion" here: on a plan at the safety floor the day's target is the usual one.
+  Lunch: "Your usual home-cooked lunch, with half the plate vegetables or salad",
   Dinner: "A light, early home-cooked dinner — a protein you tolerate well with plenty of cooked vegetables",
+};
+
+/** The same last resort on a plan at the safety floor: meals stay at the usual target, so nothing is billed as "light". */
+const SATISFYING_FALLBACK: typeof GENTLE_FALLBACK = {
+  Breakfast: "A home-cooked breakfast you know agrees with you, with a portion of protein and some fruit or vegetables",
+  Lunch: GENTLE_FALLBACK.Lunch,
+  Dinner: "A satisfying home-cooked dinner — a protein you tolerate well with plenty of cooked vegetables",
 };
 
 function candidates(pool: Idea[], profile: Profile, avoid: string[]): string[] {
@@ -164,21 +193,23 @@ function seedFrom(s: string): number {
 }
 
 /** Three meal ideas per day, rotated so consecutive days don't repeat. */
-function mealIdeas(profile: Profile, avoid: string[], dayIndex: number, seed: number): string[] {
+function mealIdeas(profile: Profile, avoid: string[], dayIndex: number, seed: number, atFloor: boolean): string[] {
+  const fallback = atFloor ? SATISFYING_FALLBACK : GENTLE_FALLBACK;
   const pick = (label: keyof typeof GENTLE_FALLBACK, pool: Idea[], offset: number) => {
     const list = candidates(pool, profile, avoid);
-    return `${label}: ${list.length ? list[(seed + offset + dayIndex) % list.length] : GENTLE_FALLBACK[label]}`;
+    return `${label}: ${list.length ? list[(seed + offset + dayIndex) % list.length] : fallback[label]}`;
   };
   return [pick("Breakfast", BREAKFASTS, 0), pick("Lunch", LUNCHES, 3), pick("Dinner", DINNERS, 7)];
 }
 
 /* ───────────────────────────── day details ───────────────────────────── */
 
-function focusFor(i: number, n: number): string {
-  if (i === 0) return "Light & protein-forward";
+function focusFor(i: number, n: number, atFloor: boolean): string {
+  // At the safety floor meals stay at the usual target, so no day is billed as "light" or "mindful portions".
+  if (i === 0) return atFloor ? "Protein-forward & satisfying" : "Light & protein-forward";
   if (i === 1) return "Extra fibre + hydration";
   if (i === n - 1) return "Easing back to your usual rhythm";
-  return i === 2 ? "Balanced & unhurried" : "Colourful plates, mindful portions";
+  return i === 2 ? "Balanced & unhurried" : atFloor ? "Colourful, satisfying plates" : "Colourful plates, mindful portions";
 }
 
 function activityFor(i: number, walkMin: number, extraSteps: number, usualSteps: number): string {
@@ -224,24 +255,47 @@ function occasionSubject(o?: string): string {
   return t;
 }
 
-function buildMessage(o: { occasion?: string; name?: string; n: number; avgTrim: number; walkMin: number; released: number; backTo: string; extra: number }): string {
+function buildMessage(o: {
+  occasion?: string;
+  name?: string;
+  n: number;
+  avgTrim: number;
+  walkMin: number;
+  released: number;
+  backTo: string;
+  extra: number;
+  /** The usual target leaves no room to trim (see `noRoomToTrim`). */
+  atFloor: boolean;
+  /** …because it is clearly under the floor, not at it (see `belowSafeFloor`). */
+  belowFloor: boolean;
+}): string {
   const first = (o.name || "").trim().split(/\s+/)[0];
-  // What ÖRZA will do, in words (trims can be 0 when targets already sit at the safe floor).
+  // What ÖRZA will do, in words.
   const action =
     o.avgTrim > 0
       ? `${o.extra < 350 ? "trims" : "gently trims"} about ${o.avgTrim} kcal a day${o.walkMin > 0 ? " and adds a little movement" : ""}`
       : "keeps your meals just as they are and adds a little easy movement";
+  // At (or under) the safety floor nothing can be trimmed: say so plainly instead of leaving it unexplained.
+  const floorPlan =
+    o.atFloor && o.walkMin > 0
+      ? o.belowFloor
+        ? `Your daily target is already below the safe minimum for your body, so ÖRZA won't trim it further and balances this over the next ${o.n} days with a little extra movement instead`
+        : `Your daily target is already at the safe minimum for your body, so over the next ${o.n} days ÖRZA balances this with a little extra movement instead of eating less`
+      : "";
+  const backBy = `you're back in your usual rhythm by ${longWeekday(o.backTo)}`;
   const parts: string[] = [];
   if (o.extra < 350) {
     parts.push(
       `${first ? `${first}, a` : "A"} small bump like this barely registers in the bigger picture.`,
-      `Over the next ${o.n} days ÖRZA ${action} — you'll hardly notice it.`,
+      `${floorPlan || `Over the next ${o.n} days ÖRZA ${action}`} — you'll hardly notice it.`,
       "Enjoy the memories; no guilt needed."
     );
   } else {
     parts.push(
       `One celebration doesn't undo your progress${first ? `, ${first}` : ""}.`,
-      `${occasionSubject(o.occasion)} was worth enjoying — over the next ${o.n} days ÖRZA ${action}, so you're back in your usual rhythm by ${longWeekday(o.backTo)}.`,
+      ...(floorPlan
+        ? [`${occasionSubject(o.occasion)} was worth enjoying.`, `${floorPlan} — ${backBy}.`]
+        : [`${occasionSubject(o.occasion)} was worth enjoying — over the next ${o.n} days ÖRZA ${action}, so ${backBy}.`]),
       "No skipped meals, no guilt — just steady, kind choices."
     );
   }
@@ -274,6 +328,9 @@ export function planCompensation(input: {
   const floor = Math.max(1200, bmr(profile) ?? 1200);
   const share = profile.goal === "gain" ? 0.1 : 0.15;
   const maxCut = Math.max(0, Math.min(Math.floor((usual * share) / 10) * 10, Math.floor((usual - floor) / 10) * 10));
+  // maxCut is 0 exactly when this holds (the share is always ≥ 120 kcal): movement only, said plainly.
+  const atFloor = noRoomToTrim({ usual_calories: usual, floor_calories: floor });
+  const belowFloor = belowSafeFloor({ usual_calories: usual, floor_calories: floor });
 
   // Meal trims first (cumulative rounding keeps the total exact to 10 kcal).
   const foodTotal = Math.min(extra, maxCut * n);
@@ -293,9 +350,9 @@ export function planCompensation(input: {
     date: addDays(input.startDate, i),
     calorie_target: usual - cut,
     adjustment: -cut,
-    focus: focusFor(i, n),
+    focus: focusFor(i, n, atFloor),
     activity: activityFor(i, walkMin, extraSteps, usualSteps),
-    meals: mealIdeas(profile, avoid, i, seed),
+    meals: mealIdeas(profile, avoid, i, seed, atFloor),
   }));
 
   const backTo = addDays(input.startDate, n);
@@ -303,7 +360,7 @@ export function planCompensation(input: {
   return {
     extra_calories: extra,
     days,
-    message: buildMessage({ occasion: input.occasion, name: input.name, n, avgTrim, walkMin, released, backTo, extra }),
+    message: buildMessage({ occasion: input.occasion, name: input.name, n, avgTrim, walkMin, released, backTo, extra, atFloor, belowFloor }),
     summary: {
       usual_calories: usual,
       floor_calories: floor,

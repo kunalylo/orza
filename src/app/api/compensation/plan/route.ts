@@ -9,9 +9,11 @@ import { addDays, dateInTz } from "@/lib/dates";
 import { HttpError, json, parseBody, route } from "@/lib/http";
 import type { CompensationDay, User } from "@/lib/types";
 import {
+  belowSafeFloor,
   DEFAULT_DIET,
   estimateExtraDetails,
   mealIdeaIsSafe,
+  noRoomToTrim,
   planCompensation,
   type CompensationDraft,
   type StoredCompensationPlan,
@@ -70,11 +72,18 @@ function requestRewrite(
 ): Promise<AiRewrite> {
   const p = user.profile || {};
   const diet = p.diet || DEFAULT_DIET;
+  // At (or under) the safety floor nothing is trimmed, so the meal-idea rule itself changes (one rule, never two that clash).
+  const atFloor = noRoomToTrim(draft.summary);
+  const floorRule = !atFloor
+    ? ""
+    : `The user's daily target is already ${belowSafeFloor(draft.summary) ? "below" : "at"} the safe minimum for their body, so ÖRZA trims nothing: ` +
+      "never suggest eating less, smaller portions or lighter meals, and say plainly and calmly (no medical claims) that a little extra movement balances this instead. ";
   return aiJSON<AiRewrite>({
     system:
       "You personalise ÖRZA's 'compassionate rebalancing' plans after a special meal. Rewrite ONLY the supportive message and each day's three meal ideas. " +
       "Keep every number in the plan exactly as given (calorie targets, adjustments, steps, minutes) and never introduce new calorie numbers. " +
-      "Meal ideas must be light, home-style, realistic for the user's region, strictly within their diet (Jain: no onion, garlic, potato or other root vegetables; vegetarian: no egg, meat or fish; vegan: no dairy either), and must never include anything in allergies_and_foods_to_avoid. Prefix each idea with 'Breakfast: ', 'Lunch: ' or 'Dinner: '. " +
+      floorRule +
+      `Meal ideas must be ${atFloor ? "balanced and satisfying" : "light"}, home-style, realistic for the user's region, strictly within their diet (Jain: no onion, garlic, potato or other root vegetables; vegetarian: no egg, meat or fish; vegan: no dairy either), and must never include anything in allergies_and_foods_to_avoid. Prefix each idea with 'Breakfast: ', 'Lunch: ' or 'Dinner: '. ` +
       "Never suggest skipping meals, fasting, detoxes, compensatory exercise punishment or anything that sounds like guilt. The message is 2–4 warm sentences.",
     prompt: JSON.stringify({
       user: {

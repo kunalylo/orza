@@ -19,7 +19,7 @@
  * insert-if-absent; a second run (or a concurrent one) finds it and skips. Results are written back
  * after sending. Dispatch records older than 14 days are deleted.
  */
-import { col, nowISO } from "@/lib/db";
+import { col, isDuplicateKey, nowISO } from "@/lib/db";
 import { utcToZoned } from "@/lib/dates";
 import { mediaUrl } from "@/lib/media";
 import { dosesBetween, tzOf } from "@/lib/care/meds";
@@ -191,11 +191,6 @@ export function refillNotification(
 }
 
 /* ───────────────────────────── Idempotent claim ───────────────────────────── */
-
-const isDuplicateKey = (e: unknown) => {
-  const err = e as { code?: number; message?: string } | null;
-  return err?.code === 11000 || /E11000|duplicate key/i.test(err?.message || "");
-};
 
 /** Insert the dispatch record if absent. Returns true only for the run that created it. */
 async function claim(doc: Dispatch): Promise<boolean> {

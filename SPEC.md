@@ -185,7 +185,8 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
 - `GET /api/meds` → `{medications}` (active first); `POST /api/meds {name, strength?, form, dose, timing, instructions?, schedule, as_needed?, stock?, for_person?, photos?: dataUrl[] (≤4)}` → `{medication}`;
   `GET /api/meds/[id]` → `{medication}`; `PATCH /api/meds/[id]` (partial) → `{medication}`; `DELETE /api/meds/[id]` → `{ok}` (also deletes its photos and dose logs).
   A PATCH that changes the schedule, `active` or `as_needed` appends the replaced version to `medication.schedule_history`
-  (`[{schedule, active, as_needed, until}]`, oldest first, last 50; server only — never in responses) so adherence keeps past days as they were.
+  (`[{schedule, active, as_needed, until}]`, oldest first, last 50) so adherence keeps past days as they were. `schedule_history` isn't part of any medicine
+  response (`medicationToClient` strips it), but the member's own `GET /api/account/export` includes it (and the dose logs' `stock_used`): it exports the stored documents.
   Medicine responses also carry `uses_prescription_photo` (true while the prescription photo is its only photo).
 - `POST /api/meds/[id]/photos {image: dataUrl}` → `{medication}`; `DELETE /api/meds/[id]/photos/[mediaId]` → `{medication}`.
   Every medication in a response carries `photo_urls: string[]` (owner URLs via `mediaUrl(id)`).
@@ -194,14 +195,23 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
   snooze_until?: iso, acted_at?: iso, override?: boolean}` → `{dose}` (upserts `dose_logs` id `${medication_id}:${scheduled_for}`; "take" decrements `stock.count`
   when set). `acted_at` = when the button was pressed (offline / asleep), stored clamped to [scheduled_for − 36 h, now] (absent / unparsable → now); a snooze ends at
   `snooze_until` clamped to now + 1…60 min, else now + `snooze_minutes` (default 10). Skip / Snooze over a dose already "taken" → 409 `dose_already_taken`
-  (a user-facing message) unless `override: true` (then the stock unit that Take used, flagged `stock_used` on the log, is given back once). `GET /api/meds/doses?at=<iso>` → `{now, doses}` (every dose at that
+  (a user-facing message) unless `override: true` (then the stock unit that Take used, flagged `stock_used` on the log, is given back once). The check is a
+  conditional write (`status != "taken"`; an upsert that then hits the log's unique id is the 409), so a Take and a Skip arriving together can't both apply;
+  `stock_used` is claimed only while the log is "taken" (two Takes at once use one unit). `stock_used` isn't in `{dose}` responses (it is in the account export).
+  `GET /api/meds/doses?at=<iso>` → `{now, doses}` (every dose at that
   instant — the alarm screen); `GET /api/meds/doses?from=YYYY-MM-DD&to=YYYY-MM-DD` (local days, ≤ 14) → `{from, to, now, doses: [{medication_id, scheduled_for,
   local_date, local_time, status: "taken"|"skipped"|"snoozed", acted_at?, snooze_until?}]}` (recorded actions only); `GET /api/meds/doses` → `{now, doses, next}`
   (due now + the next dose within 24 h).
   `GET /api/meds/adherence?days=7|30` → `{days, from, to, overall, daily, medicines}` (per-day and per-medicine taken/total, paused medicines included). Built by
-  `doseHistoryBetween`: the schedule that applied at the time (`schedule_history`, else the current one) plus every recorded Take / Skip / Snooze, even for a slot
-  no longer in the schedule; a snooze that lapsed over an hour ago counts as missed. A dose still open (under an hour old, not acted on) when an edit removed
-  it doesn't count. A log joins its slot by instant, else by its stored local date + time (the profile timezone changed since), so no dose counts twice.
+  `doseHistoryBetween`: the schedule that applied at the time (`schedule_history`, else the current one) plus every recorded Take / Skip, even for a slot
+  no longer in the schedule; a snooze that lapsed over an hour ago counts as missed. A dose still open when an edit removed it doesn't count: under an hour
+  old and not acted on, or snoozed (open until an hour after its snooze ended). A log joins its slot by instant, else by its stored local date + time (the
+  profile timezone changed since), so no dose counts twice.
+  Medicines without `schedule_history` (paused or edited before it was kept) are guessed (`adherenceSpans` in `src/lib/care/meds.ts`); documents with history
+  are rebuilt exactly. Paused: the current schedule counts as active until `updated_at` (the latest possible pause time), so doses missed before the pause
+  count and none after it (a later rename / photo / stock change moves `updated_at`, which can add a few missed doses). Times edited: on a local day with a
+  log at a time the current schedule doesn't have, the logs are trusted — that day's current-schedule slots without a log aren't added unless they're at or
+  after `updated_at`; a lapsed snooze at such an old time still counts as missed.
 - `POST /api/prescriptions/scan {image: dataUrl}` → `{prescription, credits}` (AI vision via `withCredits(…, "scan")`; stores the photo as media kind
   "prescription"; normalises Indian notation 1-0-1 / BD / TDS / OD / HS / SOS / AC / PC / "x 5 days" via `timesForPattern`; status "review").
   AI disabled → 503 `ai_disabled` and the UI offers manual entry; 429 `rate_limited` over the photo-scan budget shared with meal scans.
@@ -283,8 +293,9 @@ cookie flow is unchanged.
 - **Devices** (`devices` collection, `AppDevice` in `src/lib/types.ts`: `id, user_id, session_id, platform, label, push_token?, app_version, timezone,
   last_seen_at, alarms_local, alarms_local_until?, created_at, updated_at`; indexes `id` unique, `user_id+session_id` unique, `user_id+alarms_local+last_seen_at`, `push_token` sparse):
   - `POST /api/devices {platform: "ios"|"android", device_label (1–80), push_token?: Expo push token | null, app_version, timezone (IANA), alarms_local?: boolean (default true),
-    alarms_local_until?: iso | null}` → `{device: {id, platform, label, app_version, timezone, alarms_local, alarms_local_until (iso | null), push_token_set, last_seen_at, created_at}}`.
-    `alarms_local_until` = the app's `coveredUntil` (its scheduled alarms cover doses before it); omitted keeps the stored value, null removes it (no limit). App sessions only (403 for a browser
+    alarms_local_until?: iso | epoch ms (number or digits) | null}` → `{device: {id, platform, label, app_version, timezone, alarms_local, alarms_local_until (iso | null), push_token_set, last_seen_at, created_at}}`.
+    `alarms_local_until` = the app's `coveredUntil` (its scheduled alarms cover doses before it), stored as ISO; omitted keeps the stored value, null removes it (no limit),
+    an unusable value is ignored like an omitted one (never a 400, so `alarms_local` / `last_seen_at` always get through). App sessions only (403 for a browser
     cookie). Upserts the phone for this app session and sets `last_seen_at`; also names the session (`device_label`, `platform`). Omitting `push_token` removes a
     stored one; a push token is kept on one registration only (older registrations of that phone are dropped); the newest 10 phones per account are kept.
     The app calls it after sign-in and on every launch/foreground, and sends `alarms_local: false` when it can't ring alarms (notifications denied).

@@ -1,9 +1,9 @@
 /**
  * Medication dose engine: expands schedules into doses, merges dose logs, and records actions.
  * Shared by the medicines UI, /api/meds/today, the in-app alarm, the push/WhatsApp dispatcher and the calendar feed.
- * Adherence rebuilds past days with `doseHistoryBetween` (the schedule that applied then, plus every recorded dose).
+ * Adherence rebuilds past days with `doseHistoryBetween` (the schedule that applied then, plus every recorded Take / Skip).
  */
-import { col, nowISO } from "@/lib/db";
+import { col, isDuplicateKey, nowISO } from "@/lib/db";
 import { addDays, DEFAULT_TZ, utcToZoned } from "@/lib/dates";
 import { badRequest, HttpError, notFound } from "@/lib/http";
 import { mediaUrl } from "@/lib/media";
@@ -182,13 +182,46 @@ export function withScheduleVersion(m: Pick<Medication, "schedule" | "active" | 
   return [...(m.schedule_history || []), version].slice(-MAX_SCHEDULE_HISTORY);
 }
 
+const hasScheduleHistory = (m: Pick<Medication, "schedule_history">) => !!m.schedule_history?.length;
+
 /**
- * Whether occurrence `o` of span `s` was still on the medicine's schedule when its hour to be taken ran out (or now,
- * if sooner). A dose still open when an edit replaced its version (08:00 moved to 09:00 at 08:45, paused at 08:10) left
+ * Medicines paused or edited before `schedule_history` was kept (none on the document) only show their current
+ * state, so adherence guesses their past — carefully, and only for them (a medicine with history is rebuilt exactly):
+ * - Paused: its current schedule counts as active until `updated_at`, the latest it can have been paused (usually
+ *   exactly then), so doses missed before the pause still count; none after it. (A later edit of another field, a
+ *   photo or a stock change moves `updated_at` on, which can count a few more missed doses than there were.)
+ * - Times edited: past days carry logs at the old times. On a local day with a log the current schedule doesn't have,
+ *   the logs are trusted — that day's current-schedule slots without a log aren't added, unless they're at or after
+ *   `updated_at` (then the current schedule already applied). See `doseHistoryBetween`.
+ */
+function adherenceSpans(m: Medication): ScheduleSpan[] {
+  const spans = scheduleSpans(m);
+  const pausedBy = Date.parse(m.updated_at);
+  if (hasScheduleHistory(m) || m.active || !Number.isFinite(pausedBy)) return spans;
+  return [
+    { ...spans[0], to: pausedBy, active: true },
+    { ...spans[0], from: pausedBy },
+  ];
+}
+
+/** Whether log `l` (for instant `at`) is for a time `schedule` has: by instant, or by the local date and time it was logged for. */
+function onSchedule(schedule: Schedule, l: DoseLog, at: Date, tz: string): boolean {
+  return (
+    occurrencesOnDate(schedule, utcToZoned(at, tz).date, tz).some((x) => x.iso === at.toISOString()) ||
+    occurrencesOnDate(schedule, l.local_date, tz).some((x) => x.local_time === l.local_time)
+  );
+}
+
+/**
+ * Whether occurrence `o` of span `s` was still on the medicine's schedule when it was decided: when its hour to be
+ * taken ran out — for a snoozed dose, an hour after the snooze ended — or now, if sooner. A dose still open when an
+ * edit replaced its version (08:00 moved to 09:00 at 08:45, paused at 08:10, snoozed at 08:05 and moved at 08:45) left
  * with it — today's list drops it and it can't be acted on — so it only counts if the version then in effect kept it.
  */
-function scheduledUntilMissed(spans: ScheduleSpan[], s: ScheduleSpan, o: Occurrence, now: Date, tz: string): boolean {
-  const decided = Math.min(o.at.getTime() + MISSED_AFTER_MIN * 60000, now.getTime());
+function scheduledUntilMissed(spans: ScheduleSpan[], s: ScheduleSpan, o: Occurrence, log: DoseLog | undefined, now: Date, tz: string): boolean {
+  const snoozeEnd = log?.status === "snoozed" && log.snooze_until ? Date.parse(log.snooze_until) : NaN;
+  const openUntil = Math.max(o.at.getTime(), Number.isFinite(snoozeEnd) ? snoozeEnd : -Infinity) + MISSED_AFTER_MIN * 60000;
+  const decided = Math.min(openUntil, now.getTime());
   if (decided < s.to) return true;
   const then = spans.find((x) => x.from <= decided && decided < x.to);
   return !!then && then.active && !then.as_needed && occurrencesOnDate(then.schedule, o.local_date, tz).some((x) => x.iso === o.iso);
@@ -197,11 +230,12 @@ function scheduledUntilMissed(spans: ScheduleSpan[], s: ScheduleSpan, o: Occurre
 /**
  * Every dose of the user's medicines (active, paused or since made SOS) due in `from <= at < to` as it was:
  * the occurrences of the schedule that applied at the time (`scheduleSpans`; the same 30 min "added" grace as
- * `dosesBetween`; a dose still open when an edit removed it doesn't count), plus every recorded Take / Skip / Snooze
- * even when its slot has since left the schedule, the medicine was paused or edited. One entry per slot: a log joins
- * its slot by instant, else (the profile timezone changed since, which moves every slot) by the local date and time
- * it was logged for. A snooze that ended over an hour ago without a Take or Skip counts as missed. For adherence and
- * medicine history — alarms and today's list use `dosesBetween`.
+ * `dosesBetween`; a dose still open — not yet missed, or snoozed — when an edit removed it doesn't count), plus every
+ * recorded Take / Skip even when its slot has since left the schedule, the medicine was paused or edited. One entry
+ * per slot: a log joins its slot by instant, else (the profile timezone changed since, which moves every slot) by the
+ * local date and time it was logged for. A snooze that ended over an hour ago without a Take or Skip counts as missed.
+ * Medicines without `schedule_history` (paused / edited before it was kept) get the guesses in `adherenceSpans`.
+ * For adherence and medicine history — alarms and today's list use `dosesBetween`.
  * Deleted medicines have no logs left (DELETE /api/meds/[id] removes them), so they don't count.
  */
 export async function doseHistoryBetween(user: User, from: Date, to: Date, now: Date = new Date(), meds?: Medication[]): Promise<DoseView[]> {
@@ -210,10 +244,12 @@ export async function doseHistoryBetween(user: User, from: Date, to: Date, now: 
   const list = meds || (await col<Medication>("medications").find({ user_id: user.id }, { sort: { created_at: 1 }, limit: 500 }));
   if (!list.length) return [];
 
-  const slots = new Map<string, { m: Medication; o: Occurrence }>();
+  // Every occurrence of the schedule in effect at its time, with its span: whether one that an edit replaced still
+  // counts is decided once its log is known (a snooze keeps a dose open longer). Log-only slots have no span.
+  const slots = new Map<string, { m: Medication; o: Occurrence; spans?: ScheduleSpan[]; span?: ScheduleSpan }>();
   for (const m of list) {
     const since = Date.parse(m.created_at) - CREATED_GRACE_MS;
-    const spans = scheduleSpans(m);
+    const spans = adherenceSpans(m);
     for (const s of spans) {
       if (!s.active || s.as_needed) continue;
       const a = Math.max(from.getTime(), s.from);
@@ -221,8 +257,7 @@ export async function doseHistoryBetween(user: User, from: Date, to: Date, now: 
       if (a >= b) continue;
       for (const o of occurrencesBetween(s.schedule, new Date(a), new Date(b), tz)) {
         if (Number.isFinite(since) && o.at.getTime() < since) continue;
-        if (!scheduledUntilMissed(spans, s, o, now, tz)) continue;
-        slots.set(doseLogId(m.id, o.iso), { m, o });
+        slots.set(doseLogId(m.id, o.iso), { m, o, spans, span: s });
       }
     }
   }
@@ -240,6 +275,8 @@ export async function doseHistoryBetween(user: User, from: Date, to: Date, now: 
     if (slots.has(id)) logs.set(id, l);
     else unmatched.push(l);
   }
+  // "<medicine> <local date>" of days with a log at a time the current schedule doesn't have (no-history medicines only).
+  const oldScheduleDays = new Set<string>();
   for (const l of unmatched) {
     // Logged in the timezone the profile had then: the same dose is now the slot with that local date and time.
     const slotId = slotAtWallClock.get(wallClock(l.medication_id, l.local_date, l.local_time));
@@ -247,24 +284,33 @@ export async function doseHistoryBetween(user: User, from: Date, to: Date, now: 
       logs.set(slotId, l);
       continue;
     }
+    const m = medsById.get(l.medication_id)!;
     const at = new Date(l.scheduled_for);
-    if (at < from || at >= to) continue;
-    // Recorded for a slot the schedule no longer has: it was due then.
-    const id = doseLogId(l.medication_id, at.toISOString());
     const local = utcToZoned(at, tz);
-    slots.set(id, { m: medsById.get(l.medication_id)!, o: { at, iso: at.toISOString(), local_date: local.date, local_time: local.time } });
+    const oldSchedule = !hasScheduleHistory(m) && !onSchedule(m.schedule, l, at, tz);
+    if (oldSchedule) oldScheduleDays.add(`${m.id} ${local.date}`);
+    if (at < from || at >= to) continue;
+    // Recorded for a slot the schedule no longer has: a Take or Skip was due then. A Snooze left the dose open, and an
+    // open dose an edit removed doesn't count — except at a no-history medicine's old times (its logs are trusted).
+    if (l.status === "snoozed" && !oldSchedule) continue;
+    const id = doseLogId(l.medication_id, at.toISOString());
+    slots.set(id, { m, o: { at, iso: at.toISOString(), local_date: local.date, local_time: local.time } });
     logs.set(id, l);
   }
 
   return [...slots.entries()]
-    .map(([id, { m, o }]) => {
+    .flatMap(([id, { m, o, spans, span }]) => {
       const log = logs.get(id);
+      const acted = log?.status === "taken" || log?.status === "skipped";
+      if (spans && span && !acted && !scheduledUntilMissed(spans, span, o, log, now, tz)) return [];
+      // A no-history medicine's day at its old times (`adherenceSpans`): its current schedule didn't apply yet.
+      if (!log && oldScheduleDays.has(`${m.id} ${o.local_date}`) && !(o.at.getTime() >= Date.parse(m.updated_at))) return [];
       const view = doseView(m, o, log, now);
       // `doseStatus` keeps a lapsed snooze "due" for the alarm screens; looking back, it was missed.
       if (view.status === "due" && log?.status === "snoozed" && log.snooze_until && now.getTime() - Date.parse(log.snooze_until) > MISSED_AFTER_MIN * 60000) {
         view.status = "missed";
       }
-      return view;
+      return [view];
     })
     .sort(byTimeThenName);
 }
@@ -352,8 +398,9 @@ export interface DoseActionOptions {
 /**
  * Record Take / Skip / Snooze for one scheduled dose. Validates ownership and that `scheduledFor`
  * is a real occurrence of the medicine's schedule (±36 h window) so arbitrary logs can't be written.
- * "take" decrements stock once (not again if the dose was already taken) and marks the log `stock_used`.
- * Skip / Snooze over a dose already taken is refused with 409 `dose_already_taken` unless `override` is set.
+ * "take" decrements stock once (not again if the dose was already taken, nor for a second Take at the same time) and
+ * marks the log `stock_used`. Skip / Snooze over a dose already taken is refused with 409 `dose_already_taken` unless
+ * `override` is set — also when the Take arrives at the same moment (the write is conditional, not read-then-write).
  * The returned log never carries `stock_used`.
  */
 export async function recordDoseAction(
@@ -376,41 +423,58 @@ export async function recordDoseAction(
   const logs = col<DoseLog>("dose_logs");
   const prev = await logs.findOne({ id, user_id: user.id });
   // A late or queued Skip / Snooze (another device, an alarm pressed offline) must not undo a Take.
-  if (action !== "take" && prev?.status === "taken" && !opts.override) {
-    throw new HttpError(409, `${med.name} is already marked as taken, so this dose wasn't ${action === "skip" ? "skipped" : "snoozed"}.`, DOSE_ALREADY_TAKEN);
-  }
+  const guarded = action !== "take" && !opts.override;
+  const alreadyTaken = () =>
+    new HttpError(409, `${med.name} is already marked as taken, so this dose wasn't ${action === "skip" ? "skipped" : "snoozed"}.`, DOSE_ALREADY_TAKEN);
+  if (guarded && prev?.status === "taken") throw alreadyTaken();
   const status: DoseStatus = action === "take" ? "taken" : action === "skip" ? "skipped" : "snoozed";
   const now = new Date();
-  // A Take uses one unit of tracked stock, once per dose; the log remembers it so an override gives back only a real one.
-  const usesStock = action === "take" && prev?.status !== "taken" && !!med.stock && typeof med.stock.count === "number" && med.stock.count > 0;
   const set: Partial<DoseLog> = {
     status,
     acted_at: actedAtFor(opts.actedAt, occ.at, now).toISOString(),
     snooze_until: action === "snooze" ? snoozeEndFor(opts, now).toISOString() : undefined,
-    stock_used: usesStock || undefined,
   };
-  const log = await logs.findOneAndUpdate(
-    { id, user_id: user.id },
-    {
-      $set: Object.fromEntries(Object.entries(set).filter(([, v]) => v !== undefined)),
-      ...(action !== "snooze" && prev?.snooze_until ? { $unset: { snooze_until: 1 } } : {}),
-      $setOnInsert: {
-        medication_id: med.id,
-        scheduled_for: occ.iso,
-        local_date: occ.local_date,
-        local_time: occ.local_time,
-        created_at: nowISO(),
+  // Guarded, the write only applies while the log isn't "taken", so a Take landing after the read above still wins:
+  // the filter then matches nothing and the upsert's insert hits the log's unique id (E11000).
+  const write = () =>
+    logs.findOneAndUpdate(
+      { id, user_id: user.id, ...(guarded ? { status: { $ne: "taken" } } : {}) },
+      {
+        $set: Object.fromEntries(Object.entries(set).filter(([, v]) => v !== undefined)),
+        ...(action !== "snooze" ? { $unset: { snooze_until: 1 } } : {}),
+        $setOnInsert: {
+          medication_id: med.id,
+          scheduled_for: occ.iso,
+          local_date: occ.local_date,
+          local_time: occ.local_time,
+          created_at: nowISO(),
+        },
       },
-    },
-    { upsert: true }
-  );
+      { upsert: true }
+    );
+  let log: DoseLog | null;
+  try {
+    log = await write();
+  } catch (e) {
+    if (!isDuplicateKey(e)) throw e;
+    // Another request created this log first: write over it — unless it's a Take, which fails a guarded write again.
+    log = await write().catch((retryError) => {
+      throw guarded && isDuplicateKey(retryError) ? alreadyTaken() : retryError;
+    });
+  }
 
-  if (usesStock) {
-    await col<Medication>("medications").updateOne({ id: med.id, user_id: user.id }, { $inc: { "stock.count": -1 }, $set: { updated_at: nowISO() } });
+  if (action === "take" && prev?.status !== "taken" && med.stock && typeof med.stock.count === "number" && med.stock.count > 0) {
+    // A Take uses one unit of tracked stock, once per dose; the log's `stock_used` remembers it so an override gives
+    // back only a real one. Claiming the flag (only while the log is "taken") means two Takes at once use one unit.
+    const { matched } = await logs.updateOne({ id, user_id: user.id, status: "taken", stock_used: { $exists: false } }, { $set: { stock_used: true } });
+    if (matched) {
+      await col<Medication>("medications").updateOne({ id: med.id, user_id: user.id }, { $inc: { "stock.count": -1 }, $set: { updated_at: nowISO() } });
+    }
   } else if (action !== "take" && prev?.status === "taken" && prev.stock_used) {
-    // An override: the Take is undone, so is the tablet it used. Claiming the flag first means a repeated or
-    // concurrent override can't give it back twice (a Take logged before the flag existed gives nothing back).
-    const { matched } = await logs.updateOne({ id, user_id: user.id, stock_used: true }, { $unset: { stock_used: 1 } });
+    // An override: the Take is undone, so is the tablet it used. Claiming the flag first (only while the log isn't
+    // "taken") means a repeated or concurrent override can't give it back twice, nor take it from a Take that landed
+    // meanwhile (a Take logged before the flag existed gives nothing back).
+    const { matched } = await logs.updateOne({ id, user_id: user.id, stock_used: true, status: { $ne: "taken" } }, { $unset: { stock_used: 1 } });
     if (matched && med.stock && typeof med.stock.count === "number") {
       await col<Medication>("medications").updateOne({ id: med.id, user_id: user.id }, { $inc: { "stock.count": 1 }, $set: { updated_at: nowISO() } });
     }

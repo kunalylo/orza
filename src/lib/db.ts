@@ -8,6 +8,8 @@
  * Every document carries a string `id`; Mongo's `_id` is never returned.
  * Supported filter operators: equality (incl. dotted paths), $gt $gte $lt $lte $ne $in $exists.
  * Supported update operators: $set $inc $push (with $each / $slice) $unset $setOnInsert.
+ * An upsert whose filter matched nothing but whose new document's `id` is taken fails with code 11000 in both
+ * (Mongo's unique `id` indexes) — conditional upserts such as `{id, status: {$ne: "taken"}}` rely on it.
  */
 import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
@@ -63,6 +65,12 @@ export interface Collection<T extends { id: string }> {
 
 export const newId = () => randomUUID();
 export const nowISO = () => new Date().toISOString();
+
+/** A unique-index violation (E11000), e.g. an upsert that lost the race to insert the same `id`. */
+export const isDuplicateKey = (e: unknown) => {
+  const err = e as { code?: number; message?: string } | null;
+  return err?.code === 11000 || /E11000|duplicate key/i.test(err?.message || "");
+};
 
 /* ───────────────────────── Mongo backend ───────────────────────── */
 
@@ -290,11 +298,15 @@ function fileCollection<T extends { id: string }>(name: CollectionName): Collect
     await db.loaded;
     return (db.data[name] ||= []);
   };
-  const upsertDoc = (filter: Filter, update: Update) => {
+  const upsertDoc = (r: any[], filter: Filter, update: Update) => {
     const doc: any = {};
     for (const [k, v] of Object.entries(filter)) if (!(v && typeof v === "object" && !Array.isArray(v))) setPath(doc, k, v);
     applyUpdate(doc, update, true);
     if (!doc.id) doc.id = newId();
+    // Like Mongo's unique `id` index: a filter that didn't match can't add a second document with a taken id.
+    if (r.some((x) => x.id === doc.id)) {
+      throw Object.assign(new Error(`E11000 duplicate key error collection: ${name} dup key: { id: ${JSON.stringify(doc.id)} }`), { code: 11000 });
+    }
     return doc;
   };
   return {
@@ -322,7 +334,7 @@ function fileCollection<T extends { id: string }>(name: CollectionName): Collect
         return { matched: 1, upserted: false };
       }
       if (opts.upsert) {
-        r.push(upsertDoc(filter, update));
+        r.push(upsertDoc(r, filter, update));
         await persist(db);
         return { matched: 0, upserted: true };
       }
@@ -332,10 +344,11 @@ function fileCollection<T extends { id: string }>(name: CollectionName): Collect
       const r = await rows();
       let d = r.find((x) => matches(x, filter));
       if (d) applyUpdate(d, update, false);
-      else if (opts.upsert) r.push((d = upsertDoc(filter, update)));
+      else if (opts.upsert) r.push((d = upsertDoc(r, filter, update)));
       else return null;
+      const after = structuredClone(d); // as this update left it (Mongo's returnDocument "after"), not a later writer's
       await persist(db);
-      return structuredClone(d);
+      return after;
     },
     async deleteOne(filter) {
       const r = await rows();

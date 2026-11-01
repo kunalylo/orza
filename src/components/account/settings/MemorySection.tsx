@@ -133,8 +133,8 @@ export function MemorySection() {
       <div className="mt-5 flex items-start gap-2.5 rounded-orza-sm bg-[rgba(135,87,242,0.06)] px-4 py-3 text-[13px] leading-relaxed text-orza-muted">
         <Lock size={14} strokeWidth={1.75} className="mt-[3px] shrink-0 text-[#6E3ED6]" aria-hidden />
         <p>
-          These notes are private to your account and only used to personalise ÖRZA for you. We never share personal health information
-          without your consent.{" "}
+          These notes are private to your account and only used to personalise ÖRZA for you. When you use an AI feature, the ones it
+          needs go with your request to our AI provider.{" "}
           <span className="tabular-nums">
             {memory.length}/{MEMORY_MAX_ITEMS}
           </span>{" "}

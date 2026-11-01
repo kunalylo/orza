@@ -146,7 +146,7 @@ export function PrivacySection() {
       tone="cyan"
       eyebrow="Privacy & data"
       title="Your data, your call"
-      description="Your data is stored securely. We never share personal health information without your consent."
+      description="Your data is stored securely and never sold. We share it only to run ÖRZA — for example with our AI provider when you use an AI feature — as our privacy policy explains."
     >
       <div className="grid gap-3 md:grid-cols-2">
         <div className="flex flex-col rounded-orza-sm border border-[rgba(20,20,20,0.08)] bg-white/60 p-4">

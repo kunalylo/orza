@@ -195,7 +195,8 @@ export function PreferencesSection() {
           title="Help improve ÖRZA’s AI"
           description={
             <>
-              Lets your conversations and logs, anonymized first, help make ÖRZA’s AI better. Turning this off doesn’t change how AI
+              Lets your conversations and logs, anonymized first, help make ÖRZA’s AI better. Steps and anything read from Apple
+              Health, Health Connect or your phone’s motion sensor are never used for this. Turning this off doesn’t change how AI
               features work for you.{" "}
               <Link
                 href="/privacy#ai-processing"

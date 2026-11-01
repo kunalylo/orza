@@ -75,6 +75,7 @@ export function LegalPage({
   sections,
   related,
   contactSubject,
+  updated = LEGAL_UPDATED,
 }: {
   /** Lower-case document name used in copy, e.g. "privacy policy". */
   docName: string;
@@ -86,13 +87,15 @@ export function LegalPage({
   sections: LegalSection[];
   related: { label: string; href: string }[];
   contactSubject: string;
+  /** "Last updated" stamp; defaults to the shared `LEGAL_UPDATED`. */
+  updated?: { label: string; iso: string };
 }) {
   return (
     <>
       <PageHero eyebrow={eyebrow} icon={icon} title={title} lead={lead}>
         <div className="flex flex-wrap items-center gap-2">
           <MetaChip icon={CalendarDays}>
-            Last updated: <time dateTime={LEGAL_UPDATED.iso}>{LEGAL_UPDATED.label}</time>
+            Last updated: <time dateTime={updated.iso}>{updated.label}</time>
           </MetaChip>
           <MetaChip icon={ListTree}>{sections.length} sections</MetaChip>
         </div>

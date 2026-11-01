@@ -6,7 +6,8 @@
  *   implements the small Mongo subset the app uses.
  *
  * Every document carries a string `id`; Mongo's `_id` is never returned.
- * Supported filter operators: equality (incl. dotted paths), $gt $gte $lt $lte $ne $in $exists.
+ * Supported filter operators: equality (incl. dotted paths; null also matches a missing field, as in Mongo),
+ * $gt $gte $lt $lte $ne $in $exists.
  * Supported update operators: $set $inc $push (with $each / $slice) $unset $setOnInsert.
  * An upsert whose filter matched nothing but whose new document's `id` is taken fails with code 11000 in both
  * (Mongo's unique `id` indexes) — conditional upserts such as `{id, status: {$ne: "taken"}}` rely on it.
@@ -232,6 +233,8 @@ function unsetPath(obj: any, p: string) {
 }
 
 function eq(a: any, b: any) {
+  // Like Mongo: null in a filter also matches a missing field ({x: null}, {x: {$ne: null}}, {x: {$in: [null]}}).
+  if (b === null) return a == null;
   if (Array.isArray(a) && !Array.isArray(b)) return a.some((x) => eq(x, b));
   if (a && b && typeof a === "object" && typeof b === "object") return JSON.stringify(a) === JSON.stringify(b);
   return a === b;

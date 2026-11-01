@@ -126,9 +126,20 @@ export interface TrackingDay {
   date: string;
   water_glasses: number;
   steps: number;
+  /**
+   * The day's steps edit marker: when the member last set `steps` themselves (a `manual` save — the website's form, the
+   * phone's Edit / Log sheet; ISO). Automatic step saves and the health-sync mirror never raise a day whose marker they
+   * haven't seen. Rows from before the marker have no field; API responses always carry it (null = no edit).
+   */
+  steps_edited_at?: string | null;
   weight_kg?: number;
   updated_at: string;
 }
+
+/** `POST /api/track/steps` modes: the member's own number, an automatic raise, or a correction of an automatic save. */
+export type StepsMode = "manual" | "auto" | "reconcile";
+/** Why an `auto` / `reconcile` step save wasn't applied. */
+export type StepsRefusal = "not_higher" | "edited" | "changed";
 
 export interface ChatSession {
   id: string;

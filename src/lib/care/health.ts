@@ -9,13 +9,14 @@
  *
  * Tokens are stored as a sha256 hash (plus a 4-character preview); the plaintext is shown once.
  * Days are stored per user + date + source in `health_days`; reads merge sources per date.
- * Steps (max) and weight (only when the day has none) are mirrored into `tracking` so Today,
- * Goals and Reports pick them up.
+ * Steps (max, never over the member's own edit) and weight (only when the day has none) are mirrored
+ * into `tracking` so Today, Goals and Reports pick them up; `GET /api/health/days` shows the tracked
+ * step count back (`withTrackedSteps`), so every screen shows one number per day.
  */
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { col, newId, nowISO } from "@/lib/db";
 import { dateInTz, DEFAULT_TZ } from "@/lib/dates";
-import { setTracking, trackingInRange } from "@/lib/domain/tracking";
+import { ensureTrackingRow, stepsMarkerOf, trackingInRange } from "@/lib/domain/tracking";
 import type { HealthDay, HealthSource, TrackingDay, User } from "@/lib/types";
 import {
   DayAggregator,
@@ -158,8 +159,10 @@ export interface NormalisedDays {
 /**
  * Validates and cleans posted days: real dates (a timestamp with an offset is converted to the user's
  * local day unless it's a midnight day bucket), not in the future (one day of slack for devices in another timezone), known metrics
- * only, sane ranges (out-of-range values are dropped, never clamped). Repeated dates merge, the later
- * entry winning per metric. Keeps the most recent `maxDays` days, oldest first.
+ * only, sane ranges (out-of-range values are dropped, never clamped). Steps get no slack: a step total for a day after
+ * the member's today (profile timezone) is dropped — steps are counted in that zone everywhere, and such a total
+ * would land on a day that hasn't started. Repeated dates merge, the later entry winning per metric. Keeps the most
+ * recent `maxDays` days, oldest first.
  */
 export function normaliseDays(input: readonly unknown[], opts: { tz: string; today?: string; maxDays?: number }): NormalisedDays {
   const today = opts.today ?? dateInTz(opts.tz);
@@ -183,6 +186,7 @@ export function normaliseDays(input: readonly unknown[], opts: { tz: string; tod
     const values: HealthDayValues = {};
     let any = false;
     for (const m of HEALTH_METRICS) {
+      if (m === "steps" && date > today) continue;
       const v = cleanMetric(m, r[m]);
       if (v !== undefined) {
         values[m] = v;
@@ -353,8 +357,9 @@ export async function upsertHealthDays(user: Pick<User, "id">, source: HealthSou
 
 /**
  * Tracking keeps one row per day for the manual counters. Synced steps only ever raise the day's
- * count (steps = max(existing, synced)); a synced weight fills a day that has no weigh-in yet but
- * never overwrites one the user entered.
+ * count (steps = max(existing, synced)), and never on a day whose steps the member set themselves
+ * (`steps_edited_at`); a synced weight fills a day that has no weigh-in yet but never overwrites one
+ * the user entered.
  */
 async function mirrorIntoTracking(userId: string, days: readonly HealthDayInput[]) {
   const relevant = days.filter((d) => isRealDate(d.date) && (d.steps !== undefined || d.weight_kg !== undefined));
@@ -367,21 +372,33 @@ async function mirrorIntoTracking(userId: string, days: readonly HealthDayInput[
     const weight = d.weight_kg !== undefined ? Math.round(d.weight_kg * 10) / 10 : undefined;
     const t = existing.get(d.date);
     const now = nowISO();
-    if (!t) {
-      const fields: { steps?: number; weight_kg?: number } = {};
-      if (steps !== undefined) fields.steps = steps;
-      if (weight !== undefined) fields.weight_kg = weight;
-      await setTracking(userId, d.date, fields);
-      return;
+    // The row first, then conditional updates: both rules stay atomic against a concurrent manual entry, and a
+    // filter that fails never becomes an upsert. `steps_edited_at: null` also matches rows without the field.
+    if (!t) await ensureTrackingRow(userId, d.date);
+    if (steps !== undefined && steps > (t?.steps || 0) && !stepsMarkerOf(t)) {
+      await tracking.updateOne(
+        { user_id: userId, date: d.date, steps: { $lt: steps }, steps_edited_at: null },
+        { $set: { steps, updated_at: now } }
+      );
     }
-    // Conditional updates keep both rules atomic against a concurrent manual entry.
-    if (steps !== undefined && steps > (t.steps || 0)) {
-      await tracking.updateOne({ user_id: userId, date: d.date, steps: { $lt: steps } }, { $set: { steps, updated_at: now } });
-    }
-    if (weight !== undefined && t.weight_kg == null) {
+    if (weight !== undefined && t?.weight_kg == null) {
       await tracking.updateOne({ user_id: userId, date: d.date, weight_kg: { $exists: false } }, { $set: { weight_kg: weight, updated_at: now } });
     }
   });
+}
+
+/**
+ * One step count per day everywhere (R16): a day's `steps` is the member's tracked count (`tracking.steps` — what
+ * Today, reports and the phone's step saves show) when it is above 0, else the merged health sources' value. A day
+ * with tracked steps but no health data is added (`sources: []`), so the steps chart matches Today.
+ */
+export function withTrackedSteps(days: readonly MergedHealthDay[], tracking: readonly Pick<TrackingDay, "date" | "steps">[]): MergedHealthDay[] {
+  const tracked = new Map<string, number>();
+  for (const t of tracking) if (typeof t.steps === "number" && Number.isFinite(t.steps) && t.steps > 0) tracked.set(t.date, Math.round(t.steps));
+  const out = days.map((d) => (tracked.has(d.date) ? { ...d, steps: tracked.get(d.date) } : d));
+  const merged = new Set(days.map((d) => d.date));
+  for (const [date, steps] of tracked) if (!merged.has(date)) out.push({ date, sources: [], steps });
+  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
 export async function healthDocsInRange(userId: string, from: string, to: string): Promise<HealthDay[]> {

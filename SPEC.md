@@ -30,7 +30,7 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 | `src/components/app/UserProvider.tsx` | `useUser()` → `{ user, setUser, refresh, setCredits }` (client) |
 | `src/components/app/ui.tsx` | `PageHeader`, `StatCard`, `MacroRow`, `EmptyState`, `WellnessNote` |
 | `src/lib/types.ts` | Data model (User, PublicUser, Profile, Targets, Meal, MealItem, Nutrients, Scan, TrackingDay, ChatSession, ChatMessage, Goal, CompensationPlan, Recipe, CreditTransaction, Session (`kind` web/mobile), AppDevice …) |
-| `src/lib/db.ts` | `col<T>(name)` → Mongo-like collection (`findOne/find/insertOne/updateOne/findOneAndUpdate/deleteOne/deleteMany/countDocuments`), `newId()`, `nowISO()`, `usingMongo()`. MongoDB when `MONGODB_URI` is set, else `.data/orza-db.json`. Docs use string `id`; never touch `_id`. Only these operators: filters `$gt $gte $lt $lte $ne $in $exists`; updates `$set $inc $push($each,$slice) $unset $setOnInsert` (never put the same path in `$set` and `$setOnInsert`) |
+| `src/lib/db.ts` | `col<T>(name)` → Mongo-like collection (`findOne/find/insertOne/updateOne/findOneAndUpdate/deleteOne/deleteMany/countDocuments`), `newId()`, `nowISO()`, `usingMongo()`. MongoDB when `MONGODB_URI` is set, else `.data/orza-db.json`. Docs use string `id`; never touch `_id`. Only these operators: filters `$gt $gte $lt $lte $ne $in $exists` (a `null` in a filter also matches a missing field, as in Mongo — the file store does the same); updates `$set $inc $push($each,$slice) $unset $setOnInsert` (never put the same path in `$set` and `$setOnInsert`) |
 | `src/lib/auth.ts` | `hashPassword`, `verifyPassword`, `startSession(userId)` (website: cookie), `startMobileSession(userId, client)` (phone app: returns `{token}`, no cookies), `endSession({everywhere?})`, `revokeAllSessions(userId, {except?})` (browsers + app sessions + their `devices`), `getSessionUserId()`, `getSessionId()`, `getCurrentUser()`, `getCurrentSession()` → `{user, session, via: "cookie"\|"bearer"}`, `requireUser()`, `requireAdmin()`, `requireSuperAdmin()`, `requireMobileSession()`, `resolveCredential(cookie, authorization)` — every check takes the session cookie first, else `Authorization: Bearer <session token>`, then requires a live session (see "Mobile app"); `toPublicUser(user)` (drops `password_hash` and integration secrets: `health_token_hash`, `calendar_token`, `external_ical_url`; adds `admin_role` for admins), `isAdmin(user)` (`is_admin: true` only), `isSuperAdmin(user)`, `adminRoleOf(user)` |
 | `src/lib/http.ts` | `route(handler, {tokenAuth?})` wrapper (maps HttpError/ZodError → `{error, code}`; cross-site guard below), `json()`, `parseBody(req, zodSchema, {maxBytes?})`, `readJsonBody`, `readBodyText`, `BODY_LIMIT_SMALL` (16 KB) / `_DEFAULT` (1 MB) / `_UPLOAD` (12 MB), `assertSameOrigin(Json)`, `isBearerSessionRequest(req)`, `HttpError`, `badRequest/unauthorized/forbidden/notFound` |
 | `src/lib/session-token.ts` | Edge-safe: `signSessionToken`, `readSessionToken`, `SESSION_MAX_AGE` (30 days); phone-app header helpers `sessionBearerToken(authorization)` (ignores `orza_hs_` health-sync tokens and anything not JWT-shaped), `cookieFromHeader`, `mobileClientFrom(headers)`, `cleanDeviceLabel`, `CLIENT_HEADER`/`DEVICE_HEADER`/`PLATFORM_HEADER` |
@@ -40,7 +40,7 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 | `src/lib/credits.ts` | `INITIAL_CREDITS=100`, `CREDIT_COSTS` (scan 2, meal_text 1, chat 1, recipe 2, compensation 1, report_insight 1), `spendCredits`, `refundCredits`, `adjustCredits`, `withCredits(userId, action, fn)` (spend → run → refund on throw; 402 `no_credits` when empty). Spends/refunds record their `action` |
 | `src/lib/ai-guard.ts` | `AI_GUARD` policies, `reserveAi(userId, action)` (per-user requests/minute + concurrency; `null` = over budget → free fallback or `aiRateLimited()` 429), `refundEmptyResult` (a completed but unusable AI answer is refunded only 3×/day per action), `emptyResultCreditNote` |
 | `src/lib/domain/meals.ts` | `sumNutrients`, `cleanItem`, `guessMealType(tz)`, `createMeal({...})`, `listMeals`, `listMealsInRange`, `dayTotals`, `ZERO` |
-| `src/lib/domain/tracking.ts` | `getTrackingDay`, `setTracking(userId, date, fields)`, `trackingInRange` |
+| `src/lib/domain/tracking.ts` | `getTrackingDay`, `setTracking(userId, date, fields)` (water / weight only), `trackingInRange`, `ensureTrackingRow`; steps are written only by `setStepsManual`, `raiseSteps`, `reconcileSteps` (the `POST /api/track/steps` modes); rows returned by these helpers always carry `steps_edited_at` (`withStepsMarker`, null = no edit) |
 | `src/lib/domain/targets.ts` | `bmr`, `tdee`, `computeTargets(profile, {goal, weeklyRateKg})`, `DEFAULT_TARGETS` |
 | `src/lib/dates.ts` | `DEFAULT_TZ` (Asia/Kolkata), `dateInTz(tz)`, `addDays`, `dateRange`, `isISODate`, `hourInTz`, `weekdayShort` |
 | `src/lib/nutrition/index.ts` | **Interface stub** — `FOODS`, `findFood`, `searchFoods`, `nutrientsFor`, `parseMealText` (implemented by the meals stream; everyone else may import these exact signatures) |
@@ -90,7 +90,19 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 
 ### Today — `/dashboard`
 - `GET /api/dashboard/today?date=` → `{date, targets, totals, meals, tracking, remaining:{calories, protein_g}, streak, insight, goal}` (`insight`: deterministic one-liner in ÖRZA's voice based on the numbers).
-- `POST /api/track/water {glasses, date?}`, `POST /api/track/steps {steps, date?}`, `POST /api/track/weight {weight_kg, date?}` (also sets `profile.weight_kg`) → `{tracking}`.
+- `POST /api/track/water {glasses, date?}`, `POST /api/track/weight {weight_kg, date?}` (also sets `profile.weight_kg`) → `{tracking}`.
+- `tracking` (every API answer that returns a day's tracking row: the dashboard and the `track/*` posts) always has `steps_edited_at`: the ISO time of
+  the member's last own step entry for the day, or `null` (no edit; rows from before this field have none).
+- `POST /api/track/steps {steps (0–100000), date?, mode?: "manual" | "auto" | "reconcile", edit_ref?: string | null, expect?: number}` →
+  `{tracking, applied: boolean, reason?: "not_higher" | "edited" | "changed"}` (`tracking` = the day's row after the call; future dates → 400).
+  - `manual` (the default, so the website's form `{steps, date?}` and older app builds keep working as before): sets the steps and `steps_edited_at = now`.
+    Always applied. A save without a mode can't be told apart from the member's own entry, so an older app build's automatic saves set the marker too.
+  - `auto` (the phone's automatic step count): creates the day's row if missing, then one atomic update
+    `{user_id, date, steps: {$lt: steps}, steps_edited_at: edit_ref ?? null} → $set {steps}` — a raise that never lowers and never passes a member's edit the
+    phone hasn't seen (`edit_ref` = the marker it has taken; null = none). Not applied → `reason: "edited"` when the day's marker ≠ `edit_ref`, else `"not_higher"`.
+  - `reconcile` (the phone lowering its own earlier automatic save to the health store's settled total): `expect` required (400 without it);
+    `{user_id, date, steps: expect, steps_edited_at: edit_ref ?? null} → $set {steps}` (no upsert). Not applied → `"edited"` or `"changed"`.
+  - `edit_ref` `""` = null; `expect` is ignored outside `reconcile`. The phone feature-detects the modes by `applied` in the answer (the old server sent `{tracking}` only).
 
 ### Meals — `/dashboard/meals`, `/dashboard/scan`
 - `GET /api/meals?date=` → `{meals, totals}`; `PATCH /api/meals/[id] {meal_type?, items?}` → `{meal}`; `DELETE /api/meals/[id]` → `{ok}`.
@@ -258,13 +270,17 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
 ### Health sync — `/dashboard/health`
 - `POST /api/health/sync` (auth: `Authorization: Bearer <health token>`, no cookies): accepts (a) ÖRZA JSON
   `{source, days:[{date, steps?, active_kcal?, distance_km?, sleep_minutes?, resting_hr?, avg_hr?, weight_kg?, water_ml?}]}` and (b) the "Health Auto Export"
-  iOS app REST format `{data:{metrics:[{name, units, data:[{date, qty | Avg | …}]}]}}`; aggregates per day; upserts `health_days`; mirrors steps (max) and
-  weight into `tracking` → `{ok, days_updated, skipped}` (≤1 MB; 401 with `WWW-Authenticate` for a missing/invalid token; 429 when a token or IP is over its budget).
+  iOS app REST format `{data:{metrics:[{name, units, data:[{date, qty | Avg | …}]}]}}`; aggregates per day; upserts `health_days`; mirrors steps (max, and
+  never on a day with `steps_edited_at`: the member's own number wins) and weight (only into a day with none) into `tracking` → `{ok, days_updated, skipped}` (≤1 MB; 401 with `WWW-Authenticate` for a missing/invalid token; 429 when a token or IP is over its budget).
   `GET /api/health/token` → `{token: {preview, created_at} | null}`; `POST /api/health/token` → `{token, preview, created_at}` (shown once; store sha256 + preview); `DELETE` revokes → `{ok}`.
 - `POST /api/health/import {source: "apple_health" | "health_connect" | "csv", days:[…] (≤400)}` (session) → `{ok, days_updated, skipped}`. Apple Health `export.zip` is parsed **in the browser** (fflate unzip +
   streaming scan of `export.xml` for StepCount, ActiveEnergyBurned, DistanceWalkingRunning, SleepAnalysis, RestingHeartRate, HeartRate, BodyMass,
   DietaryWater); only daily aggregates are uploaded. CSV import maps a date column + metric columns.
-- `GET /api/health/days?from&to` (default last 30 days, ≤400) → `{from, to, days, sources, last_sync, last_sync_source}`, `days` merged per date. Page: connect cards (iPhone: export import + Health Auto Export / Shortcuts steps with the sync
+  Both write paths (`normaliseDays`) drop days more than one day after the member's today (profile timezone; the slack is for devices in another zone)
+  and drop `steps` for any day after today — steps are counted in the profile's zone — keeping that day's other metrics.
+- `GET /api/health/days?from&to` (default last 30 days, ≤400) → `{from, to, days, sources, last_sync, last_sync_source}`, `days` merged per date; a day's
+  `steps` is `tracking.steps` when the day has a tracking row with steps > 0 (one number on Today, reports and the Health charts), else the merged sources'
+  value, and a day with tracked steps but no health data is listed with `sources: []`. Page: connect cards (iPhone: export import + Health Auto Export / Shortcuts steps with the sync
   URL and token; Android: Health Connect via automation apps posting to the same API, plus CSV; a one-line note under the privacy note that the ÖRZA phone app
   will sync automatically later), charts, last sync.
 

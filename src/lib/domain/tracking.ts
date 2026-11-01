@@ -64,8 +64,8 @@ export interface StepsWrite {
 }
 
 /**
- * `manual` — the member's own number for the day (the website's form, the phone's Edit / Log sheet, and any caller that
- * sends no mode): sets the steps and the day's edit marker. Always applied.
+ * `manual` — the member's own number for the day (the website's form, the phone's Edit / Log sheet): sets the steps and
+ * the day's edit marker. Always applied.
  */
 export async function setStepsManual(userId: string, date: string, steps: number): Promise<StepsWrite> {
   const now = nowISO();
@@ -78,7 +78,22 @@ export async function setStepsManual(userId: string, date: string, steps: number
 }
 
 /**
- * `auto` — an automatic count (the phone's step sync): an atomic raise, refused while the day's edit marker isn't
+ * No mode — a caller from before the modes (app builds before steps v2, a website tab loaded before this deploy): sets
+ * the steps as the server always did, leaving the day's edit marker as it is. Those builds send their automatic saves
+ * and their member's own entries alike, so marking them would freeze the automatic days for the health-sync mirror and
+ * for the v2 app's `auto` saves after the member upgrades. Always applied.
+ */
+export async function setStepsLegacy(userId: string, date: string, steps: number): Promise<StepsWrite> {
+  const doc = await col<TrackingDay>("tracking").findOneAndUpdate(
+    { user_id: userId, date },
+    { $set: { steps, updated_at: nowISO() }, $setOnInsert: { id: newId(), water_glasses: 0 } },
+    { upsert: true }
+  );
+  return { tracking: doc ? withStepsMarker(doc) : await getTrackingDay(userId, date), applied: true };
+}
+
+/**
+ * `auto` —an automatic count (the phone's step sync): an atomic raise, refused while the day's edit marker isn't
  * `editRef` (the marker the phone has already taken into account; null = none). Never lowers.
  * Not applied → `edited` (the member set the day and the phone hasn't seen it), else `not_higher`.
  */

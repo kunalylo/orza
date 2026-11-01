@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
-import { STEPS_MODES, raiseSteps, reconcileSteps, setStepsManual, type StepsWrite } from "@/lib/domain/tracking";
+import { STEPS_MODES, raiseSteps, reconcileSteps, setStepsLegacy, setStepsManual, type StepsWrite } from "@/lib/domain/tracking";
 import { json, parseBody, route } from "@/lib/http";
 import { boundedNumber, optionalDay, resolveTrackDate } from "../_shared";
 
@@ -10,7 +10,7 @@ const Body = z
   .object({
     steps: boundedNumber(0, 100000),
     date: optionalDay,
-    /** Omitted (today's website form, older app builds) = `manual`. */
+    /** Omitted / null: the contract from before the modes (app builds before steps v2) — a plain set, no edit marker. */
     mode: z.enum(STEPS_MODES, { errorMap: () => ({ message: 'must be "manual", "auto" or "reconcile"' }) }).nullish(),
     /** The day's `steps_edited_at` the caller has already taken into account; null / "" / omitted = none. */
     edit_ref: z.string({ invalid_type_error: "must be a string or null" }).max(64, "is too long").nullish(),
@@ -23,11 +23,14 @@ const Body = z
 
 /**
  * POST /api/track/steps { steps, date?, mode?, edit_ref?, expect? } → { tracking, applied, reason? }
- * - `manual` (default): sets the day's steps and its edit marker (`tracking.steps_edited_at`). Always applied.
+ * - `manual` (the website's form, the phone's Edit / Log sheet): sets the day's steps and its edit marker
+ *   (`tracking.steps_edited_at`). Always applied.
  * - `auto`: raises the day to `steps` only when that is higher and the day's edit marker equals `edit_ref`
  *   (null = no edit) → else `reason: "edited"` (the marker differs) or `"not_higher"`.
  * - `reconcile`: sets `steps` only while the day still holds `expect` and its marker equals `edit_ref`
  *   → else `"edited"` or `"changed"`.
+ * - No mode (app builds before steps v2, which send their automatic saves this way too): sets the steps and leaves the
+ *   edit marker as it is, exactly as before the modes. Always applied.
  * `tracking` is always the day's row as it is after the call. See SPEC "Today" and the phone's steps sync.
  */
 export const POST = route(async (req: Request) => {
@@ -38,6 +41,7 @@ export const POST = route(async (req: Request) => {
   let out: StepsWrite;
   if (body.mode === "auto") out = await raiseSteps(user.id, date, body.steps, editRef);
   else if (body.mode === "reconcile") out = await reconcileSteps(user.id, date, body.steps, body.expect as number, editRef);
-  else out = await setStepsManual(user.id, date, body.steps);
+  else if (body.mode === "manual") out = await setStepsManual(user.id, date, body.steps);
+  else out = await setStepsLegacy(user.id, date, body.steps);
   return json(out);
 });

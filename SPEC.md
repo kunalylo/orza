@@ -40,7 +40,7 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 | `src/lib/credits.ts` | `INITIAL_CREDITS=100`, `CREDIT_COSTS` (scan 2, meal_text 1, chat 1, recipe 2, compensation 1, report_insight 1), `spendCredits`, `refundCredits`, `adjustCredits`, `withCredits(userId, action, fn)` (spend → run → refund on throw; 402 `no_credits` when empty). Spends/refunds record their `action` |
 | `src/lib/ai-guard.ts` | `AI_GUARD` policies, `reserveAi(userId, action)` (per-user requests/minute + concurrency; `null` = over budget → free fallback or `aiRateLimited()` 429), `refundEmptyResult` (a completed but unusable AI answer is refunded only 3×/day per action), `emptyResultCreditNote` |
 | `src/lib/domain/meals.ts` | `sumNutrients`, `cleanItem`, `guessMealType(tz)`, `createMeal({...})`, `listMeals`, `listMealsInRange`, `dayTotals`, `ZERO` |
-| `src/lib/domain/tracking.ts` | `getTrackingDay`, `setTracking(userId, date, fields)` (water / weight only), `trackingInRange`, `ensureTrackingRow`; steps are written only by `setStepsManual`, `raiseSteps`, `reconcileSteps` (the `POST /api/track/steps` modes); rows returned by these helpers always carry `steps_edited_at` (`withStepsMarker`, null = no edit) |
+| `src/lib/domain/tracking.ts` | `getTrackingDay`, `setTracking(userId, date, fields)` (water / weight only), `trackingInRange`, `ensureTrackingRow`; steps are written only by `setStepsManual`, `raiseSteps`, `reconcileSteps` (the `POST /api/track/steps` modes) and `setStepsLegacy` (a save without a mode: no marker), besides the health-sync mirror's raise (`care/health.ts`); rows returned by these helpers always carry `steps_edited_at` (`withStepsMarker`, null = no edit) |
 | `src/lib/domain/targets.ts` | `bmr`, `tdee`, `computeTargets(profile, {goal, weeklyRateKg})`, `DEFAULT_TARGETS` |
 | `src/lib/dates.ts` | `DEFAULT_TZ` (Asia/Kolkata), `dateInTz(tz)`, `addDays`, `dateRange`, `isISODate`, `hourInTz`, `weekdayShort` |
 | `src/lib/nutrition/index.ts` | **Interface stub** — `FOODS`, `findFood`, `searchFoods`, `nutrientsFor`, `parseMealText` (implemented by the meals stream; everyone else may import these exact signatures) |
@@ -95,14 +95,22 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
   the member's last own step entry for the day, or `null` (no edit; rows from before this field have none).
 - `POST /api/track/steps {steps (0–100000), date?, mode?: "manual" | "auto" | "reconcile", edit_ref?: string | null, expect?: number}` →
   `{tracking, applied: boolean, reason?: "not_higher" | "edited" | "changed"}` (`tracking` = the day's row after the call; future dates → 400).
-  - `manual` (the default, so the website's form `{steps, date?}` and older app builds keep working as before): sets the steps and `steps_edited_at = now`.
-    Always applied. A save without a mode can't be told apart from the member's own entry, so an older app build's automatic saves set the marker too.
+  - `manual` (the member's own number: the website's Today card and the v2 app's Edit / Log sheet send it): sets the steps and `steps_edited_at = now`.
+    Always applied. A number typed on the website (or in the app) is the day's count from then on: the health-sync mirror (Health Auto Export /
+    Shortcuts through `/api/health/sync`, the export.zip and CSV import) never raises it, and `GET /api/health/days` shows it — typed 3,000 at 10:00,
+    Health Auto Export posts 11,000 at 21:00 → Today, reports, goals, the coach and the Health chart all stay at 3,000 until the member types again
+    (`health_days` keeps the source's 11,000). Only the phone app's own counting adds to it (`auto` with that marker as `edit_ref`: the typed number
+    plus steps counted after it). The card's hint says so ("…health syncs and imports won't raise it").
+  - No mode (or `null`): the contract from before the modes — app builds before steps v2 send their automatic saves and their member's entries this
+    way alike, `{steps, date}`. Sets the steps exactly as before (`$set {steps}`, upsert) and leaves `steps_edited_at` as it is, so those builds' automatic
+    days stay open to the mirror and to the v2 app's `auto` after an upgrade. Always applied (`{tracking, applied: true}`).
   - `auto` (the phone's automatic step count): creates the day's row if missing, then one atomic update
     `{user_id, date, steps: {$lt: steps}, steps_edited_at: edit_ref ?? null} → $set {steps}` — a raise that never lowers and never passes a member's edit the
     phone hasn't seen (`edit_ref` = the marker it has taken; null = none). Not applied → `reason: "edited"` when the day's marker ≠ `edit_ref`, else `"not_higher"`.
   - `reconcile` (the phone lowering its own earlier automatic save to the health store's settled total): `expect` required (400 without it);
     `{user_id, date, steps: expect, steps_edited_at: edit_ref ?? null} → $set {steps}` (no upsert). Not applied → `"edited"` or `"changed"`.
   - `edit_ref` `""` = null; `expect` is ignored outside `reconcile`. The phone feature-detects the modes by `applied` in the answer (the old server sent `{tracking}` only).
+    The v2 app must send a mode with every save (the member's own entries `manual`): a save without one never sets the marker.
 
 ### Meals — `/dashboard/meals`, `/dashboard/scan`
 - `GET /api/meals?date=` → `{meals, totals}`; `PATCH /api/meals/[id] {meal_type?, items?}` → `{meal}`; `DELETE /api/meals/[id]` → `{ok}`.
@@ -134,6 +142,12 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 - `GET/PUT /api/profile` → `{user}` (PUT also returns `targets_recomputed`; memory facts derived from profile fields are refreshed with a conditional write,
   so memory saved concurrently by chat/Settings is never overwritten); `PUT /api/settings/preferences {units?, reminders?, weekly_report?, tone?, ai_training_opt_out?}`,
   `PUT /api/settings/targets`, `PUT /api/settings/memory {memory}` → `{user}`.
+- **AI improvement** (`preferences.ai_training_opt_out`, "Help improve ÖRZA's AI"): nothing uses member data to improve the AI yet. When something
+  does, it must skip opted-out members **and**, for everyone, leave out steps and anything read from Apple Health, Health Connect or the phone's motion
+  sensor — the privacy page (`#ai-processing`, `#phone-app`) and the Settings toggle promise that whatever the setting. That means no `tracking.steps`,
+  no `health_days` values, no tracking weights (a weight the health-sync mirror copied in can't be told from a typed one), and no step counts in
+  `chat_messages`: the coach's own activity replies ("Steps today: **4,200 / 8,000**", `coach.ts` `activityReply`), AI replies that repeat the step count
+  from `contextForPrompt`, and members' messages that state one — drop those messages or strip the numbers before anything leaves.
 - `GET /api/account/export` → JSON attachment of all the user's data (incl. Care collections, photo metadata without bytes, notification devices without keys,
   `app_devices` (phones running the app, without push tokens), signed-in sessions with `kind` web/mobile and device name, credit requests; never password/token
   hashes); `DELETE /api/account {confirm:"DELETE"}` → deletes the user and all their data (incl. Care data and photos, registered phones, credit requests) and

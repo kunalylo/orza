@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Checks the steps v2 server contract against a running ÖRZA server (local by default):
- * `POST /api/track/steps` modes (manual / auto / reconcile, `edit_ref`, `expect` → `{tracking, applied, reason}`), the
- * `steps_edited_at` marker in answers, the health-sync mirror never raising an edited day, step totals for a future day
+ * `POST /api/track/steps` modes (manual / auto / reconcile, `edit_ref`, `expect` → `{tracking, applied, reason}`; no
+ * mode = the old plain set, no marker), the `steps_edited_at` marker in answers, the health-sync mirror never raising an edited day, step totals for a future day
  * being dropped, and `GET /api/health/days` showing the tracked step count.
  *
  *   npm run dev                                   (another terminal; the JSON-file database when MONGODB_URI is unset)
@@ -86,6 +86,8 @@ async function main() {
   const D1 = addDays(today, -3); // edited by the member
   const D2 = addDays(today, -4); // automatic saves only
   const D3 = addDays(today, -5); // typed steps, no health data
+  const D4 = addDays(today, -6); // saved without a mode (an app build from before the modes)
+  const D5 = addDays(today, -7); // edited, then saved without a mode
   const TOMORROW = addDays(today, 1);
 
   /* ── B1: modes ── */
@@ -96,9 +98,9 @@ async function main() {
   }
   check("manual: applied, sets steps_edited_at", r.status === 200 && r.json.applied === true && r.json.tracking.steps === 4000 && typeof r.json.tracking.steps_edited_at === "string", outcome(r));
   const before = r.json.tracking.steps_edited_at;
-  r = await steps({ steps: 4200, date: D1 }); // the website's form: no mode
+  r = await steps({ steps: 4200, date: D1, mode: "manual" }); // the website's form
   const M = r.json.tracking?.steps_edited_at;
-  check("no mode = manual (the website's form): applied, marker set", r.status === 200 && r.json.applied === true && r.json.tracking.steps === 4200 && typeof M === "string" && M >= before, outcome(r));
+  check("manual again (the website's form): applied, marker refreshed", r.status === 200 && r.json.applied === true && r.json.tracking.steps === 4200 && typeof M === "string" && M >= before, outcome(r));
 
   r = await steps({ steps: 9000, date: D1, mode: "auto", edit_ref: null });
   check("auto when a marker exists and edit_ref is null → edited", same(outcome(r), { status: 200, steps: 4200, applied: false, reason: "edited", marker: M }), outcome(r));
@@ -118,6 +120,15 @@ async function main() {
   r = await steps({ steps: 4000, date: D2, mode: "reconcile" });
   check("reconcile without expect → 400", r.status === 400, outcome(r));
 
+  /* ── B1: no mode — app builds from before the modes send their automatic saves this way ── */
+  r = await steps({ steps: 6000, date: D4 });
+  check("no mode (app builds before v2): applied, no marker", same(outcome(r), { status: 200, steps: 6000, applied: true, marker: null }), outcome(r));
+  r = await steps({ steps: 7000, date: D4, mode: "auto", edit_ref: null });
+  check("auto after a no-mode save → applied (the day isn't frozen)", same(outcome(r), { status: 200, steps: 7000, applied: true, marker: null }), outcome(r));
+  const M5 = (await steps({ steps: 2000, date: D5, mode: "manual" })).json.tracking?.steps_edited_at;
+  r = await steps({ steps: 2500, date: D5 });
+  check("no mode on an edited day: steps set, marker left as it was", typeof M5 === "string" && same(outcome(r), { status: 200, steps: 2500, applied: true, marker: M5 }), outcome(r));
+
   /* ── B2: the marker in the day's row ── */
   const d1 = await dayOf(D1);
   const d2 = await dayOf(D2);
@@ -130,18 +141,20 @@ async function main() {
     days: [
       { date: D1, steps: 20000, sleep_minutes: 420 },
       { date: D2, steps: 7000 },
+      { date: D4, steps: 8000 },
       { date: TOMORROW, steps: 999, sleep_minutes: 400 },
     ],
   });
   check("health import accepted", r.status === 200 && r.json.ok === true, r.json);
   check("mirror on an edited day → no raise", (await dayOf(D1)).tracking?.steps === 9000, (await dayOf(D1)).tracking);
   check("mirror on an unedited day → raised (control)", (await dayOf(D2)).tracking?.steps === 7000, (await dayOf(D2)).tracking);
+  check("mirror on a day saved without a mode → raised", (await dayOf(D4)).tracking?.steps === 8000, (await dayOf(D4)).tracking);
   r = await call("GET", `/health/days?from=${TOMORROW}&to=${TOMORROW}`);
   const tomorrow = r.json.days?.find((d) => d.date === TOMORROW);
   check("steps for tomorrow dropped, the day's other metrics kept", tomorrow && tomorrow.sleep_minutes === 400 && tomorrow.steps === undefined, r.json.days);
 
   /* ── B4: one step number on the Health screen ── */
-  await steps({ steps: 3000, date: D3 });
+  await steps({ steps: 3000, date: D3, mode: "manual" });
   r = await call("GET", `/health/days?from=${D3}&to=${D1}`);
   const day = (date) => r.json.days?.find((d) => d.date === date);
   check("GET /api/health/days: steps = tracking.steps on an edited day (not the synced 20000)", day(D1)?.steps === 9000 && day(D1)?.sleep_minutes === 420, day(D1));

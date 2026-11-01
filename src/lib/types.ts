@@ -46,7 +46,10 @@ export interface Preferences {
   reminders: boolean;
   weekly_report: boolean;
   tone: "gentle" | "direct";
-  /** When true, the user's data is excluded from any future model-improvement use (see the Trust page). */
+  /**
+   * When true, the user's data is excluded from any future model-improvement use (see the Trust page). Whatever this is,
+   * steps and health-app data (including step counts inside chat messages) are never used for it: SPEC "AI improvement".
+   */
   ai_training_opt_out?: boolean;
 }
 

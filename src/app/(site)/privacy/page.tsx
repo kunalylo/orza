@@ -209,8 +209,9 @@ const SECTIONS: LegalSection[] = [
             while you use the app and — when your phone allows it — in the background about once an hour, so your step goal,
             reports and the website stay up to date while the app is closed. Each read also checks the last few days, because
             watches and fitness apps often sync late. When you first turn step counting on, ÖRZA can bring in your step totals
-            from up to the last 30 days (fewer when they come from the motion sensor); if another ÖRZA account used step counting
-            on the same phone before you, your account only gets steps from the moment you turned it on.
+            from up to the last 30 days (fewer when they come from the motion sensor). If another ÖRZA account has already turned
+            on step counting in this installation of the app, your account only gets steps from the moment you turned it on;
+            reinstalling the app, clearing its data or deleting that account makes the app forget the other account.
           </LegalLi>
           <LegalLi title="Sleep, resting heart rate and weight:">
             when you open the app (at most every few hours) or tap <B>Sync now</B> on the Health screen.

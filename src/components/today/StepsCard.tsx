@@ -41,7 +41,8 @@ export function StepsCard({
     }
     setSaving(true);
     try {
-      const res = await api.post<TrackingResponse>("/track/steps", { steps: Math.round(n), date });
+      // `manual`: the member's own number — it becomes the day's count (health syncs and imports no longer raise it).
+      const res = await api.post<TrackingResponse>("/track/steps", { steps: Math.round(n), date, mode: "manual" });
       onSaved(res.tracking);
       setInput("");
       toast.success(`${formatNumber(res.tracking.steps)} steps saved`);
@@ -95,7 +96,10 @@ export function StepsCard({
             Save
           </Button>
         </div>
-        <FieldHint id={hintId}>Enter the total from your phone or watch.</FieldHint>
+        <FieldHint id={hintId}>
+          Enter the total from your phone or watch. Your number becomes the day’s count — health syncs and imports won’t
+          raise it.
+        </FieldHint>
       </form>
     </GlassCard>
   );

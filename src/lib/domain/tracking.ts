@@ -7,12 +7,19 @@ export const STEPS_MODES = ["manual", "auto", "reconcile"] as const satisfies re
 export const stepsMarkerOf = (t: Pick<TrackingDay, "steps_edited_at"> | null | undefined) =>
   typeof t?.steps_edited_at === "string" && t.steps_edited_at ? t.steps_edited_at : null;
 
-/** A tracking row as the API returns it: `steps_edited_at` always present (null on rows without an edit, old ones too). */
-export function withStepsMarker(t: TrackingDay): TrackingDay & { steps_edited_at: string | null } {
-  return { ...t, steps_edited_at: stepsMarkerOf(t) };
+/**
+ * A tracking row as the API returns it: `steps_edited_at` and `steps_edited_value` always present (null on rows without
+ * an edit, old ones too; the value is null too for an edit saved before that field).
+ */
+export type TrackedDay = TrackingDay & { steps_edited_at: string | null; steps_edited_value: number | null };
+
+export function withStepsMarker(t: TrackingDay): TrackedDay {
+  const marker = stepsMarkerOf(t);
+  const v = t.steps_edited_value;
+  return { ...t, steps_edited_at: marker, steps_edited_value: marker && typeof v === "number" && Number.isFinite(v) ? v : null };
 }
 
-export async function getTrackingDay(userId: string, date: string): Promise<TrackingDay & { steps_edited_at: string | null }> {
+export async function getTrackingDay(userId: string, date: string): Promise<TrackedDay> {
   const d = await col<TrackingDay>("tracking").findOne({ user_id: userId, date });
   return withStepsMarker(d || { id: "", user_id: userId, date, water_glasses: 0, steps: 0, updated_at: "" });
 }
@@ -33,7 +40,7 @@ export async function setTracking(userId: string, date: string, fields: Partial<
   return doc && withStepsMarker(doc);
 }
 
-export async function trackingInRange(userId: string, from: string, to: string): Promise<TrackingDay[]> {
+export async function trackingInRange(userId: string, from: string, to: string): Promise<TrackedDay[]> {
   const rows = await col<TrackingDay>("tracking").find({ user_id: userId, date: { $gte: from, $lte: to } }, { sort: { date: 1 } });
   return rows.map(withStepsMarker);
 }
@@ -58,20 +65,20 @@ export async function ensureTrackingRow(userId: string, date: string): Promise<v
 
 /** A step save's outcome: the day's row as it is now, whether this save changed it, and why not. */
 export interface StepsWrite {
-  tracking: TrackingDay & { steps_edited_at: string | null };
+  tracking: TrackedDay;
   applied: boolean;
   reason?: StepsRefusal;
 }
 
 /**
- * `manual` — the member's own number for the day (the website's form, the phone's Edit / Log sheet): sets the steps and
- * the day's edit marker. Always applied.
+ * `manual` — the member's own number for the day (the website's form, the phone's Edit / Log sheet): sets the steps, the
+ * day's edit marker and the edit's own number (`steps_edited_value`). Always applied.
  */
 export async function setStepsManual(userId: string, date: string, steps: number): Promise<StepsWrite> {
   const now = nowISO();
   const doc = await col<TrackingDay>("tracking").findOneAndUpdate(
     { user_id: userId, date },
-    { $set: { steps, steps_edited_at: now, updated_at: now }, $setOnInsert: { id: newId(), water_glasses: 0 } },
+    { $set: { steps, steps_edited_at: now, steps_edited_value: steps, updated_at: now }, $setOnInsert: { id: newId(), water_glasses: 0 } },
     { upsert: true }
   );
   return { tracking: doc ? withStepsMarker(doc) : await getTrackingDay(userId, date), applied: true };
@@ -93,7 +100,7 @@ export async function setStepsLegacy(userId: string, date: string, steps: number
 }
 
 /**
- * `auto` —an automatic count (the phone's step sync): an atomic raise, refused while the day's edit marker isn't
+ * `auto` — an automatic count (the phone's step sync): an atomic raise, refused while the day's edit marker isn't
  * `editRef` (the marker the phone has already taken into account; null = none). Never lowers.
  * Not applied → `edited` (the member set the day and the phone hasn't seen it), else `not_higher`.
  */

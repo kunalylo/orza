@@ -389,15 +389,22 @@ async function mirrorIntoTracking(userId: string, days: readonly HealthDayInput[
 
 /**
  * One step count per day everywhere (R16): a day's `steps` is the member's tracked count (`tracking.steps` — what
- * Today, reports and the phone's step saves show) when it is above 0, else the merged health sources' value. A day
- * with tracked steps but no health data is added (`sources: []`), so the steps chart matches Today.
+ * Today, reports and the phone's step saves show) when it is above 0 or the member set it themselves (an edit marker:
+ * a typed 0 is their number too, and the mirror never raises it), else the merged health sources' value. A day with
+ * tracked steps above 0 but no health data is added (`sources: []`), so the steps chart matches Today.
  */
-export function withTrackedSteps(days: readonly MergedHealthDay[], tracking: readonly Pick<TrackingDay, "date" | "steps">[]): MergedHealthDay[] {
+export function withTrackedSteps(
+  days: readonly MergedHealthDay[],
+  tracking: readonly Pick<TrackingDay, "date" | "steps" | "steps_edited_at">[]
+): MergedHealthDay[] {
   const tracked = new Map<string, number>();
-  for (const t of tracking) if (typeof t.steps === "number" && Number.isFinite(t.steps) && t.steps > 0) tracked.set(t.date, Math.round(t.steps));
+  for (const t of tracking) {
+    if (typeof t.steps !== "number" || !Number.isFinite(t.steps) || t.steps < 0) continue;
+    if (t.steps > 0 || stepsMarkerOf(t)) tracked.set(t.date, Math.round(t.steps));
+  }
   const out = days.map((d) => (tracked.has(d.date) ? { ...d, steps: tracked.get(d.date) } : d));
   const merged = new Set(days.map((d) => d.date));
-  for (const [date, steps] of tracked) if (!merged.has(date)) out.push({ date, sources: [], steps });
+  for (const [date, steps] of tracked) if (steps > 0 && !merged.has(date)) out.push({ date, sources: [], steps });
   return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 

@@ -40,7 +40,7 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 | `src/lib/credits.ts` | `INITIAL_CREDITS=100`, `CREDIT_COSTS` (scan 2, meal_text 1, chat 1, recipe 2, compensation 1, report_insight 1), `spendCredits`, `refundCredits`, `adjustCredits`, `withCredits(userId, action, fn)` (spend → run → refund on throw; 402 `no_credits` when empty). Spends/refunds record their `action` |
 | `src/lib/ai-guard.ts` | `AI_GUARD` policies, `reserveAi(userId, action)` (per-user requests/minute + concurrency; `null` = over budget → free fallback or `aiRateLimited()` 429), `refundEmptyResult` (a completed but unusable AI answer is refunded only 3×/day per action), `emptyResultCreditNote` |
 | `src/lib/domain/meals.ts` | `sumNutrients`, `cleanItem`, `guessMealType(tz)`, `createMeal({...})`, `listMeals`, `listMealsInRange`, `dayTotals`, `ZERO` |
-| `src/lib/domain/tracking.ts` | `getTrackingDay`, `setTracking(userId, date, fields)` (water / weight only), `trackingInRange`, `ensureTrackingRow`; steps are written only by `setStepsManual`, `raiseSteps`, `reconcileSteps` (the `POST /api/track/steps` modes) and `setStepsLegacy` (a save without a mode: no marker), besides the health-sync mirror's raise (`care/health.ts`); rows returned by these helpers always carry `steps_edited_at` (`withStepsMarker`, null = no edit) |
+| `src/lib/domain/tracking.ts` | `getTrackingDay`, `setTracking(userId, date, fields)` (water / weight only), `trackingInRange`, `ensureTrackingRow`; steps are written only by `setStepsManual`, `raiseSteps`, `reconcileSteps` (the `POST /api/track/steps` modes) and `setStepsLegacy` (a save without a mode: no marker), besides the health-sync mirror's raise (`care/health.ts`); rows returned by these helpers always carry `steps_edited_at` and `steps_edited_value` (`withStepsMarker` → `TrackedDay`, null = no edit) |
 | `src/lib/domain/targets.ts` | `bmr`, `tdee`, `computeTargets(profile, {goal, weeklyRateKg})`, `DEFAULT_TARGETS` |
 | `src/lib/dates.ts` | `DEFAULT_TZ` (Asia/Kolkata), `dateInTz(tz)`, `addDays`, `dateRange`, `isISODate`, `hourInTz`, `weekdayShort` |
 | `src/lib/nutrition/index.ts` | **Interface stub** — `FOODS`, `findFood`, `searchFoods`, `nutrientsFor`, `parseMealText` (implemented by the meals stream; everyone else may import these exact signatures) |
@@ -92,10 +92,12 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 - `GET /api/dashboard/today?date=` → `{date, targets, totals, meals, tracking, remaining:{calories, protein_g}, streak, insight, goal}` (`insight`: deterministic one-liner in ÖRZA's voice based on the numbers).
 - `POST /api/track/water {glasses, date?}`, `POST /api/track/weight {weight_kg, date?}` (also sets `profile.weight_kg`) → `{tracking}`.
 - `tracking` (every API answer that returns a day's tracking row: the dashboard and the `track/*` posts) always has `steps_edited_at`: the ISO time of
-  the member's last own step entry for the day, or `null` (no edit; rows from before this field have none).
+  the member's last own step entry for the day, or `null` (no edit; rows from before this field have none), and `steps_edited_value`: the number that
+  entry set (`steps` may have been raised on top of it since by the phone's `auto` saves that took the marker), or `null` (no edit, or an edit from
+  before this field). The phone anchors the member's edit with the two (its number at the marker's instant); `updated_at` is when the row was last written.
 - `POST /api/track/steps {steps (0–100000), date?, mode?: "manual" | "auto" | "reconcile", edit_ref?: string | null, expect?: number}` →
   `{tracking, applied: boolean, reason?: "not_higher" | "edited" | "changed"}` (`tracking` = the day's row after the call; future dates → 400).
-  - `manual` (the member's own number: the website's Today card and the v2 app's Edit / Log sheet send it): sets the steps and `steps_edited_at = now`.
+  - `manual` (the member's own number: the website's Today card and the v2 app's Edit / Log sheet send it): sets the steps, `steps_edited_at = now` and `steps_edited_value = steps`.
     Always applied. A number typed on the website (or in the app) is the day's count from then on: the health-sync mirror (Health Auto Export /
     Shortcuts through `/api/health/sync`, the export.zip and CSV import) never raises it, and `GET /api/health/days` shows it — typed 3,000 at 10:00,
     Health Auto Export posts 11,000 at 21:00 → Today, reports, goals, the coach and the Health chart all stay at 3,000 until the member types again
@@ -293,8 +295,8 @@ CSV import, and (future) the ÖRZA mobile companion app, which will use the same
   Both write paths (`normaliseDays`) drop days more than one day after the member's today (profile timezone; the slack is for devices in another zone)
   and drop `steps` for any day after today — steps are counted in the profile's zone — keeping that day's other metrics.
 - `GET /api/health/days?from&to` (default last 30 days, ≤400) → `{from, to, days, sources, last_sync, last_sync_source}`, `days` merged per date; a day's
-  `steps` is `tracking.steps` when the day has a tracking row with steps > 0 (one number on Today, reports and the Health charts), else the merged sources'
-  value, and a day with tracked steps but no health data is listed with `sources: []`. Page: connect cards (iPhone: export import + Health Auto Export / Shortcuts steps with the sync
+  `steps` is `tracking.steps` when the day has a tracking row with steps > 0 or with `steps_edited_at` (a typed 0 is the member's number too; one number on
+  Today, reports and the Health charts), else the merged sources' value, and a day with tracked steps > 0 but no health data is listed with `sources: []`. Page: connect cards (iPhone: export import + Health Auto Export / Shortcuts steps with the sync
   URL and token; Android: Health Connect via automation apps posting to the same API, plus CSV; a one-line note under the privacy note that the ÖRZA phone app
   will sync automatically later), charts, last sync.
 

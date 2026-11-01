@@ -135,6 +135,12 @@ export interface TrackingDay {
    * haven't seen. Rows from before the marker have no field; API responses always carry it (null = no edit).
    */
   steps_edited_at?: string | null;
+  /**
+   * The member's own number at that marker (set with it by every `manual` save): the day's `steps` may have been raised
+   * on top of it since (the phone's `auto` saves that took the marker), so marker + value is the edit itself. API
+   * responses always carry it (null = no edit, or an edit saved before this field).
+   */
+  steps_edited_value?: number | null;
   weight_kg?: number;
   updated_at: string;
 }

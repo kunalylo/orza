@@ -2,17 +2,20 @@
 /**
  * Checks the steps v2 server contract against a running ÖRZA server (local by default):
  * `POST /api/track/steps` modes (manual / auto / reconcile, `edit_ref`, `expect` → `{tracking, applied, reason}`; no
- * mode = the old plain set, no marker), the `steps_edited_at` marker in answers, the health-sync mirror never raising an edited day, step totals for a future day
+ * mode = the old plain set, no marker), the `steps_edited_at` marker and `steps_edited_value` in answers, the health-sync mirror never raising an edited day, step totals for a future day
  * being dropped, and `GET /api/health/days` showing the tracked step count.
  *
  *   npm run dev                                   (another terminal; the JSON-file database when MONGODB_URI is unset)
  *   node scripts/check-steps-modes.mjs            → http://localhost:3100
  *   ORZA_BASE_URL=http://localhost:3101 node scripts/check-steps-modes.mjs
+ *   ORZA_CHECK_TOKEN=<session token> node scripts/check-steps-modes.mjs   (an existing local test account)
  *
- * Each run signs up a new throwaway account (`steps-check-…@orza.test`, as the phone app does) and writes only to its
- * days, so it never touches anyone's data; the account is left in the database. It refuses any host other than
- * localhost / 127.0.0.1 / [::1] / *.localhost / *.test unless ORZA_CHECK_ALLOW_REMOTE=1 (never point it at production).
- * Exit code 1 when a check fails.
+ * By default each run signs up a new throwaway account (`steps-check-…@orza.test`, as the phone app does) and writes
+ * only to its days; the account is left in the database. With ORZA_CHECK_TOKEN (a bearer session token of a test
+ * account on that server, e.g. from `POST /api/auth/login`; never printed) it signs up nothing and writes only to days
+ * that account has nothing on yet (no tracked steps, no edit marker, no health data), plus sleep for tomorrow (the
+ * future-day check). It refuses any host other than localhost / 127.0.0.1 / [::1] / *.localhost / *.test unless
+ * ORZA_CHECK_ALLOW_REMOTE=1 (never point it at production). Exit code 1 when a check fails.
  */
 import { randomBytes } from "node:crypto";
 
@@ -25,7 +28,7 @@ if (!local && process.env.ORZA_CHECK_ALLOW_REMOTE !== "1") {
 }
 
 const APP = { "X-ORZA-Client": "mobile", "X-ORZA-Device": "steps-check", "X-ORZA-Platform": "android" };
-let token = "";
+let token = (process.env.ORZA_CHECK_TOKEN || "").trim();
 
 async function call(method, path, body) {
   const res = await fetch(`${BASE}/api${path}`, {
@@ -70,25 +73,63 @@ const addDays = (iso, n) => {
   return d.toISOString().slice(0, 10);
 };
 
+/**
+ * An existing account: the offset (days before today, at least 3) of the latest run of 5 consecutive days with no
+ * health data, no tracked steps and no edit marker, so its own data never changes what a check expects.
+ */
+async function untouchedDays(today) {
+  const SPAN = 5;
+  const from = addDays(today, -399);
+  const r = await call("GET", `/health/days?from=${from}&to=${addDays(today, -1)}`);
+  if (r.status !== 200 || !Array.isArray(r.json.days)) throw new Error(`GET /api/health/days → ${r.status}`);
+  const busy = new Set(r.json.days.map((d) => d.date)); // health data, or tracked steps > 0
+  for (let k = 3; addDays(today, -k - SPAN + 1) >= from; k++) {
+    const dates = Array.from({ length: SPAN }, (_, i) => addDays(today, -k - i));
+    if (dates.some((d) => busy.has(d))) continue;
+    let clean = true;
+    for (const d of dates) {
+      const t = (await dayOf(d)).tracking;
+      if (!t || t.steps !== 0 || t.steps_edited_at) {
+        busy.add(d);
+        clean = false;
+      }
+    }
+    if (clean) return k;
+  }
+  throw new Error("No 5 untouched days in the last 400 for this account");
+}
+
 async function main() {
   console.log(`Server: ${BASE}`);
-  const email = `steps-check-${Date.now()}-${randomBytes(3).toString("hex")}@orza.test`;
-  const reg = await call("POST", "/auth/register", { name: "Steps check", email, password: randomBytes(18).toString("base64url") });
-  if (reg.status !== 201 || !reg.json.token) {
-    console.error(`Sign-up failed (${reg.status}): ${JSON.stringify(reg.json).slice(0, 200)}`);
-    process.exit(2);
+  const existing = !!token;
+  if (existing) {
+    const me = await call("GET", "/auth/me");
+    if (me.status !== 200 || !me.json.user?.email) {
+      console.error(`ORZA_CHECK_TOKEN isn't a live session on this server (GET /api/auth/me → ${me.status}).`);
+      process.exit(2);
+    }
+    console.log(`Account: ${me.json.user.email} (existing; only days it has nothing on are written)`);
+  } else {
+    const email = `steps-check-${Date.now()}-${randomBytes(3).toString("hex")}@orza.test`;
+    const reg = await call("POST", "/auth/register", { name: "Steps check", email, password: randomBytes(18).toString("base64url") });
+    if (reg.status !== 201 || !reg.json.token) {
+      console.error(`Sign-up failed (${reg.status}): ${JSON.stringify(reg.json).slice(0, 200)}`);
+      process.exit(2);
+    }
+    token = reg.json.token;
+    console.log(`Account: ${email}`);
   }
-  token = reg.json.token;
-  console.log(`Account: ${email}`);
 
   const today = (await dayOf("")).today;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today || "")) throw new Error("GET /api/dashboard/today gave no `today`");
-  const D1 = addDays(today, -3); // edited by the member
-  const D2 = addDays(today, -4); // automatic saves only
-  const D3 = addDays(today, -5); // typed steps, no health data
-  const D4 = addDays(today, -6); // saved without a mode (an app build from before the modes)
-  const D5 = addDays(today, -7); // edited, then saved without a mode
+  const first = existing ? await untouchedDays(today) : 3;
+  const D1 = addDays(today, -first); // edited by the member
+  const D2 = addDays(today, -first - 1); // automatic saves only
+  const D3 = addDays(today, -first - 2); // typed steps, no health data
+  const D4 = addDays(today, -first - 3); // saved without a mode (an app build from before the modes)
+  const D5 = addDays(today, -first - 4); // edited, then saved without a mode
   const TOMORROW = addDays(today, 1);
+  console.log(`Days: ${D5} … ${D1}`);
 
   /* ── B1: modes ── */
   let r = await steps({ steps: 4000, date: D1, mode: "manual" });
@@ -96,7 +137,11 @@ async function main() {
     console.error(`This server answers ${JSON.stringify(r.json).slice(0, 160)} — no step modes (an older build).`);
     process.exit(1);
   }
-  check("manual: applied, sets steps_edited_at", r.status === 200 && r.json.applied === true && r.json.tracking.steps === 4000 && typeof r.json.tracking.steps_edited_at === "string", outcome(r));
+  check(
+    "manual: applied, sets steps_edited_at and steps_edited_value",
+    r.status === 200 && r.json.applied === true && r.json.tracking.steps === 4000 && typeof r.json.tracking.steps_edited_at === "string" && r.json.tracking.steps_edited_value === 4000,
+    { ...outcome(r), value: r.json.tracking?.steps_edited_value }
+  );
   const before = r.json.tracking.steps_edited_at;
   r = await steps({ steps: 4200, date: D1, mode: "manual" }); // the website's form
   const M = r.json.tracking?.steps_edited_at;
@@ -106,6 +151,7 @@ async function main() {
   check("auto when a marker exists and edit_ref is null → edited", same(outcome(r), { status: 200, steps: 4200, applied: false, reason: "edited", marker: M }), outcome(r));
   r = await steps({ steps: 9000, date: D1, mode: "auto", edit_ref: M });
   check("auto with the matching edit_ref → applied", same(outcome(r), { status: 200, steps: 9000, applied: true, marker: M }), outcome(r));
+  check("auto raise keeps the edit's own number (steps_edited_value 4200)", r.json.tracking?.steps_edited_value === 4200, r.json.tracking);
   r = await steps({ steps: 8000, date: D1, mode: "auto", edit_ref: M });
   check("auto lower → not_higher", same(outcome(r), { status: 200, steps: 9000, applied: false, reason: "not_higher", marker: M }), outcome(r));
 
@@ -132,8 +178,12 @@ async function main() {
   /* ── B2: the marker in the day's row ── */
   const d1 = await dayOf(D1);
   const d2 = await dayOf(D2);
-  check("GET /api/dashboard/today: an edited day carries its marker", d1.tracking?.steps_edited_at === M, d1.tracking);
-  check("GET /api/dashboard/today: an unedited day has steps_edited_at: null", d2.tracking && "steps_edited_at" in d2.tracking && d2.tracking.steps_edited_at === null, d2.tracking);
+  check("GET /api/dashboard/today: an edited day carries its marker and the edit's number", d1.tracking?.steps_edited_at === M && d1.tracking?.steps_edited_value === 4200, d1.tracking);
+  check(
+    "GET /api/dashboard/today: an unedited day has steps_edited_at: null, steps_edited_value: null",
+    d2.tracking && "steps_edited_at" in d2.tracking && d2.tracking.steps_edited_at === null && d2.tracking.steps_edited_value === null,
+    d2.tracking
+  );
 
   /* ── B3: the health-sync mirror and future-dated steps ── */
   r = await call("POST", "/health/import", {
@@ -160,6 +210,9 @@ async function main() {
   check("GET /api/health/days: steps = tracking.steps on an edited day (not the synced 20000)", day(D1)?.steps === 9000 && day(D1)?.sleep_minutes === 420, day(D1));
   check("GET /api/health/days: steps = tracking.steps on a synced day", day(D2)?.steps === 7000, day(D2));
   check("GET /api/health/days: a day with typed steps only is listed (sources: [])", same(day(D3), { date: D3, sources: [], steps: 3000 }), day(D3));
+  await steps({ steps: 0, date: D4, mode: "manual" });
+  r = await call("GET", `/health/days?from=${D4}&to=${D4}`);
+  check("GET /api/health/days: a day the member typed 0 shows 0 (not the synced 8000)", r.json.days?.[0]?.steps === 0, r.json.days);
 
   /* ── B5 ── */
   skip("coach prompt has no steps", "B5 isn't part of this batch (the coach keeps steps on the web until the app-wide AI consent ships)");

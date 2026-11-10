@@ -205,8 +205,15 @@ export function toPublicUser(u: User): PublicUser {
   // address for their own calendar (only its connection state is shown, via /api/calendar).
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { health_token_hash, calendar_token, external_ical_url, ...integrations } = u.integrations || {};
-  // `admin_role` is only sent for admins (a stray role on a member record means nothing).
-  return { ...rest, ...(u.integrations ? { integrations } : {}), is_admin: isAdmin(u), admin_role: adminRoleOf(u) ?? undefined };
+  // `admin_role` is only sent for admins (a stray role on a member record means nothing). `ai_consent` is always
+  // present (null = none): the phone app reads its presence as "this server asks for AI consent".
+  return {
+    ...rest,
+    ...(u.integrations ? { integrations } : {}),
+    is_admin: isAdmin(u),
+    admin_role: adminRoleOf(u) ?? undefined,
+    ai_consent: u.ai_consent ?? null,
+  };
 }
 
 /**

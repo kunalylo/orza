@@ -1304,8 +1304,15 @@ export async function ruleBasedReply(user: CoachUser, ctx: CoachContext, text: s
 
 /* ───────────────────────────── AI path ───────────────────────────── */
 
+/**
+ * What the AI prompt may include beyond the profile and today's meals. `steps`: today's tracked step count, which can
+ * come from Apple Health, Health Connect or the phone's motion sensor — only with the account's AI consent (R2 in
+ * src/lib/ai-consent.ts). The step goal is a target and is always included.
+ */
+export type PromptOptions = { steps: boolean };
+
 /** Compact description of the user's day for the AI system prompt. */
-export function contextForPrompt(ctx: CoachContext): string {
+export function contextForPrompt(ctx: CoachContext, opts: PromptOptions): string {
   const t = ctx.targets;
   const n = ctx.totals;
   const lines = [
@@ -1314,7 +1321,9 @@ export function contextForPrompt(ctx: CoachContext): string {
     `Daily targets: ${t.calories} kcal · protein ${t.protein_g} g · carbs ${t.carbs_g} g · fat ${t.fat_g} g · fibre ${t.fiber_g} g · water ${t.water_glasses} glasses · steps ${t.steps}.`,
     `Eaten today: ${n.calories} kcal · protein ${n.protein_g} g · carbs ${n.carbs_g} g · fat ${n.fat_g} g · fibre ${n.fiber_g} g.`,
     `Remaining today: ${ctx.remaining.calories} kcal (negative = over target) · protein ${ctx.remaining.protein_g} g.`,
-    `Water ${ctx.tracking.water_glasses}/${t.water_glasses} glasses · steps ${ctx.tracking.steps}/${t.steps}.`,
+    opts.steps
+      ? `Water ${ctx.tracking.water_glasses}/${t.water_glasses} glasses · steps ${ctx.tracking.steps}/${t.steps}.`
+      : `Water ${ctx.tracking.water_glasses}/${t.water_glasses} glasses · step goal ${t.steps}.`,
     ctx.meals.length
       ? `Meals logged today:\n${ctx.meals.map((m) => `- ${m.meal_type}: ${mealSummary(m)} (${m.totals.calories} kcal, ${m.totals.protein_g} g protein)`).join("\n")}`
       : "No meals logged yet today.",
@@ -1329,7 +1338,19 @@ export function contextForPrompt(ctx: CoachContext): string {
 
 export type HistoryTurn = { role: "user" | "assistant"; content: string };
 
-export function coachSystemPrompt(ctx: CoachContext, history: HistoryTurn[]): string {
+/**
+ * The earlier messages the AI may see (R2 in src/lib/ai-consent.ts). With AI consent, all of them. Without it, the
+ * member's own messages and the AI replies made without tracked data: the built-in coach's replies are left out (they
+ * can quote tracked steps, `activityReply`, and tracked weight, `goalReply`), and so are AI replies whose prompt held
+ * tracked data (`meta.health`), so a withdrawn consent covers earlier turns too. AI replies from before the flag are
+ * kept: the iPhone sent no Apple Health data then.
+ */
+export function aiHistory(messages: Pick<ChatMessageRecord, "role" | "content" | "meta">[], consented: boolean): HistoryTurn[] {
+  const kept = consented ? messages : messages.filter((m) => m.role === "user" || (m.meta?.ai === true && !m.meta.health));
+  return kept.map((m) => ({ role: m.role, content: m.content }));
+}
+
+export function coachSystemPrompt(ctx: CoachContext, history: HistoryTurn[], opts: PromptOptions): string {
   const convo = history.length
     ? history.map((h) => `${h.role === "user" ? "User" : "ÖRZA"}: ${h.content.replace(/\s+/g, " ").slice(0, 800)}`).join("\n")
     : "(This is the start of the conversation.)";
@@ -1350,7 +1371,7 @@ export function coachSystemPrompt(ctx: CoachContext, history: HistoryTurn[]): st
     "- Language: reply in the language the user wrote in — English, Hindi, or Hinglish (Roman-script Hindi-English mix).",
     "",
     "USER CONTEXT",
-    contextForPrompt(ctx),
+    contextForPrompt(ctx, opts),
     "",
     "RECENT CONVERSATION (oldest first)",
     convo,

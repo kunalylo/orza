@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { requireAiUser } from "@/lib/ai-consent";
 import { aiEnabled } from "@/lib/ai";
 import { withCredits } from "@/lib/credits";
 import { createMeal, guessMealType } from "@/lib/domain/meals";
@@ -32,9 +32,10 @@ const NOTHING_RECOGNISED = "Couldn't recognise any foods — try e.g. '2 roti an
  * that finds no food is refunded only within the daily allowance. Without AI (or if the AI is
  * unavailable, busy for this user, out of credits or finds nothing) the free built-in parser logs it,
  * with a `notice` explaining why. The parser uses the profile diet, so "biryani" is Veg Biryani for a vegetarian.
+ * Phone app without AI consent: 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
  */
 export const POST = route(async (req: Request) => {
-  const user = await requireUser();
+  const user = await requireAiUser();
   const body = await parseBody(req, Body);
   const date = resolveDate(user, body.date);
   const diet = user.profile?.diet ?? null;

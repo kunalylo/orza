@@ -143,8 +143,8 @@ const SECTIONS: LegalSection[] = [
     content: (
       <>
         <LegalP>
-          Some features use AI models operated by third-party model providers — meal photo scans, prescription scans, text and
-          voice meal logging, AI chat, recipe generation, rebalancing plans and report insights. When you use one of these features, we send the provider
+          Some features use AI models from OpenAI, our AI model provider — meal photo scans, prescription scans, text and voice
+          meal logging, AI chat, recipe generation and rebalancing plans. When you use one of these features, we send the provider
           the content needed for that request (for example, the meal photo or your message, plus relevant context such as your
           targets, your diet preference and — in AI chat — what you&apos;ve logged today, including your step count) and return the
           result to you.
@@ -154,6 +154,15 @@ const SECTIONS: LegalSection[] = [
             We share the minimum content required for the feature. Your password is never shared.
           </LegalLi>
           <LegalLi title="On our behalf.">Providers process this content to deliver the feature for you.</LegalLi>
+          <LegalLi title="You choose.">
+            The ÖRZA phone app asks before your first AI feature and sends nothing to OpenAI until you allow it. You can turn AI
+            features off any time in the app under <B>Settings → Privacy &amp; data → AI features</B>; the app&apos;s AI features
+            then stop until you allow them again, and nothing else changes.
+          </LegalLi>
+          <LegalLi title="Health data only with your permission.">
+            Steps and weight from Apple Health, Health Connect or your phone&apos;s motion sensor go to OpenAI only inside AI chat,
+            and only after you&apos;ve allowed AI features. Without that permission, ÖRZA leaves them out of AI requests.
+          </LegalLi>
           <LegalLi title="Estimates, not facts.">
             AI output can be incomplete or wrong. Nutrition values are estimates — you can review and correct any logged item.
           </LegalLi>
@@ -242,7 +251,7 @@ const SECTIONS: LegalSection[] = [
           <LegalLi title="To show you your own progress:">
             your steps toward your daily goal, your health trends and your reports, in the app and on the website.
           </LegalLi>
-          <LegalLi title="In AI chat, if you use it:">
+          <LegalLi title="In AI chat, if you’ve allowed AI features:">
             today&apos;s step count and step goal are part of the context ÖRZA&apos;s AI chat sends to our AI model provider to
             answer you, along with your meals, targets and profile (see{" "}
             <InlineLink href="#ai-processing">AI processing</InlineLink>). Sleep and resting heart rate aren&apos;t sent to AI

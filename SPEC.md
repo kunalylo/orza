@@ -31,12 +31,13 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 | `src/components/app/ui.tsx` | `PageHeader`, `StatCard`, `MacroRow`, `EmptyState`, `WellnessNote` |
 | `src/lib/types.ts` | Data model (User, PublicUser, Profile, Targets, Meal, MealItem, Nutrients, Scan, TrackingDay, ChatSession, ChatMessage, Goal, CompensationPlan, Recipe, CreditTransaction, Session (`kind` web/mobile), AppDevice …) |
 | `src/lib/db.ts` | `col<T>(name)` → Mongo-like collection (`findOne/find/insertOne/updateOne/findOneAndUpdate/deleteOne/deleteMany/countDocuments`), `newId()`, `nowISO()`, `usingMongo()`. MongoDB when `MONGODB_URI` is set, else `.data/orza-db.json`. Docs use string `id`; never touch `_id`. Only these operators: filters `$gt $gte $lt $lte $ne $in $exists` (a `null` in a filter also matches a missing field, as in Mongo — the file store does the same); updates `$set $inc $push($each,$slice) $unset $setOnInsert` (never put the same path in `$set` and `$setOnInsert`) |
-| `src/lib/auth.ts` | `hashPassword`, `verifyPassword`, `startSession(userId)` (website: cookie), `startMobileSession(userId, client)` (phone app: returns `{token}`, no cookies), `endSession({everywhere?})`, `revokeAllSessions(userId, {except?})` (browsers + app sessions + their `devices`), `getSessionUserId()`, `getSessionId()`, `getCurrentUser()`, `getCurrentSession()` → `{user, session, via: "cookie"\|"bearer"}`, `requireUser()`, `requireAdmin()`, `requireSuperAdmin()`, `requireMobileSession()`, `resolveCredential(cookie, authorization)` — every check takes the session cookie first, else `Authorization: Bearer <session token>`, then requires a live session (see "Mobile app"); `toPublicUser(user)` (drops `password_hash` and integration secrets: `health_token_hash`, `calendar_token`, `external_ical_url`; adds `admin_role` for admins), `isAdmin(user)` (`is_admin: true` only), `isSuperAdmin(user)`, `adminRoleOf(user)` |
+| `src/lib/auth.ts` | `hashPassword`, `verifyPassword`, `startSession(userId)` (website: cookie), `startMobileSession(userId, client)` (phone app: returns `{token}`, no cookies), `endSession({everywhere?})`, `revokeAllSessions(userId, {except?})` (browsers + app sessions + their `devices`), `getSessionUserId()`, `getSessionId()`, `getCurrentUser()`, `getCurrentSession()` → `{user, session, via: "cookie"\|"bearer"}`, `requireUser()`, `requireAdmin()`, `requireSuperAdmin()`, `requireMobileSession()`, `resolveCredential(cookie, authorization)` — every check takes the session cookie first, else `Authorization: Bearer <session token>`, then requires a live session (see "Mobile app"); `toPublicUser(user)` (drops `password_hash` and integration secrets: `health_token_hash`, `calendar_token`, `external_ical_url`; adds `admin_role` for admins; always sends `ai_consent`, null when none), `isAdmin(user)` (`is_admin: true` only), `isSuperAdmin(user)`, `adminRoleOf(user)` |
 | `src/lib/http.ts` | `route(handler, {tokenAuth?})` wrapper (maps HttpError/ZodError → `{error, code}`; cross-site guard below), `json()`, `parseBody(req, zodSchema, {maxBytes?})`, `readJsonBody`, `readBodyText`, `BODY_LIMIT_SMALL` (16 KB) / `_DEFAULT` (1 MB) / `_UPLOAD` (12 MB), `assertSameOrigin(Json)`, `isBearerSessionRequest(req)`, `HttpError`, `badRequest/unauthorized/forbidden/notFound` |
 | `src/lib/session-token.ts` | Edge-safe: `signSessionToken`, `readSessionToken`, `SESSION_MAX_AGE` (30 days); phone-app header helpers `sessionBearerToken(authorization)` (ignores `orza_hs_` health-sync tokens and anything not JWT-shaped), `cookieFromHeader`, `mobileClientFrom(headers)`, `cleanDeviceLabel`, `CLIENT_HEADER`/`DEVICE_HEADER`/`PLATFORM_HEADER` |
 | `src/lib/devices.ts` | Phones running the ÖRZA app (`devices`): `appDevices()`, `appDoseCoverage(userId, now)` (epoch ms the phones' alarms reach — the earliest among several phones; Infinity = no limit, null = none), `phoneRingsAt(coverage, iso)`, `alarmsCoverUntil(device)`, `ringsDosesLocally(device, now)`, `deviceView`, `APP_DEVICE_ACTIVE_DAYS` (7), `MAX_DEVICES_PER_USER` (10), `EXPO_PUSH_TOKEN_RE`, `isTimeZone` |
 | `src/lib/rate-limit.ts` | `clientIp(req)` (spoof-resistant, `TRUSTED_PROXY_HOPS`), in-memory `reserve/peek/release/clearLimit`, `tooManyRequests()` — public endpoints (auth, leads) |
 | `src/lib/ai.ts` | `aiEnabled()`, `aiText({system, messages})`, `aiJSON({system, prompt, shape, imageUrl?})`, `WELLNESS_GUARDRAIL`. Throws HttpError 502/503/504 with friendly messages |
+| `src/lib/ai-consent.ts` | `AI_CONSENT_VERSION` (1; bumped together with the phone app's), `hasAiConsent(user)`, `isAppRequest(via, session, clientHeader)`, `requireAiUser()` (the first line of every route that calls the AI instead of `requireUser()`: 401, then 403 `ai_consent_required` for a phone-app request without consent; see "AI consent" under Account) |
 | `src/lib/credits.ts` | `INITIAL_CREDITS=100`, `CREDIT_COSTS` (scan 2, meal_text 1, chat 1, recipe 2, compensation 1, report_insight 1), `spendCredits`, `refundCredits`, `adjustCredits`, `withCredits(userId, action, fn)` (spend → run → refund on throw; 402 `no_credits` when empty). Spends/refunds record their `action` |
 | `src/lib/ai-guard.ts` | `AI_GUARD` policies, `reserveAi(userId, action)` (per-user requests/minute + concurrency; `null` = over budget → free fallback or `aiRateLimited()` 429), `refundEmptyResult` (a completed but unusable AI answer is refunded only 3×/day per action), `emptyResultCreditNote` |
 | `src/lib/domain/meals.ts` | `sumNutrients`, `cleanItem`, `guessMealType(tz)`, `createMeal({...})`, `listMeals`, `listMealsInRange`, `dayTotals`, `ZERO` |
@@ -51,7 +52,7 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 **Rules for every API route**: `export const GET = route(async (req) => { const user = await requireUser(); ... return json({...}) })`.
 Validate bodies with zod via `parseBody`. Always scope queries by `user_id: user.id` (no IDOR). Never return `password_hash`
 (use `toPublicUser`). A user's "today" is `dateInTz(user.profile.timezone)`; accept an optional `date` (validate with `isISODate`).
-Every AI feature must work without `OPENAI_API_KEY` via a deterministic fallback (except photo scan → 503 `ai_disabled` with a
+A route that calls the AI starts with `requireAiUser()` instead (AI consent). Every AI feature must work without `OPENAI_API_KEY` via a deterministic fallback (except photo scan → 503 `ai_disabled` with a
 friendly "type or speak your meal instead" message). Charge credits only for real AI calls, via `withCredits`, with only the AI call
 inside it (so only AI failures are refunded); reserve the call with `reserveAi` and vet the answer outside, refunding an unusable one via `refundEmptyResult`.
 Route params in Next 15 are async: `export const DELETE = route(async (req: Request, ctx: { params: Promise<{ id: string }> }) => { const { id } = await ctx.params; ... })`.
@@ -125,7 +126,7 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 - `GET/POST /api/chat/sessions` → `{sessions}` / `{session}`; `DELETE /api/chat/sessions/[id]`.
 - `GET /api/chat/history?session_id=` → `{session, messages}`.
 - `POST /api/chat/send {message, session_id?}` → `{session_id, session, user_message, message, logged_meal?, credits?, memory?, remembered?, allergies?, notice?}`. Detects meal-logging intent ("maine … khaya", "I had/ate …") and logs it; learns durable facts into `user.memory` (max 30).
-  `memory` + `remembered` when something new was learned; `allergies` = the updated `profile.allergies` when a food allergy was learned; `notice` when the built-in coach answered (AI down, over the AI budget, or an unusable AI answer).
+  `memory` + `remembered` when something new was learned; `allergies` = the updated `profile.allergies` when a food allergy was learned; `notice` when the built-in coach answered (AI down, over the AI budget, or an unusable AI answer). AI consent applies (R1, R2: see Account).
 
 ### Goals & Rebalance — `/dashboard/goals`, `/dashboard/compensation`
 - `GET /api/goals/active` → `{goal, weights:[{date, weight_kg}], targets, profile}`; `POST /api/goals/calculate {goal, current_weight_kg, target_weight_kg, weekly_rate_kg?, height_cm?, age?, sex?, activity_level?}` → `{goal, user}`.
@@ -150,6 +151,20 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
   no `health_days` values, no tracking weights (a weight the health-sync mirror copied in can't be told from a typed one), and no step counts in
   `chat_messages`: the coach's own activity replies ("Steps today: **4,200 / 8,000**", `coach.ts` `activityReply`), AI replies that repeat the step count
   from `contextForPrompt`, and members' messages that state one — drop those messages or strip the numbers before anything leaves.
+- **AI consent** (`users.ai_consent = {version, at}`, `AiConsent` in `src/lib/types.ts`; absent or null = none; `src/lib/ai-consent.ts`): the member's permission for
+  the AI features, which OpenAI runs (App Store 5.1.2(i)). The phone app asks at first AI use and in Settings › Privacy & data › AI features; the website doesn't
+  ask yet. Every `{user}` answer carries `ai_consent` (the object or null; its presence tells the app this server asks).
+  `PUT /api/settings/ai-consent {version}` (whole number 1–1000; cookie or Bearer) → `{user}` with `ai_consent = {version, at: now}` (allowing again refreshes `at`);
+  409 `ai_consent_outdated` when `version < AI_CONSENT_VERSION` (the app's copy is older: update the app). `DELETE /api/settings/ai-consent` → `{user}` with
+  `ai_consent: null`, idempotent. Allowed means `ai_consent.version >= AI_CONSENT_VERSION`. Separate from `ai_training_opt_out`: neither changes the other.
+  - **R1, the phone app**: `chat/send`, `meals/text`, `meals/scan`, `recipes/generate`, `compensation/plan` and `prescriptions/scan` (every caller of `aiJSON`)
+    start with `requireAiUser()`. An app request (Bearer app session `kind: "mobile"`, or `X-ORZA-Client: mobile`) from an account without consent gets
+    403 `{error: "Allow ÖRZA's AI features in the app to use this.", code: "ai_consent_required"}` right after the 401 and before any 400, 402, 429 or 503:
+    nothing is read, stored or spent, even when the AI is off. Website (cookie) requests are never refused.
+  - **R2, any client**: for an account without consent, `chat/send`'s AI prompt has no tracked step count (`contextForPrompt(ctx, {steps})`: "step goal" only) and
+    its history (`aiHistory`) keeps only the member's messages and AI replies without `meta.health`, so the built-in coach's replies (which quote tracked steps
+    and weight) are left out. AI replies made with consent are stored with `meta.health: true`. The built-in coach still uses the tracked numbers (nothing
+    leaves the server). A new route that sends tracked steps, weight or other phone health data to the AI must apply the same rule.
 - `GET /api/account/export` → JSON attachment of all the user's data (incl. Care collections, photo metadata without bytes, notification devices without keys,
   `app_devices` (phones running the app, without push tokens), signed-in sessions with `kind` web/mobile and device name, credit requests; never password/token
   hashes); `DELETE /api/account {confirm:"DELETE"}` → deletes the user and all their data (incl. Care data and photos, registered phones, credit requests) and
@@ -320,6 +335,9 @@ cookie flow is unchanged.
   for bodies (a bodyless DELETE may omit it). Requests carrying the cookie get the full same-origin check (a cross-site cookie request is still 403).
 - **Sign out**: `POST /api/auth/logout` with the Bearer token and `Content-Type: application/json` (body `{}` or `{everywhere: true}`) → `{ok:true}`; revokes
   that app session (or all sessions) and removes the phone registered with it; no cookies are touched.
+- **AI consent**: the app's requests to the six AI routes get 403 `ai_consent_required` until the account allows the AI features with
+  `PUT /api/settings/ai-consent {version}` (see "AI consent" under Account); a `version` older than the server's gets 409 `ai_consent_outdated`.
+  `user.ai_consent` (object or null) is in every `{user}` answer; an older server sends no such field.
 - **Photos**: `GET /api/media/[id]` accepts the Bearer token, so `<Image source={{ uri, headers: { Authorization: "Bearer " + token } }} />` works with the
   `photo_urls` the API returns (relative — prefix the API origin).
 - **Devices** (`devices` collection, `AppDevice` in `src/lib/types.ts`: `id, user_id, session_id, platform, label, push_token?, app_version, timezone,

@@ -215,7 +215,7 @@ async function main() {
   check("GET /api/health/days: a day the member typed 0 shows 0 (not the synced 8000)", r.json.days?.[0]?.steps === 0, r.json.days);
 
   /* ── B5 ── */
-  skip("coach prompt has no steps", "B5 isn't part of this batch (the coach keeps steps on the web until the app-wide AI consent ships)");
+  skip("coach prompt has no steps", "B5 is the AI consent's R2: no tracked steps without consent (src/lib/ai-consent.ts; needs an AI call to observe)");
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

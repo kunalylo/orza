@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { requireAiUser } from "@/lib/ai-consent";
 import { aiEnabled } from "@/lib/ai";
 import { aiRateLimited, reserveAi } from "@/lib/ai-guard";
 import { withCredits } from "@/lib/credits";
@@ -20,9 +20,10 @@ export const maxDuration = 90;
  * media kind "prescription" and saves the medicines for review (status "review").
  * AI off → 503 `ai_disabled`; the page then offers manual entry. 429 `rate_limited` when photos are
  * scanned faster than the per-user budget shared with meal scans.
+ * Phone app without AI consent: 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
  */
 export const POST = route(async (req: Request) => {
-  const user = await requireUser();
+  const user = await requireAiUser();
   const { image } = await parseBody(req, z.object({ image: imageSchema }), { maxBytes: BODY_LIMIT_UPLOAD });
   if (!aiEnabled()) {
     throw new HttpError(503, "Prescription scanning isn't switched on yet. You can type the medicines from your prescription instead.", "ai_disabled");

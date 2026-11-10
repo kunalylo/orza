@@ -1,8 +1,9 @@
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { hasAiConsent, requireAiUser } from "@/lib/ai-consent";
 import { aiEnabled, aiJSON } from "@/lib/ai";
 import {
   COACH_REPLY_SHAPE,
+  aiHistory,
   buildContext,
   chatTitle,
   coachSystemPrompt,
@@ -11,7 +12,6 @@ import {
   normaliseAiOutput,
   ruleBasedReply,
   type ChatMessageRecord,
-  type HistoryTurn,
   type LearnedFacts,
 } from "@/lib/coach";
 import { MEMORY_MAX_ITEMS } from "@/components/account/options";
@@ -76,11 +76,14 @@ async function saveLearnedFacts(userId: string, add: string[]): Promise<LearnedF
  * AI off, temporarily unavailable, or over the per-user rate budget: the deterministic coach in
  * lib/coach.ts, free.
  * The conversation is only created/written once a reply exists, so a 402 leaves nothing half-saved.
+ * Phone app without AI consent: 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
  */
 export const POST = route(async (req: Request) => {
-  const user = await requireUser();
+  const user = await requireAiUser();
   const body = await parseBody(req, Body);
   const startedAt = Date.now();
+  // R2 (src/lib/ai-consent.ts): without AI consent, from any client, no tracked steps or replies quoting them reach the AI.
+  const consented = hasAiConsent(user);
 
   let session: ChatSession | null = body.session_id ? await getOwnedSession(user.id, body.session_id) : null;
   const [ctx, earlier] = await Promise.all([
@@ -102,14 +105,14 @@ export const POST = route(async (req: Request) => {
       notice = "You're sending messages faster than ÖRZA's AI can keep up, so the built-in coach answered this one (free).";
     } else {
       try {
-        const history: HistoryTurn[] = earlier.map((m) => ({ role: m.role, content: m.content }));
+        const history = aiHistory(earlier, consented);
         // Only AI failures (and a failed meal write) throw in here, so only they are refunded by withCredits.
         const out = await withCredits(
           user.id,
           "chat",
           async () => {
             const raw = await aiJSON({
-              system: coachSystemPrompt(ctx, history),
+              system: coachSystemPrompt(ctx, history, { steps: consented }),
               prompt: body.message,
               shape: COACH_REPLY_SHAPE,
               temperature: 0.5,
@@ -196,6 +199,8 @@ export const POST = route(async (req: Request) => {
     content: reply,
     meta: {
       ai,
+      // Its prompt held tracked data, so aiHistory leaves it out if the consent is withdrawn later.
+      ...(ai && consented ? { health: true } : {}),
       ...(meal ? { logged_meal_id: meal.id } : {}),
       ...(remembered.length ? { remembered } : {}),
     },

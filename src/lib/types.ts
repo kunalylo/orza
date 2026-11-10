@@ -59,6 +59,16 @@ export interface Preferences {
  */
 export type AdminRole = "super" | "sub";
 
+/**
+ * The member's permission for ÖRZA's AI features (OpenAI), given in the phone app's consent sheet or its
+ * Settings › Privacy & data. `version` is the consent copy the member allowed (see `AI_CONSENT_VERSION` in
+ * src/lib/ai-consent.ts); `at` is the server's time of the last Allow (ISO).
+ */
+export interface AiConsent {
+  version: number;
+  at: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -77,6 +87,8 @@ export interface User {
   preferences: Preferences;
   memory: string[]; // short facts ÖRZA remembers (max 30)
   integrations?: Integrations;
+  /** Absent or null = no AI consent (see src/lib/ai-consent.ts). `toPublicUser` always sends it, null when absent. */
+  ai_consent?: AiConsent | null;
 }
 
 export type PublicUser = Omit<User, "password_hash">;
@@ -164,7 +176,11 @@ export interface ChatMessage {
   user_id: string;
   role: "user" | "assistant";
   content: string;
-  meta?: { logged_meal_id?: string; ai?: boolean; remembered?: string[] };
+  /**
+   * `health`: an AI reply made with the member's tracked steps and the built-in coach's replies in its prompt (only
+   * with AI consent), so it is left out of the AI's history once the member has no consent (`aiHistory` in lib/coach.ts).
+   */
+  meta?: { logged_meal_id?: string; ai?: boolean; remembered?: string[]; health?: boolean };
   created_at: string;
 }
 

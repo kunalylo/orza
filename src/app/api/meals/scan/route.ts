@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { requireAiUser } from "@/lib/ai-consent";
 import { aiEnabled } from "@/lib/ai";
 import { withCredits } from "@/lib/credits";
 import { col, newId, nowISO } from "@/lib/db";
@@ -29,9 +29,10 @@ const Body = z.object({
  * POST /api/meals/scan — Snap & Know. Costs 2 credits: refunded if the AI fails, and refunded for
  * photos with no food up to a daily allowance (see @/lib/ai-guard). Rate-limited per user (429).
  * The photo is only sent to the AI; it is never stored. Returns an unconfirmed Scan to review.
+ * Phone app without AI consent: 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
  */
 export const POST = route(async (req: Request) => {
-  const user = await requireUser();
+  const user = await requireAiUser();
   if (!aiEnabled()) {
     throw new HttpError(
       503,

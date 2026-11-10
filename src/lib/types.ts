@@ -177,8 +177,9 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   /**
-   * `health`: an AI reply made with the member's tracked steps and the built-in coach's replies in its prompt (only
-   * with AI consent), so it is left out of the AI's history once the member has no consent (`aiHistory` in lib/coach.ts).
+   * `health` (AI replies): `true` — made with the member's tracked steps and the built-in coach's replies in its prompt
+   * (with AI consent); `false` — made without them. Without consent the AI's history keeps only `false` ones (`aiHistory`
+   * in lib/coach.ts): `true` after a withdrawal, and AI replies from before the flag, may repeat a tracked step count.
    */
   meta?: { logged_meal_id?: string; ai?: boolean; remembered?: string[]; health?: boolean };
   created_at: string;

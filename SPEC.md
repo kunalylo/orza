@@ -162,8 +162,9 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
     403 `{error: "Allow ÖRZA's AI features in the app to use this.", code: "ai_consent_required"}` right after the 401 and before any 400, 402, 429 or 503:
     nothing is read, stored or spent, even when the AI is off. Website (cookie) requests are never refused.
   - **R2, any client**: for an account without consent, `chat/send`'s AI prompt has no tracked step count (`contextForPrompt(ctx, {steps})`: "step goal" only) and
-    its history (`aiHistory`) keeps only the member's messages and AI replies without `meta.health`, so the built-in coach's replies (which quote tracked steps
-    and weight) are left out. AI replies made with consent are stored with `meta.health: true`. The built-in coach still uses the tracked numbers (nothing
+    its history (`aiHistory`) keeps only the member's messages and AI replies stored with `meta.health: false`, so the built-in coach's replies (which quote
+    tracked steps and weight), AI replies made with consent and AI replies from before the flag (which can repeat a tracked step count) are left out. Every AI
+    reply is stored with `meta.health` = whether the account had consent (its prompt then held tracked data). The built-in coach still uses the tracked numbers (nothing
     leaves the server). A new route that sends tracked steps, weight or other phone health data to the AI must apply the same rule.
 - `GET /api/account/export` → JSON attachment of all the user's data (incl. Care collections, photo metadata without bytes, notification devices without keys,
   `app_devices` (phones running the app, without push tokens), signed-in sessions with `kind` web/mobile and device name, credit requests; never password/token

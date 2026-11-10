@@ -199,8 +199,9 @@ export const POST = route(async (req: Request) => {
     content: reply,
     meta: {
       ai,
-      // Its prompt held tracked data, so aiHistory leaves it out if the consent is withdrawn later.
-      ...(ai && consented ? { health: true } : {}),
+      // Whether its prompt held tracked data: aiHistory leaves `true` out once the account has no consent (a withdrawal),
+      // and keeps only `false` without it (an AI reply from before the flag may repeat a tracked step count).
+      ...(ai ? { health: consented } : {}),
       ...(meal ? { logged_meal_id: meal.id } : {}),
       ...(remembered.length ? { remembered } : {}),
     },

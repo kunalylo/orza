@@ -1340,13 +1340,14 @@ export type HistoryTurn = { role: "user" | "assistant"; content: string };
 
 /**
  * The earlier messages the AI may see (R2 in src/lib/ai-consent.ts). With AI consent, all of them. Without it, the
- * member's own messages and the AI replies made without tracked data: the built-in coach's replies are left out (they
- * can quote tracked steps, `activityReply`, and tracked weight, `goalReply`), and so are AI replies whose prompt held
- * tracked data (`meta.health`), so a withdrawn consent covers earlier turns too. AI replies from before the flag are
- * kept: the iPhone sent no Apple Health data then.
+ * member's own messages and the AI replies known to be made without tracked data (`meta.health === false`): the
+ * built-in coach's replies are left out (they can quote tracked steps, `activityReply`, and tracked weight,
+ * `goalReply`), and so are AI replies whose prompt held tracked data (`meta.health: true`, so a withdrawn consent
+ * covers earlier turns too) and AI replies from before the flag (their prompt had the day's tracked steps — an Android
+ * phone's Health Connect or motion count among them — which they can repeat).
  */
 export function aiHistory(messages: Pick<ChatMessageRecord, "role" | "content" | "meta">[], consented: boolean): HistoryTurn[] {
-  const kept = consented ? messages : messages.filter((m) => m.role === "user" || (m.meta?.ai === true && !m.meta.health));
+  const kept = consented ? messages : messages.filter((m) => m.role === "user" || (m.meta?.ai === true && m.meta.health === false));
   return kept.map((m) => ({ role: m.role, content: m.content }));
 }
 

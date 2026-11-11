@@ -155,9 +155,11 @@ const SECTIONS: LegalSection[] = [
           </LegalLi>
           <LegalLi title="On our behalf.">Providers process this content to deliver the feature for you.</LegalLi>
           <LegalLi title="You choose.">
-            The ÖRZA phone app asks before your first AI feature and sends nothing to OpenAI until you allow it. You can turn AI
-            features off any time in the app under <B>Settings → Privacy &amp; data → AI features</B>; the app&apos;s AI features
-            then stop until you allow them again, and nothing else changes.
+            ÖRZA asks before your first AI feature, on the website and in the phone app, and sends nothing to OpenAI until you
+            allow it. Your choice is saved to your account, so it applies everywhere you sign in. You can turn AI features off
+            any time on the website under <B>Settings → Preferences → AI features</B>, or in the app under{" "}
+            <B>Settings → Privacy &amp; data → AI features</B>; AI features then stop until you allow them again, and nothing
+            else changes.
           </LegalLi>
           <LegalLi title="Health data only with your permission.">
             Steps and weight from Apple Health, Health Connect or your phone&apos;s motion sensor go to OpenAI only inside AI chat,

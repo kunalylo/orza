@@ -4,11 +4,14 @@ import Link from "next/link";
 import { Check, Globe2, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { useUser } from "@/components/app/UserProvider";
+import { AiFeaturesManage } from "@/components/ai/AiFeaturesManage";
+import { AI_SETTINGS } from "@/components/ai/copy";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/form";
 import { DEFAULT_PREFERENCES } from "@/components/account/options";
 import { SectionCard, Switch } from "@/components/account/ui";
 import type { ProfileResponse, UserResponse } from "@/components/account/types";
+import { hasAiConsent } from "@/lib/ai-consent-shared";
 import { api, errorMessage } from "@/lib/api-client";
 import { DEFAULT_TZ } from "@/lib/dates";
 import type { Preferences } from "@/lib/types";
@@ -189,6 +192,12 @@ export function PreferencesSection() {
               aria-describedby="pref-weekly-desc"
             />
           }
+        />
+        <Row
+          id="pref-ai-features"
+          title={AI_SETTINGS.title}
+          description={AI_SETTINGS.subtitle(hasAiConsent(user))}
+          control={<AiFeaturesManage />}
         />
         <Row
           id="pref-ai"

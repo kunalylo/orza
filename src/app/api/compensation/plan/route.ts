@@ -155,7 +155,7 @@ function applyRewrite(
  * wording is personalised for 1 credit (falls back to the deterministic plan on any AI error or when
  * the user is over the per-user AI budget). AI failures are refunded; an AI answer with nothing
  * usable for the user's diet/avoid-list is refunded only within the daily allowance (see @/lib/ai-guard).
- * Phone app without AI consent: 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
+ * Without AI consent (website or phone app): 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
  */
 export const POST = route(async (req: Request) => {
   const user = await requireAiUser();

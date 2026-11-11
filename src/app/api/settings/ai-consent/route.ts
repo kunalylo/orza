@@ -19,7 +19,8 @@ const Body = z.object({
  * PUT /api/settings/ai-consent {version} → {user}. The member allows ÖRZA's AI features (OpenAI) as described by the
  * consent copy `version` (see src/lib/ai-consent.ts). Stores `ai_consent = {version, at: now}`; allowing again
  * refreshes `at`. 409 `ai_consent_outdated` when that copy is older than the server's `AI_CONSENT_VERSION` (the app
- * needs an update). Cookie or Bearer. Separate from `preferences.ai_training_opt_out`: neither changes the other.
+ * needs an update, or the web page a reload). Cookie or Bearer. Separate from `preferences.ai_training_opt_out`:
+ * neither changes the other.
  */
 export const PUT = route(async (req: Request) => {
   const user = await requireUser();
@@ -35,8 +36,8 @@ export const PUT = route(async (req: Request) => {
 });
 
 /**
- * DELETE /api/settings/ai-consent → {user} with `ai_consent: null`. Idempotent. The phone app's AI requests are then
- * refused (R1) and the coach's AI prompt leaves out tracked data again (R2); meals, chats, plans and steps stay.
+ * DELETE /api/settings/ai-consent → {user} with `ai_consent: null`. Idempotent. AI requests from the website and the
+ * app are then refused (R1) and the coach's AI prompt leaves out tracked data again (R2); meals, chats, plans and steps stay.
  */
 export const DELETE = route(async () => {
   const user = await requireUser();

@@ -5,7 +5,8 @@ import { api } from "@/lib/api-client";
 
 type Ctx = {
   user: PublicUser;
-  setUser: (u: PublicUser) => void;
+  /** A user from the server, or an update of the current one. */
+  setUser: React.Dispatch<React.SetStateAction<PublicUser>>;
   /** Re-fetch /api/auth/me (e.g. after spending credits or saving settings). */
   refresh: () => Promise<void>;
   /** Optimistically update the visible credit balance. */

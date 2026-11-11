@@ -9,6 +9,8 @@ import { addDays, dateInTz, DEFAULT_TZ } from "@/lib/dates";
 import { formatNumber } from "@/lib/utils";
 import { PageHeader, WellnessNote } from "@/components/app/ui";
 import { useUser } from "@/components/app/UserProvider";
+import { useAiConsent } from "@/components/ai/AiConsentProvider";
+import { AiDeclinedNote } from "@/components/ai/AiDeclinedNote";
 import { GlassCard } from "@/components/orza/primitives";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { FieldHint, Input, Label, Skeleton } from "@/components/ui/form";
@@ -72,6 +74,7 @@ function AnalysingPanel() {
 /** /dashboard/scan — Snap & Know: photo → AI estimate → review & edit → log. `?date=` / `?meal_type=` supported. */
 export function ScanView() {
   const { user, setCredits, refresh } = useUser();
+  const { ensureAiConsent, onAiRefusal } = useAiConsent();
   const tz = user.profile?.timezone || DEFAULT_TZ;
   const params = useSearchParams();
   const router = useRouter();
@@ -140,10 +143,15 @@ export function ScanView() {
   const openCamera = () => cameraRef.current?.click();
   const openUpload = () => uploadRef.current?.click();
 
-  const analyse = async () => {
+  /**
+   * The AI consent is asked here, not before the picker: a browser opens its file picker only inside the tap itself,
+   * and picking sends nothing (the photo stays in the browser until now). On Not now the photo stays.
+   */
+  const analyse = async (): Promise<void> => {
     if (!image || phase === "scanning") return;
-    setPhase("scanning");
     setProblem(null);
+    if (!(await ensureAiConsent("snap"))) return;
+    setPhase("scanning");
     try {
       const res = await api.post<ScanResponse>("/meals/scan", { image, note: note.trim() || undefined });
       if (typeof res.credits === "number") setCredits(res.credits);
@@ -157,6 +165,7 @@ export function ScanView() {
       }
     } catch (err) {
       setPhase("ready");
+      if (onAiRefusal(err, "snap", () => void analyse())) return;
       // A photo with no food can still use credits once the daily refunds are used up — resync the balance.
       if (err instanceof ApiError && err.code === "no_food") void refresh().catch(() => {});
       if (err instanceof ApiError && err.code === "ai_disabled") setProblem({ kind: "ai_disabled", message: err.message });
@@ -314,6 +323,11 @@ export function ScanView() {
           <ScanViewfinder image={image} phase={phase} confidence={scan?.confidence} dishName={scan?.dish_name}>
             {controls}
           </ScanViewfinder>
+          <AiDeclinedNote feature="snap" className="mt-4">
+            <ButtonLink href={mealsHref} size="sm" variant="ghost">
+              <UtensilsCrossed size={14} strokeWidth={1.75} aria-hidden /> Open the meal log
+            </ButtonLink>
+          </AiDeclinedNote>
           {/* Hidden pickers: camera-first on phones, file browser everywhere. */}
           <input
             ref={cameraRef}

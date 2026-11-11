@@ -29,7 +29,7 @@ const Body = z.object({
  * POST /api/meals/scan — Snap & Know. Costs 2 credits: refunded if the AI fails, and refunded for
  * photos with no food up to a daily allowance (see @/lib/ai-guard). Rate-limited per user (429).
  * The photo is only sent to the AI; it is never stored. Returns an unconfirmed Scan to review.
- * Phone app without AI consent: 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
+ * Without AI consent (website or phone app): 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
  */
 export const POST = route(async (req: Request) => {
   const user = await requireAiUser();

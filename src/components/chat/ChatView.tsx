@@ -4,6 +4,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useReducedMotion } from "framer-motion";
 import { AlertCircle, ArrowDown, MessagesSquare, RotateCcw, SquarePen } from "lucide-react";
 import { toast } from "sonner";
+import { useAiConsent } from "@/components/ai/AiConsentProvider";
+import { AiDeclinedNote } from "@/components/ai/AiDeclinedNote";
 import { EmptyState } from "@/components/app/ui";
 import { useUser } from "@/components/app/UserProvider";
 import { GlassCard } from "@/components/orza/primitives";
@@ -48,6 +50,7 @@ export function ChatView() {
   const searchParams = useSearchParams();
   const reduceMotion = useReducedMotion();
   const { user, setUser, setCredits } = useUser();
+  const { ensureAiConsent, onAiRefusal } = useAiConsent();
 
   const [sessions, setSessions] = React.useState<ChatSession[] | null>(null);
   const [sessionsError, setSessionsError] = React.useState<string | null>(null);
@@ -75,6 +78,8 @@ export function ChatView() {
   const stickRef = React.useRef(true);
   const pendingScroll = React.useRef<ScrollBehavior | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  /** The latest `send`, for the consent dialog's retry. */
+  const sendRef = React.useRef<(raw: string, replaces?: string) => Promise<void>>(async () => {});
 
   React.useEffect(() => {
     userRef.current = user;
@@ -203,14 +208,17 @@ export function ChatView() {
 
   /* ───────── sending ───────── */
 
+  /** `replaces`: a failed message this one sends again — it goes only once the message is really sent. */
   const send = React.useCallback(
-    async (raw: string) => {
+    async (raw: string, replaces?: string) => {
       const text = raw.trim();
       if (!text || pendingRef.current) return;
       if (text.length > MAX_MESSAGE) {
         toast.error("Please keep messages under 2,000 characters.");
         return;
       }
+      // AI consent first: on Not now nothing is sent, and the text stays in the composer (or the failed message stays).
+      if (!(await ensureAiConsent("chat")) || pendingRef.current) return;
       const p: Pending = { view: viewRef.current, sessionId: activeRef.current, tempId: `tmp-${Date.now()}` };
       pendingRef.current = p;
       sentRef.current = true;
@@ -219,7 +227,7 @@ export function ChatView() {
       stickRef.current = true;
       pendingScroll.current = "smooth";
       setMessages((ms) => [
-        ...ms,
+        ...(replaces ? ms.filter((m) => m.id !== replaces) : ms),
         {
           id: p.tempId,
           session_id: p.sessionId ?? "",
@@ -275,6 +283,8 @@ export function ChatView() {
         });
       } catch (e) {
         setMessages((ms) => ms.map((m) => (m.id === p.tempId ? { ...m, status: "failed" } : m)));
+        // No AI consent (turned off elsewhere): the dialog, then this message once more after Allow.
+        if (onAiRefusal(e, "chat", () => void sendRef.current(text, p.tempId))) return;
         if (e instanceof ApiError && e.status === 402) {
           toast.error(e.message, {
             duration: 10000,
@@ -292,14 +302,16 @@ export function ChatView() {
         focusComposer();
       }
     },
-    [focusComposer, loadSessions, router, setCredits, setUser]
+    [ensureAiConsent, focusComposer, loadSessions, onAiRefusal, router, setCredits, setUser]
   );
+  React.useEffect(() => {
+    sendRef.current = send;
+  }, [send]);
 
   const retry = React.useCallback(
     (m: UIMessage) => {
       if (pendingRef.current) return;
-      setMessages((ms) => ms.filter((x) => x.id !== m.id));
-      void send(m.content);
+      void send(m.content, m.id);
     },
     [send]
   );
@@ -475,6 +487,7 @@ export function ChatView() {
 
           <div className="border-t border-[rgba(20,20,20,0.08)] bg-[rgba(251,247,241,0.6)] px-3 pb-3 pt-3 sm:px-5 sm:pb-4">
             <div className="mx-auto w-full max-w-[780px]">
+              <AiDeclinedNote feature="chat" className="mb-2.5" />
               {messages.length > 0 && historyState === "idle" && (
                 <div className="-mx-1 mb-2.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5 no-scrollbar" aria-label="Quick actions">
                   {QUICK_ACTIONS.map((a) => (

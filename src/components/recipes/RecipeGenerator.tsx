@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import { Sparkles, Wand2 } from "lucide-react";
+import { AiDeclinedNote } from "@/components/ai/AiDeclinedNote";
 import { Eyebrow, GlassCard } from "@/components/orza/primitives";
 import { Button } from "@/components/ui/button";
 import { FieldHint, Input, Label, Select } from "@/components/ui/form";
@@ -141,6 +142,7 @@ export function RecipeGenerator({
           </div>
         </div>
 
+        <AiDeclinedNote feature="recipe" className="mt-5" />
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
           <FieldHint className="mt-0 sm:max-w-[60%]">
             {aiEnabled == null

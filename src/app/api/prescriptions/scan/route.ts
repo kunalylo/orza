@@ -20,7 +20,7 @@ export const maxDuration = 90;
  * media kind "prescription" and saves the medicines for review (status "review").
  * AI off → 503 `ai_disabled`; the page then offers manual entry. 429 `rate_limited` when photos are
  * scanned faster than the per-user budget shared with meal scans.
- * Phone app without AI consent: 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
+ * Without AI consent (website or phone app): 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
  */
 export const POST = route(async (req: Request) => {
   const user = await requireAiUser();

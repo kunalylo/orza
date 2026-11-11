@@ -32,7 +32,7 @@ const NOTHING_RECOGNISED = "Couldn't recognise any foods — try e.g. '2 roti an
  * that finds no food is refunded only within the daily allowance. Without AI (or if the AI is
  * unavailable, busy for this user, out of credits or finds nothing) the free built-in parser logs it,
  * with a `notice` explaining why. The parser uses the profile diet, so "biryani" is Veg Biryani for a vegetarian.
- * Phone app without AI consent: 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
+ * Without AI consent (website or phone app): 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
  */
 export const POST = route(async (req: Request) => {
   const user = await requireAiUser();

@@ -3,6 +3,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { api, ApiError, errorMessage } from "@/lib/api-client";
 import { useUser } from "@/components/app/UserProvider";
+import { useAiConsent } from "@/components/ai/AiConsentProvider";
 import { PageHeader, WellnessNote } from "@/components/app/ui";
 import { KitchenProfile } from "@/components/recipes/KitchenProfile";
 import { RecipeGenerator } from "@/components/recipes/RecipeGenerator";
@@ -15,6 +16,7 @@ type Busy = { id: string; action: "save" | "log" | "delete" } | null;
 /** Personalised recipes: generate (AI or curated library), save, log a serving, browse Saved / Recent. */
 export default function RecipesPage() {
   const { user, setCredits, refresh } = useUser();
+  const { ensureAiConsent, onAiRefusal } = useAiConsent();
   const [recipes, setRecipes] = React.useState<RecipeItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -54,7 +56,9 @@ export default function RecipesPage() {
     setResult((cur) => (cur && cur.recipe.id === r.id ? { ...cur, recipe: r } : cur));
   };
 
-  const generate = async (req: GenerateRequest) => {
+  const generate = async (req: GenerateRequest): Promise<void> => {
+    // AI consent first (Generate and Another): on Not now nothing is sent and the request stays in the form.
+    if (!(await ensureAiConsent("recipe"))) return;
     lastRequest.current = req;
     setGenerating(true);
     setResult(null);
@@ -68,6 +72,7 @@ export default function RecipesPage() {
       toast.success(res.ai ? "Your recipe is ready" : "Here's a recipe that fits you");
       requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (e) {
+      if (onAiRefusal(e, "recipe", () => void generate(req))) return;
       toast.error(errorMessage(e));
       if (e instanceof ApiError && e.code === "no_credits") refresh();
     } finally {

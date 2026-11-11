@@ -9,6 +9,8 @@ import { Eyebrow, GlassCard, IconTile } from "@/components/orza/primitives";
 import { Button } from "@/components/ui/button";
 import { Segmented, Textarea } from "@/components/ui/form";
 import { useUser } from "@/components/app/UserProvider";
+import { useAiConsent } from "@/components/ai/AiConsentProvider";
+import { AiDeclinedNote } from "@/components/ai/AiDeclinedNote";
 import { useSpeechRecognition } from "./useSpeechRecognition";
 import type { AiStatus } from "./useAiStatus";
 import { FALLBACK_COSTS, MEAL_SINGULAR, MEAL_TYPES, type TextLogResponse } from "./meal-utils";
@@ -52,6 +54,7 @@ export function MealComposer({
   className?: string;
 }) {
   const { user, setCredits, refresh } = useUser();
+  const { ensureAiConsent, onAiRefusal } = useAiConsent();
   const [text, setText] = React.useState("");
   const [lang, setLang] = React.useState<Lang>("en-IN");
   const [submitting, setSubmitting] = React.useState(false);
@@ -100,7 +103,7 @@ export function MealComposer({
     else speech.start();
   };
 
-  const submit = async () => {
+  const submit = async (): Promise<void> => {
     const value = text.trim();
     if (submitting) return;
     if (value.length < 2) {
@@ -109,6 +112,8 @@ export function MealComposer({
       return;
     }
     if (speech.listening) speech.cancel();
+    // AI consent first: on Not now nothing is sent and the meal stays in the box.
+    if (!(await ensureAiConsent("meal_text"))) return;
     setSubmitting(true);
     try {
       const res = await api.post<TextLogResponse>("/meals/text", {
@@ -124,6 +129,7 @@ export function MealComposer({
       usedVoice.current = false;
       onLogged(res);
     } catch (e) {
+      if (onAiRefusal(e, "meal_text", () => void submit())) return;
       toast.error(errorMessage(e));
       // Text the AI found no food in can still use a credit once the daily refunds are used up.
       if (e instanceof ApiError && e.code === "no_items") void refresh().catch(() => {});
@@ -318,6 +324,7 @@ export function MealComposer({
             </div>
           </div>
           {!costHint && <span id={hintId} className="sr-only">Press Enter to log, Shift and Enter for a new line.</span>}
+          <AiDeclinedNote feature="meal_text" className="mt-4" />
         </form>
       </div>
     </GlassCard>

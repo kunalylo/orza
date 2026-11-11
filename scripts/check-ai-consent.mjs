@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * Checks the AI consent server contract against a running ÖRZA server (local by default): `user.ai_consent` in `{user}`
- * answers (null when none), `PUT` / `DELETE /api/settings/ai-consent`, and R1 — the six AI routes refuse the phone app's
- * requests with 403 `ai_consent_required` until the account allows the AI features, while the website's cookie requests
- * are never refused. See src/lib/ai-consent.ts.
+ * answers (null when none), `PUT` / `DELETE /api/settings/ai-consent`, and R1 — the six AI routes refuse requests from
+ * every client (the phone app's Bearer token and the website's cookie) with 403 `ai_consent_required` until the account
+ * allows the AI features, and one record serves both: a consent or a Turn off on one is seen by the other. See
+ * src/lib/ai-consent.ts.
  *
  *   npx next dev -p 3101                                      (another terminal; no .env.local: JSON-file database, AI off)
  *   ORZA_BASE_URL=http://localhost:3101 node scripts/check-ai-consent.mjs
@@ -151,7 +152,7 @@ async function main() {
   r = await call("DELETE", "/settings/ai-consent");
   check("DELETE again → 200 (idempotent)", r.status === 200 && r.json.user?.ai_consent === null, brief(r));
 
-  /* ── 7: the website (cookie) is never refused ── */
+  /* ── 7: the website (cookie) asks too, on the same record ── */
   const login = await call("POST", "/auth/login", { email, password }, "web");
   const set = login.res.headers.getSetCookie?.() ?? [];
   const session = set.map((c) => c.split(";")[0]).find((c) => c.startsWith("orza_session=") && c.length > "orza_session=".length);
@@ -161,13 +162,44 @@ async function main() {
     cookie = session;
     me = await call("GET", "/auth/me", undefined, "web");
     check("website: GET /api/auth/me has ai_consent null", me.status === 200 && me.json.user?.ai_consent === null, me.json.user?.ai_consent);
-    await eachRoute("website cookie, no consent → not refused", "web", pastConsent);
+    await eachRoute("website cookie, no consent → 403 ai_consent_required", "web", (_, r) => refused(r));
+    r = await call("POST", "/chat/send", { message: "" }, "web");
+    check("website 403 error text (for a tab on an old page)", r.json.error === "Please reload the page to allow ÖRZA's AI features.", r.json.error);
+    r = await call("POST", "/chat/send", { message: "" });
+    check("app 403 error text unchanged", r.json.error === "Allow ÖRZA's AI features in the app to use this.", r.json.error);
+
+    // The consent itself is a state change behind the cookie: the cross-site guard applies.
+    const foreign = await fetch(`${BASE}/api/settings/ai-consent`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", origin: "https://not-orza.example", cookie },
+      body: JSON.stringify({ version: 1 }),
+    });
+    const foreignJson = await foreign.json().catch(() => ({}));
+    check("website: a cross-site PUT is refused (403 cross_site)", foreign.status === 403 && foreignJson.code === "cross_site", { status: foreign.status, code: foreignJson.code });
+    me = await call("GET", "/auth/me", undefined, "web");
+    check("…and recorded nothing", me.json.user?.ai_consent === null, me.json.user?.ai_consent);
+
     r = await call("PUT", "/settings/ai-consent", { version: 1 }, "web");
-    check("website: PUT works with the cookie too", r.status === 200 && r.json.user?.ai_consent?.version === 1, brief(r));
+    check("website: PUT with the cookie → 200 with the consent", r.status === 200 && r.json.user?.ai_consent?.version === 1, brief(r));
+    await eachRoute("website cookie, consent → past the check", "web", pastConsent);
     r = await call("POST", "/chat/send", { message: "" });
     check("app sees the consent the website gave (400, not 403)", pastConsent("/chat/send", r), brief(r));
     r = await call("DELETE", "/settings/ai-consent", undefined, "web");
-    check("website: DELETE works with the cookie too", r.status === 200 && r.json.user?.ai_consent === null, brief(r));
+    check("website: DELETE with the cookie → 200, null", r.status === 200 && r.json.user?.ai_consent === null, brief(r));
+    await eachRoute("website after its DELETE → 403 again", "web", (_, r) => refused(r));
+    r = await call("POST", "/chat/send", { message: "" });
+    check("app after the website's DELETE → 403", refused(r), brief(r));
+
+    // A consent given on the phone is used on the website without asking (the gate's /auth/me read sees it).
+    r = await call("PUT", "/settings/ai-consent", { version: 1 });
+    check("app: PUT → 200", r.status === 200 && r.json.user?.ai_consent?.version === 1, brief(r));
+    me = await call("GET", "/auth/me", undefined, "web");
+    check("website: GET /api/auth/me shows the app's consent", me.json.user?.ai_consent?.version === 1, me.json.user?.ai_consent);
+    await eachRoute("website cookie, the app's consent → past the check", "web", pastConsent);
+    r = await call("DELETE", "/settings/ai-consent");
+    check("app: DELETE → 200", r.status === 200 && r.json.user?.ai_consent === null, brief(r));
+    r = await call("POST", "/chat/send", { message: "" }, "web");
+    check("website after the app's Turn off → 403", refused(r), brief(r));
   }
 
   skip("R2: no tracked steps in the coach's prompt without consent", "needs an AI call to observe (review contextForPrompt / aiHistory in src/lib/coach.ts)");

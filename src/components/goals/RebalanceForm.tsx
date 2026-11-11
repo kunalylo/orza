@@ -4,6 +4,8 @@ import { Cake, Gem, PartyPopper, PenLine, Plane, Sparkles, type LucideIcon } fro
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { useAiConsent } from "@/components/ai/AiConsentProvider";
+import { AiDeclinedNote } from "@/components/ai/AiDeclinedNote";
 import { GlassCard } from "@/components/orza/primitives";
 import { Button } from "@/components/ui/button";
 import { FieldHint, Input, Label, Segmented, Textarea } from "@/components/ui/form";
@@ -29,6 +31,8 @@ const PLACEHOLDERS: Record<string, string> = {
 
 type Days = "2" | "3" | "4" | "5";
 
+type PlanBody = { occasion: string; description?: string; extra_calories?: number; days: number };
+
 /** Occasion chips, "what did you eat?", optional calories and a 2–5 day spread → POST /api/compensation/plan. */
 export function RebalanceForm({
   aiEnabled,
@@ -40,6 +44,7 @@ export function RebalanceForm({
   onCreated: (res: RebalanceCreateResponse) => void;
 }) {
   const uid = React.useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const { ensureAiConsent, onAiRefusal } = useAiConsent();
   const [occasion, setOccasion] = React.useState<string | null>(null);
   const [custom, setCustom] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -64,18 +69,25 @@ export function RebalanceForm({
     const kcal = calories.trim() ? Number(calories) : null;
     if (kcal != null && (!Number.isFinite(kcal) || kcal < 100 || kcal > 5000)) next.calories = "Enter between 100 and 5,000 kcal — or leave it blank.";
     setErrors(next);
-    if (next.occasion || next.calories) return;
+    if (next.occasion || next.calories || !occ) return;
 
+    // AI consent first: on Not now nothing is sent and the form stays as it is.
+    if (!(await ensureAiConsent("rebalance"))) return;
+    await create({
+      occasion: occ,
+      ...(description.trim() ? { description: description.trim() } : {}),
+      ...(kcal != null ? { extra_calories: Math.round(kcal) } : {}),
+      days: Number(days),
+    });
+  };
+
+  const create = async (body: PlanBody): Promise<void> => {
     setLoading(true);
     try {
-      const res = await api.post<RebalanceCreateResponse>("/compensation/plan", {
-        occasion: occ,
-        ...(description.trim() ? { description: description.trim() } : {}),
-        ...(kcal != null ? { extra_calories: Math.round(kcal) } : {}),
-        days: Number(days),
-      });
+      const res = await api.post<RebalanceCreateResponse>("/compensation/plan", body);
       onCreated(res);
     } catch (err) {
+      if (onAiRefusal(err, "rebalance", () => void create(body))) return;
       toast.error(errorMessage(err));
     } finally {
       setLoading(false);
@@ -197,6 +209,7 @@ export function RebalanceForm({
           </div>
         </div>
 
+        <AiDeclinedNote feature="rebalance" className="mt-6" />
         <div className="mt-7 flex flex-col gap-3 border-t border-[rgba(20,20,20,0.08)] pt-6 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[12px] leading-relaxed text-orza-subtle">
             {aiEnabled

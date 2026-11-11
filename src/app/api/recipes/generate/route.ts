@@ -215,7 +215,7 @@ function relaxedNotice(pick: PickResult, cuisine?: string): string | undefined {
  * result can't be used, or the user is over the per-user AI budget — a deterministic pick from
  * ÖRZA's curated library (free). AI failures are refunded; a completed AI recipe that can't be used
  * is refunded only within the daily allowance (see @/lib/ai-guard).
- * Phone app without AI consent: 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
+ * Without AI consent (website or phone app): 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
  */
 export const POST = route(async (req: Request) => {
   const user = await requireAiUser();

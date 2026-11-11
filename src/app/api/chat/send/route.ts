@@ -76,13 +76,13 @@ async function saveLearnedFacts(userId: string, add: string[]): Promise<LearnedF
  * AI off, temporarily unavailable, or over the per-user rate budget: the deterministic coach in
  * lib/coach.ts, free.
  * The conversation is only created/written once a reply exists, so a 402 leaves nothing half-saved.
- * Phone app without AI consent: 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
+ * Without AI consent (website or phone app): 403 `ai_consent_required` before anything else (requireAiUser, src/lib/ai-consent.ts).
  */
 export const POST = route(async (req: Request) => {
   const user = await requireAiUser();
   const body = await parseBody(req, Body);
   const startedAt = Date.now();
-  // R2 (src/lib/ai-consent.ts): without AI consent, from any client, no tracked steps or replies quoting them reach the AI.
+  // R2 (src/lib/ai-consent.ts), a second line behind R1: without AI consent no tracked steps or replies quoting them reach the AI.
   const consented = hasAiConsent(user);
 
   let session: ChatSession | null = body.session_id ? await getOwnedSession(user.id, body.session_id) : null;

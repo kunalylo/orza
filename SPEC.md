@@ -37,7 +37,7 @@ No other dependencies may be added. No chart library — draw charts with SVG/di
 | `src/lib/devices.ts` | Phones running the ÖRZA app (`devices`): `appDevices()`, `appDoseCoverage(userId, now)` (epoch ms the phones' alarms reach — the earliest among several phones; Infinity = no limit, null = none), `phoneRingsAt(coverage, iso)`, `alarmsCoverUntil(device)`, `ringsDosesLocally(device, now)`, `deviceView`, `APP_DEVICE_ACTIVE_DAYS` (7), `MAX_DEVICES_PER_USER` (10), `EXPO_PUSH_TOKEN_RE`, `isTimeZone` |
 | `src/lib/rate-limit.ts` | `clientIp(req)` (spoof-resistant, `TRUSTED_PROXY_HOPS`), in-memory `reserve/peek/release/clearLimit`, `tooManyRequests()` — public endpoints (auth, leads) |
 | `src/lib/ai.ts` | `aiEnabled()`, `aiText({system, messages})`, `aiJSON({system, prompt, shape, imageUrl?})`, `WELLNESS_GUARDRAIL`. Throws HttpError 502/503/504 with friendly messages |
-| `src/lib/ai-consent.ts` | `AI_CONSENT_VERSION` (1; bumped together with the phone app's), `hasAiConsent(user)`, `isAppRequest(via, session, clientHeader)`, `requireAiUser()` (the first line of every route that calls the AI instead of `requireUser()`: 401, then 403 `ai_consent_required` for a phone-app request without consent; see "AI consent" under Account) |
+| `src/lib/ai-consent.ts` | `AI_CONSENT_VERSION` (1; bumped together with the phone app's) and `hasAiConsent(user)` (both from the pure `src/lib/ai-consent-shared.ts`, which the website's consent dialog imports too), `isAppRequest(via, session, clientHeader)`, `requireAiUser()` (the first line of every route that calls the AI instead of `requireUser()`: 401, then 403 `ai_consent_required` for any request without consent; see "AI consent" under Account) |
 | `src/lib/credits.ts` | `INITIAL_CREDITS=100`, `CREDIT_COSTS` (scan 2, meal_text 1, chat 1, recipe 2, compensation 1, report_insight 1), `spendCredits`, `refundCredits`, `adjustCredits`, `withCredits(userId, action, fn)` (spend → run → refund on throw; 402 `no_credits` when empty). Spends/refunds record their `action` |
 | `src/lib/ai-guard.ts` | `AI_GUARD` policies, `reserveAi(userId, action)` (per-user requests/minute + concurrency; `null` = over budget → free fallback or `aiRateLimited()` 429), `refundEmptyResult` (a completed but unusable AI answer is refunded only 3×/day per action), `emptyResultCreditNote` |
 | `src/lib/domain/meals.ts` | `sumNutrients`, `cleanItem`, `guessMealType(tz)`, `createMeal({...})`, `listMeals`, `listMealsInRange`, `dayTotals`, `ZERO` |
@@ -152,16 +152,27 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
   `chat_messages`: the coach's own activity replies ("Steps today: **4,200 / 8,000**", `coach.ts` `activityReply`), AI replies that repeat the step count
   from `contextForPrompt`, and members' messages that state one — drop those messages or strip the numbers before anything leaves.
 - **AI consent** (`users.ai_consent = {version, at}`, `AiConsent` in `src/lib/types.ts`; absent or null = none; `src/lib/ai-consent.ts`): the member's permission for
-  the AI features, which OpenAI runs (App Store 5.1.2(i)). The phone app asks at first AI use and in Settings › Privacy & data › AI features; the website doesn't
-  ask yet. Every `{user}` answer carries `ai_consent` (the object or null; its presence tells the app this server asks).
+  the AI features, which OpenAI runs (App Store 5.1.2(i)). One record per account, so one Allow or Turn off works everywhere. The phone app asks at first AI use
+  and in Settings › Privacy & data › AI features; the website asks the same at first AI use (`src/components/ai`, below) and in Settings → Preferences → AI
+  features. Every `{user}` answer carries `ai_consent` (the object or null; its presence tells the app this server asks).
   `PUT /api/settings/ai-consent {version}` (whole number 1–1000; cookie or Bearer) → `{user}` with `ai_consent = {version, at: now}` (allowing again refreshes `at`);
-  409 `ai_consent_outdated` when `version < AI_CONSENT_VERSION` (the app's copy is older: update the app). `DELETE /api/settings/ai-consent` → `{user}` with
+  409 `ai_consent_outdated` when `version < AI_CONSENT_VERSION` (the app's copy is older: update the app; on the website, reload the page). `DELETE /api/settings/ai-consent` → `{user}` with
   `ai_consent: null`, idempotent. Allowed means `ai_consent.version >= AI_CONSENT_VERSION`. Separate from `ai_training_opt_out`: neither changes the other.
-  - **R1, the phone app**: `chat/send`, `meals/text`, `meals/scan`, `recipes/generate`, `compensation/plan` and `prescriptions/scan` (every caller of `aiJSON`)
-    start with `requireAiUser()`. An app request (Bearer app session `kind: "mobile"`, or `X-ORZA-Client: mobile`) from an account without consent gets
-    403 `{error: "Allow ÖRZA's AI features in the app to use this.", code: "ai_consent_required"}` right after the 401 and before any 400, 402, 429 or 503:
-    nothing is read, stored or spent, even when the AI is off. Website (cookie) requests are never refused.
-  - **R2, any client**: for an account without consent, `chat/send`'s AI prompt has no tracked step count (`contextForPrompt(ctx, {steps})`: "step goal" only) and
+  - **R1, every client**: `chat/send`, `meals/text`, `meals/scan`, `recipes/generate`, `compensation/plan` and `prescriptions/scan` (every caller of `aiJSON`)
+    start with `requireAiUser()`. A request from an account without consent gets 403 `{error, code: "ai_consent_required"}` right after the 401 and before
+    any 400, 402, 429 or 503: nothing is read, stored or spent, even when the AI is off (so the routes' built-in fallbacks wait for consent too). The `error`
+    is "Allow ÖRZA's AI features in the app to use this." for an app request (Bearer app session `kind: "mobile"`, or `X-ORZA-Client: mobile`) and "Please
+    reload the page to allow ÖRZA's AI features." for the website (only a tab still on a page from before the website asked shows it).
+  - **The website's gate** (`src/components/ai`): `AiConsentProvider` (in `src/app/dashboard/layout.tsx`, inside `UserProvider`) holds one consent
+    dialog (names OpenAI, lists what is sent, links `/privacy#ai-processing`; Allow / Not now). Every AI entry point runs its own checks, then
+    `if (!(await ensureAiConsent(feature))) return;` (the session user's consent → go; else `/auth/me` first, so a consent given on the phone is used
+    without asking; else the dialog: Allow → PUT → the action runs; Not now, Escape or close → nothing is sent and `AiDeclinedNote` says why with "Allow AI
+    features"), and starts its error handling with `if (onAiRefusal(e, feature, retry)) return;` (a 403 `ai_consent_required` → the dialog → `retry` once
+    after Allow). The six: `ChatView.send` (and Retry), `MealComposer.submit`, `ScanView.analyse` (not before the file picker: a browser opens it only inside
+    the tap, and picking sends nothing), the recipes page's `generate` (and Another), `RebalanceForm.submit`, `PrescriptionsView.scan`. Copy: `copy.ts`.
+    Settings → Preferences → "AI features" (`AiFeaturesManage`): the status, the same points, Allow AI features or Turn off AI features (confirm → DELETE).
+    A new AI entry point must go through the gate.
+  - **R2, a second line behind R1**: for an account without consent, `chat/send`'s AI prompt has no tracked step count (`contextForPrompt(ctx, {steps})`: "step goal" only) and
     its history (`aiHistory`) keeps only the member's messages and AI replies stored with `meta.health: false`, so the built-in coach's replies (which quote
     tracked steps and weight), AI replies made with consent and AI replies from before the flag (which can repeat a tracked step count) are left out. Every AI
     reply is stored with `meta.health` = whether the account had consent (its prompt then held tracked data). The built-in coach still uses the tracked numbers (nothing
@@ -336,7 +347,7 @@ cookie flow is unchanged.
   for bodies (a bodyless DELETE may omit it). Requests carrying the cookie get the full same-origin check (a cross-site cookie request is still 403).
 - **Sign out**: `POST /api/auth/logout` with the Bearer token and `Content-Type: application/json` (body `{}` or `{everywhere: true}`) → `{ok:true}`; revokes
   that app session (or all sessions) and removes the phone registered with it; no cookies are touched.
-- **AI consent**: the app's requests to the six AI routes get 403 `ai_consent_required` until the account allows the AI features with
+- **AI consent**: requests to the six AI routes (the app's and the website's) get 403 `ai_consent_required` until the account allows the AI features with
   `PUT /api/settings/ai-consent {version}` (see "AI consent" under Account); a `version` older than the server's gets 409 `ai_consent_outdated`.
   `user.ai_consent` (object or null) is in every `{user}` answer; an older server sends no such field.
 - **Photos**: `GET /api/media/[id]` accepts the Bearer token, so `<Image source={{ uri, headers: { Authorization: "Bearer " + token } }} />` works with the

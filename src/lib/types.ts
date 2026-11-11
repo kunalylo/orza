@@ -60,9 +60,10 @@ export interface Preferences {
 export type AdminRole = "super" | "sub";
 
 /**
- * The member's permission for ÖRZA's AI features (OpenAI), given in the phone app's consent sheet or its
- * Settings › Privacy & data. `version` is the consent copy the member allowed (see `AI_CONSENT_VERSION` in
- * src/lib/ai-consent.ts); `at` is the server's time of the last Allow (ISO).
+ * The member's permission for ÖRZA's AI features (OpenAI), given in the website's consent dialog or Settings →
+ * Preferences, or in the phone app's consent sheet or Settings › Privacy & data. `version` is the consent copy the
+ * member allowed (see `AI_CONSENT_VERSION` in src/lib/ai-consent-shared.ts); `at` is the server's time of the last
+ * Allow (ISO).
  */
 export interface AiConsent {
   version: number;

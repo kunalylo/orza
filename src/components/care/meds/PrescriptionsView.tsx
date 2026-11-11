@@ -23,6 +23,8 @@ import { DEFAULT_TZ } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { EmptyState, PageHeader, WellnessNote } from "@/components/app/ui";
 import { useUser } from "@/components/app/UserProvider";
+import { useAiConsent } from "@/components/ai/AiConsentProvider";
+import { AiDeclinedNote } from "@/components/ai/AiDeclinedNote";
 import { GlassCard, IconTile, Tag } from "@/components/orza/primitives";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -81,6 +83,7 @@ function HistorySkeleton() {
  */
 export function PrescriptionsView() {
   const { user, setCredits } = useUser();
+  const { ensureAiConsent, onAiRefusal } = useAiConsent();
   const tz = user.profile?.timezone || DEFAULT_TZ;
   const today = todayIn(tz);
   const year = Number(today.slice(0, 4));
@@ -167,10 +170,12 @@ export function PrescriptionsView() {
     scrollTop();
   };
 
-  const scan = async () => {
+  const scan = async (): Promise<void> => {
     if (!image || phase === "scanning") return;
-    setPhase("scanning");
     setProblem(null);
+    // AI consent first: on Not now nothing is sent and the photo stays (it can still go with typed medicines).
+    if (!(await ensureAiConsent("rx"))) return;
+    setPhase("scanning");
     try {
       const res = await api.post<{ prescription: PrescriptionClient; credits?: number }>("/prescriptions/scan", { image });
       if (typeof res.credits === "number") setCredits(res.credits);
@@ -184,6 +189,7 @@ export function PrescriptionsView() {
       scrollTop();
     } catch (err) {
       setPhase("pick");
+      if (onAiRefusal(err, "rx", () => void scan())) return;
       if (err instanceof ApiError && err.code === "ai_disabled") setProblem({ kind: "ai_disabled", message: err.message });
       else if (err instanceof ApiError && (err.status === 402 || err.code === "no_credits")) setProblem({ kind: "no_credits", message: err.message });
       else setProblem({ kind: "error", message: errorMessage(err) });
@@ -304,8 +310,13 @@ export function PrescriptionsView() {
             </div>
             <RxViewfinder image={image} scanning={phase === "scanning"} />
 
+            <AiDeclinedNote feature="rx" className="mt-4">
+              <Button size="sm" variant="secondary" onClick={startManual}>
+                <Keyboard size={15} aria-hidden /> Type the medicines instead
+              </Button>
+            </AiDeclinedNote>
             <div className="mt-4 space-y-3">
-              {problem && <ProblemPanel problem={problem} onManual={startManual} onRetry={problem.kind === "error" ? scan : undefined} />}
+              {problem &&<ProblemPanel problem={problem} onManual={startManual} onRetry={problem.kind === "error" ? scan : undefined} />}
               {aiOff && !problem && (
                 <div className="rounded-orza-md border border-[rgba(11,143,166,0.22)] bg-[#EAF6FF] p-3.5 text-[13px] leading-relaxed text-[#0B6F82]">
                   Automatic reading isn&apos;t available right now. Type the medicines from your prescription — it takes a minute, and you can attach the photo for reference.

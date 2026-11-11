@@ -13,18 +13,24 @@ const Body = z.object({
     .int("Consent version must be a whole number")
     .min(1, "Consent version must be between 1 and 1000")
     .max(1000, "Consent version must be between 1 and 1000"),
+  /** The website's page sends the account it shows (the phone app doesn't need to: its token is the account's). */
+  user_id: z.string().max(64).optional(),
 });
 
 /**
- * PUT /api/settings/ai-consent {version} → {user}. The member allows ÖRZA's AI features (OpenAI) as described by the
- * consent copy `version` (see src/lib/ai-consent.ts). Stores `ai_consent = {version, at: now}`; allowing again
- * refreshes `at`. 409 `ai_consent_outdated` when that copy is older than the server's `AI_CONSENT_VERSION` (the app
- * needs an update, or the web page a reload). Cookie or Bearer. Separate from `preferences.ai_training_opt_out`:
- * neither changes the other.
+ * PUT /api/settings/ai-consent {version, user_id?} → {user}. The member allows ÖRZA's AI features (OpenAI) as described
+ * by the consent copy `version` (see src/lib/ai-consent.ts). Stores `ai_consent = {version, at: now}`; allowing again
+ * refreshes `at`. 409 `account_changed` when `user_id` isn't the signed-in account: a website tab left open while
+ * another account signed in in this browser never records a consent that account didn't see. 409 `ai_consent_outdated`
+ * when that copy is older than the server's `AI_CONSENT_VERSION` (the app needs an update, or the web page a reload).
+ * Cookie or Bearer. Separate from `preferences.ai_training_opt_out`: neither changes the other.
  */
 export const PUT = route(async (req: Request) => {
   const user = await requireUser();
-  const { version } = await parseBody(req, Body);
+  const { version, user_id } = await parseBody(req, Body);
+  if (user_id !== undefined && user_id !== user.id) {
+    throw new HttpError(409, "You're signed in to another account in this browser. Please reload the page.", "account_changed");
+  }
   if (version < AI_CONSENT_VERSION) {
     throw new HttpError(409, "This version of the app can't turn on AI features. Please update ÖRZA.", "ai_consent_outdated");
   }

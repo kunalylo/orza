@@ -10,6 +10,7 @@
  * and starts its error handling with `if (onAiRefusal(e, feature, retry)) return;`.
  */
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import { useUser } from "@/components/app/UserProvider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -22,11 +23,17 @@ import { ConsentDetails, ConsentTitle } from "./ConsentDetails";
 /** The server refused an AI request because the account has no AI consent. */
 export const isAiConsentRefusal = (e: unknown) => e instanceof ApiError && e.status === 403 && e.code === "ai_consent_required";
 
-/** Allow: records the consent for the copy this page shows → the fresh user. */
-export async function allowAiFeatures(): Promise<PublicUser> {
-  const r = await api.put<{ user: PublicUser }>("/settings/ai-consent", { version: AI_CONSENT_VERSION });
+/**
+ * Allow: records the consent for the copy this page shows, for the account it shows (`userId`) → the fresh user. If
+ * another account signed in in this browser meanwhile, the server records nothing (409 `account_changed`).
+ */
+export async function allowAiFeatures(userId: string): Promise<PublicUser> {
+  const r = await api.put<{ user: PublicUser }>("/settings/ai-consent", { version: AI_CONSENT_VERSION, user_id: userId });
   return r.user;
 }
+
+/** Allow refused because the browser is signed in to another account now: reload to show it. */
+export const isAccountChanged = (e: unknown) => e instanceof ApiError && e.status === 409 && e.code === "account_changed";
 
 /** The line a dialog shows when Allow or Turn off couldn't be saved. */
 export function consentErrorLine(e: unknown): string {
@@ -65,7 +72,8 @@ type Ctx = {
 
 const AiConsentContext = React.createContext<Ctx | null>(null);
 
-type Asking = { feature: AiFeature; userId: string; resolve: (allowed: boolean) => void };
+/** An open dialog: for which feature, account and page, and the gate waiting on it. */
+type Asking = { feature: AiFeature; userId: string; path: string; resolve: (allowed: boolean) => void };
 
 /** Mounted once around the members' app (src/app/dashboard/layout.tsx), inside UserProvider. */
 export function AiConsentProvider({ children }: { children: React.ReactNode }) {
@@ -74,6 +82,8 @@ export function AiConsentProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     userRef.current = user;
   }, [user]);
+  const pathname = usePathname();
+  const pathRef = React.useRef(pathname);
 
   const [asking, setAsking] = React.useState<Asking | null>(null);
   const [saving, setSaving] = React.useState(false);
@@ -81,6 +91,8 @@ export function AiConsentProvider({ children }: { children: React.ReactNode }) {
   const [declined, setDeclined] = React.useState<ReadonlySet<AiFeature>>(() => new Set());
   /** A gate or a refusal's dialog is under way: one at a time, so an action never runs twice. */
   const busy = React.useRef(false);
+  /** Where focus goes back to when the dialog closes (it has no trigger): the composer or button that asked. */
+  const returnFocus = React.useRef<HTMLElement | null>(null);
 
   // Any Allow (the dialog, Settings, or one from the phone picked up by a refresh) clears every Not now line.
   const allowed = hasAiConsent(user);
@@ -99,8 +111,10 @@ export function AiConsentProvider({ children }: { children: React.ReactNode }) {
   const ask = React.useCallback(
     (feature: AiFeature) =>
       new Promise<boolean>((resolve) => {
+        const from = document.activeElement;
+        returnFocus.current = from instanceof HTMLElement && from !== document.body ? from : null;
         setError(null);
-        setAsking({ feature, userId: userRef.current.id, resolve });
+        setAsking({ feature, userId: userRef.current.id, path: pathRef.current, resolve });
       }),
     []
   );
@@ -113,7 +127,10 @@ export function AiConsentProvider({ children }: { children: React.ReactNode }) {
       try {
         // A consent given on the phone since this page loaded is used without asking.
         const start = userRef.current.id;
+        const path = pathRef.current;
         const fresh = await readMe();
+        // The member left the page while ÖRZA answered: nothing is asked or sent for it.
+        if (pathRef.current !== path) return false;
         if (fresh && fresh.id !== start) {
           // Another account signed in in this browser meanwhile: nothing is sent; show that account.
           window.location.reload();
@@ -174,7 +191,7 @@ export function AiConsentProvider({ children }: { children: React.ReactNode }) {
     setSaving(true);
     setError(null);
     try {
-      const u = await allowAiFeatures();
+      const u = await allowAiFeatures(a.userId);
       if (u.id !== a.userId) {
         a.resolve(false);
         window.location.reload();
@@ -182,13 +199,32 @@ export function AiConsentProvider({ children }: { children: React.ReactNode }) {
       }
       showUser(u);
       setAsking(null);
-      a.resolve(true);
+      // The member left the page that asked while this saved: the choice stands, but that page's action doesn't run.
+      a.resolve(pathRef.current === a.path);
     } catch (e) {
+      // Another account signed in in this browser meanwhile: nothing was recorded or sent; show that account.
+      if (isAccountChanged(e)) {
+        a.resolve(false);
+        window.location.reload();
+        return;
+      }
       setError(consentErrorLine(e));
     } finally {
       setSaving(false);
     }
   };
+
+  // Leaving the page that asked (the browser's Back, as Android back is in the app) is Not now: the dialog stays in the
+  // layout, and its action must never run on another page.
+  const declineRef = React.useRef(decline);
+  React.useEffect(() => {
+    declineRef.current = decline;
+  });
+  React.useEffect(() => {
+    if (pathRef.current === pathname) return;
+    pathRef.current = pathname;
+    declineRef.current();
+  }, [pathname]);
 
   const value = React.useMemo<Ctx>(
     () => ({ ensureAiConsent, onAiRefusal, declined, askAgain }),
@@ -208,6 +244,14 @@ export function AiConsentProvider({ children }: { children: React.ReactNode }) {
             onOpenAutoFocus={(e) => {
               e.preventDefault();
               (e.currentTarget as HTMLElement | null)?.focus();
+            }}
+            // Radix returns focus to a Dialog trigger, and this dialog has none: back to where the member asked from.
+            // If that is gone (a problem panel's Try again), the feature's Not now line takes it (AiDeclinedNote).
+            onCloseAutoFocus={(e) => {
+              e.preventDefault();
+              const to = returnFocus.current;
+              returnFocus.current = null;
+              if (to?.isConnected) to.focus();
             }}
           >
             <ConsentDetails context={asking.feature} />

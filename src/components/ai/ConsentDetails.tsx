@@ -22,11 +22,17 @@ export function ConsentTitle({ eyebrow, title }: { eyebrow: string; title: strin
  * What ÖRZA sends to OpenAI (the five points), the lines under them and the privacy link — the consent dialog's body,
  * and Settings → Preferences → AI features. It scrolls on its own, so the buttons under it stay in view on a phone
  * (`relative`: the link's screen-reader text is absolutely positioned and must not stretch the dialog's own scroll).
+ * It is a Tab stop, so the points can be scrolled with the keyboard (a browser that skips links on Tab has no other way in).
  */
 export function ConsentDetails({ context }: { context: ConsentContext }) {
   return (
-    <div className="relative -mx-1 max-h-[calc(100dvh-400px)] min-h-[140px] overflow-y-auto px-1 sm:max-h-[calc(100dvh-360px)]">
-      <ul className="space-y-3" aria-label="What ÖRZA sends to OpenAI">
+    <div
+      role="region"
+      aria-label="What ÖRZA sends to OpenAI"
+      tabIndex={0}
+      className="relative -mx-1 max-h-[calc(100dvh-400px)] min-h-[140px] overflow-y-auto rounded-sm px-1 sm:max-h-[calc(100dvh-360px)]"
+    >
+      <ul className="space-y-3">
         {CONSENT_COPY.points.map(({ icon, text }) => {
           const Icon = ICONS[icon];
           const [head, ...rest] = text.split(" — ");

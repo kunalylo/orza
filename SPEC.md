@@ -155,8 +155,10 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
   the AI features, which OpenAI runs (App Store 5.1.2(i)). One record per account, so one Allow or Turn off works everywhere. The phone app asks at first AI use
   and in Settings › Privacy & data › AI features; the website asks the same at first AI use (`src/components/ai`, below) and in Settings → Preferences → AI
   features. Every `{user}` answer carries `ai_consent` (the object or null; its presence tells the app this server asks).
-  `PUT /api/settings/ai-consent {version}` (whole number 1–1000; cookie or Bearer) → `{user}` with `ai_consent = {version, at: now}` (allowing again refreshes `at`);
-  409 `ai_consent_outdated` when `version < AI_CONSENT_VERSION` (the app's copy is older: update the app; on the website, reload the page). `DELETE /api/settings/ai-consent` → `{user}` with
+  `PUT /api/settings/ai-consent {version, user_id?}` (whole number 1–1000; cookie or Bearer) → `{user}` with `ai_consent = {version, at: now}` (allowing again refreshes `at`);
+  409 `account_changed` when `user_id` (the website sends the account its page shows; the app doesn't send it) isn't the signed-in account, so a tab left open
+  while another account signed in in the browser records nothing; 409 `ai_consent_outdated` when `version < AI_CONSENT_VERSION` (the app's copy is older: update
+  the app; on the website, reload the page). `DELETE /api/settings/ai-consent` → `{user}` with
   `ai_consent: null`, idempotent. Allowed means `ai_consent.version >= AI_CONSENT_VERSION`. Separate from `ai_training_opt_out`: neither changes the other.
   - **R1, every client**: `chat/send`, `meals/text`, `meals/scan`, `recipes/generate`, `compensation/plan` and `prescriptions/scan` (every caller of `aiJSON`)
     start with `requireAiUser()`. A request from an account without consent gets 403 `{error, code: "ai_consent_required"}` right after the 401 and before
@@ -166,7 +168,7 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
   - **The website's gate** (`src/components/ai`): `AiConsentProvider` (in `src/app/dashboard/layout.tsx`, inside `UserProvider`) holds one consent
     dialog (names OpenAI, lists what is sent, links `/privacy#ai-processing`; Allow / Not now). Every AI entry point runs its own checks, then
     `if (!(await ensureAiConsent(feature))) return;` (the session user's consent → go; else `/auth/me` first, so a consent given on the phone is used
-    without asking; else the dialog: Allow → PUT → the action runs; Not now, Escape or close → nothing is sent and `AiDeclinedNote` says why with "Allow AI
+    without asking; else the dialog: Allow → PUT → the action runs; Not now, Escape, close or leaving the page → nothing is sent and `AiDeclinedNote` says why with "Allow AI
     features"), and starts its error handling with `if (onAiRefusal(e, feature, retry)) return;` (a 403 `ai_consent_required` → the dialog → `retry` once
     after Allow). The six: `ChatView.send` (and Retry), `MealComposer.submit`, `ScanView.analyse` (not before the file picker: a browser opens it only inside
     the tap, and picking sends nothing), the recipes page's `generate` (and Another), `RebalanceForm.submit`, `PrescriptionsView.scan`. Copy: `copy.ts`.

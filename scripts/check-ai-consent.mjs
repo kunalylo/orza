@@ -3,8 +3,8 @@
  * Checks the AI consent server contract against a running ÖRZA server (local by default): `user.ai_consent` in `{user}`
  * answers (null when none), `PUT` / `DELETE /api/settings/ai-consent`, and R1 — the six AI routes refuse requests from
  * every client (the phone app's Bearer token and the website's cookie) with 403 `ai_consent_required` until the account
- * allows the AI features, and one record serves both: a consent or a Turn off on one is seen by the other. See
- * src/lib/ai-consent.ts.
+ * allows the AI features, and one record serves both: a consent or a Turn off on one is seen by the other. A website PUT
+ * naming another account (`user_id`) records nothing (409 `account_changed`). See src/lib/ai-consent.ts.
  *
  *   npx next dev -p 3101                                      (another terminal; no .env.local: JSON-file database, AI off)
  *   ORZA_BASE_URL=http://localhost:3101 node scripts/check-ai-consent.mjs
@@ -179,8 +179,16 @@ async function main() {
     me = await call("GET", "/auth/me", undefined, "web");
     check("…and recorded nothing", me.json.user?.ai_consent === null, me.json.user?.ai_consent);
 
-    r = await call("PUT", "/settings/ai-consent", { version: 1 }, "web");
-    check("website: PUT with the cookie → 200 with the consent", r.status === 200 && r.json.user?.ai_consent?.version === 1, brief(r));
+    // The website's PUT names the account its page shows: a tab left open while another account signed in records nothing.
+    r = await call("PUT", "/settings/ai-consent", { version: 1, user_id: "00000000-0000-4000-8000-000000000000" }, "web");
+    check("website: PUT for another account (user_id) → 409 account_changed", r.status === 409 && r.json.code === "account_changed", brief(r));
+    r = await call("PUT", "/settings/ai-consent", { version: 1, user_id: 5 }, "web");
+    check("website: PUT with a malformed user_id → 400 validation", r.status === 400 && r.json.code === "validation", brief(r));
+    me = await call("GET", "/auth/me", undefined, "web");
+    check("…and neither recorded anything", me.json.user?.ai_consent === null, me.json.user?.ai_consent);
+
+    r = await call("PUT", "/settings/ai-consent", { version: 1, user_id: reg.json.user.id }, "web");
+    check("website: PUT with the cookie and its own user_id → 200 with the consent", r.status === 200 && r.json.user?.ai_consent?.version === 1, brief(r));
     await eachRoute("website cookie, consent → past the check", "web", pastConsent);
     r = await call("POST", "/chat/send", { message: "" });
     check("app sees the consent the website gave (400, not 403)", pastConsent("/chat/send", r), brief(r));

@@ -197,7 +197,7 @@ export function PreferencesSection() {
           id="pref-ai-features"
           title={AI_SETTINGS.title}
           description={AI_SETTINGS.subtitle(hasAiConsent(user))}
-          control={<AiFeaturesManage />}
+          control={<AiFeaturesManage describedBy="pref-ai-features-desc" />}
         />
         <Row
           id="pref-ai"

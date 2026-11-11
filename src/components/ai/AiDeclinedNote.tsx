@@ -9,18 +9,25 @@ import { ALLOW_AI_LABEL, declinedLine, type AiFeature } from "./copy";
 /**
  * After Not now in the AI consent dialog: why the feature waits and what still works, with "Allow AI features" (and
  * the feature's own way without AI, as `children`). Shown until any Allow; announced politely, and scrolled into view
- * when it appears (a recipe's "Another" sits far below the generator).
+ * when it appears (a recipe's "Another" sits far below the generator). When the button the member asked from is gone
+ * (a problem panel's Try again), keyboard focus lands on "Allow AI features" rather than the page.
  */
 export function AiDeclinedNote({ feature, className, children }: { feature: AiFeature; className?: string; children?: React.ReactNode }) {
   const { declined, allow } = useAiDeclined(feature);
   const ref = React.useRef<HTMLDivElement>(null);
+  const allowRef = React.useRef<HTMLButtonElement>(null);
   const was = React.useRef(declined);
   React.useEffect(() => {
-    if (declined && !was.current) {
-      const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-      ref.current?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
-    }
+    const appeared = declined && !was.current;
     was.current = declined;
+    if (!appeared) return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    ref.current?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+    // After the dialog has handed focus back (AiConsentProvider), and only if nothing took it.
+    const t = setTimeout(() => {
+      if (!document.activeElement || document.activeElement === document.body) allowRef.current?.focus({ preventScroll: true });
+    }, 0);
+    return () => clearTimeout(t);
   }, [declined]);
 
   return (
@@ -32,7 +39,7 @@ export function AiDeclinedNote({ feature, className, children }: { feature: AiFe
             <span>{declinedLine(feature)}</span>
           </p>
           <div className="mt-2.5 flex flex-wrap gap-2">
-            <Button size="sm" variant="secondary" onClick={allow}>
+            <Button ref={allowRef} size="sm" variant="secondary" onClick={allow}>
               {ALLOW_AI_LABEL}
             </Button>
             {children}

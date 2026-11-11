@@ -42,7 +42,7 @@ export const CONSENT_COPY = {
       icon: "chat",
       text: `Ask ÖRZA — your message and the chat so far, your first name and everything in your profile (including age, sex, weight, diet, allergies and health notes), your targets, what ÖRZA remembers, and today’s meals, water and steps. ${HEALTH_SOURCES}`,
     },
-    { icon: "recipes", text: "Recipes and rebalance plans — what you ask for, with your first name, diet, allergies, region, goal and targets." },
+    { icon: "recipes", text: "Recipes and rebalance plans — what you ask for or ate, with your diet, allergies and foods you avoid (including those you told Ask ÖRZA), region, goal and targets; recipes add your household setting and recent recipe titles, rebalance plans your first name." },
     { icon: "rx", text: "Prescription scans — the prescription photo and the allergies you listed." },
     // The account's and the saved ones: a photo or a message can show anything (a prescription shows its medicines).
     { icon: "never", text: "Never your account’s email, password or phone number, your saved medicines and alarms, or your sleep and heart rate." },

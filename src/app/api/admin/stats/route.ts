@@ -1,4 +1,5 @@
 import { aiEnabled } from "@/lib/ai";
+import { aiReports } from "@/lib/ai-reports";
 import { requireAdmin } from "@/lib/auth";
 import { col, usingMongo } from "@/lib/db";
 import { dateInTz, DEFAULT_TZ } from "@/lib/dates";
@@ -46,7 +47,8 @@ async function creditsSpent(staff: Set<string>): Promise<number> {
  * GET /api/admin/stats (admin only) →
  * {users, new_users_7d, meals_today, meals_total, scans_total, chat_messages_total, credits_spent_total, open_requests, ai_enabled, database}
  * Members only — admin (staff) accounts and their activity are excluded. `meals_today` counts meals dated
- * today in India time. `open_requests` (additive) is the number of open credit requests.
+ * today in India time. `open_requests` (additive) is the number of open credit requests, `open_ai_reports` (additive) the number
+ * of members' AI reports waiting for review.
  */
 export const GET = route(async () => {
   await requireAdmin();
@@ -54,7 +56,7 @@ export const GET = route(async () => {
   const today = dateInTz(DEFAULT_TZ);
   const staff = await adminIds();
 
-  const [users, new_users_7d, meals_today, meals_total, scans_total, chat_messages_total, credits_spent_total, open_requests] =
+  const [users, new_users_7d, meals_today, meals_total, scans_total, chat_messages_total, credits_spent_total, open_requests, open_ai_reports] =
     await Promise.all([
       col("users").countDocuments(MEMBERS),
       col("users").countDocuments({ ...MEMBERS, created_at: { $gte: weekAgo } }),
@@ -64,6 +66,7 @@ export const GET = route(async () => {
       countMembers("chat_messages", {}, staff),
       creditsSpent(new Set(staff)),
       creditRequests().countDocuments({ type: CREDIT_REQUEST_TYPE, status: "open" }),
+      aiReports().countDocuments({ reviewed: false }),
     ]);
 
   return json(
@@ -76,6 +79,7 @@ export const GET = route(async () => {
       chat_messages_total,
       credits_spent_total,
       open_requests,
+      open_ai_reports,
       ai_enabled: aiEnabled(),
       database: usingMongo() ? "mongodb" : "local-file",
     },

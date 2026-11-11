@@ -179,10 +179,24 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
     tracked steps and weight), AI replies made with consent and AI replies from before the flag (which can repeat a tracked step count) are left out. Every AI
     reply is stored with `meta.health` = whether the account had consent (its prompt then held tracked data). The built-in coach still uses the tracked numbers (nothing
     leaves the server). A new route that sends tracked steps, weight or other phone health data to the AI must apply the same rule.
+- **AI reports** (Google Play's AI-Generated Content policy: members flag offensive AI output inside the app, and the reports feed moderation; collection
+  `ai_reports`, `AiReport` in `src/lib/types.ts`, `src/lib/ai-reports.ts`, kinds and reasons in `src/lib/ai-report-shared.ts`; contract: mobile repo
+  `docs/notes/ai-report.md`). `POST /api/ai/reports {kind: "chat"|"recipe"|"rebalance"|"scan"|"meal", ref_id, reason: "offensive"|"unsafe"|"wrong"|"other",
+  note? (≤ 500 after trimming)}` (cookie or Bearer, body ≤ 16 KB) → 201 `{report: {id, kind, ref_id, reason, note, created_at, updated_at}}`, or 200 when it
+  replaced the member's earlier report of the same item (one per member per item, unique index; the new one goes back to review). Only the member's own item
+  that ÖRZA wrote: an assistant `chat_messages` reply, a recipe, a rebalance plan, a scan, or a `text` / `voice` / `photo` meal; anything else (another member's,
+  their own message, a manual or chat meal, an unknown id) is 404 "We couldn't find that to report. It may have been deleted." Prescription reads aren't
+  reportable (the member's own prescription, checked before use). No AI consent needed (nothing goes to the AI). 429 `rate_limited` after 10 reports a minute
+  (`reserve`, before the body is read) or 30 other items in 24 hours. The report keeps `text`, a plain-text snapshot of what was shown (≤ 12,000 characters),
+  `ai` (false for the built-in coach, a curated recipe, the built-in plan, the food list), `made_at` and `client` (`app` / `web`); never the member's message,
+  profile or other data, and the member's answer never carries the snapshot or review state. Deleting the item keeps the report.
+  Website: `ReportAiAction` (`src/components/ai`, copy in `report-copy.ts`: a trigger and a dialog with one reason and an optional note) under every ÖRZA reply
+  in Chat (`AssistantBubble`) and on AI recipes (`RecipeDetail`, `source: "ai"`); it says "Reported" for the rest of the visit, and reporting again updates.
+  A new feature that shows AI-written text must offer the same Report.
 - `GET /api/account/export` → JSON attachment of all the user's data (incl. Care collections, photo metadata without bytes, notification devices without keys,
-  `app_devices` (phones running the app, without push tokens), signed-in sessions with `kind` web/mobile and device name, credit requests; never password/token
-  hashes); `DELETE /api/account {confirm:"DELETE"}` → deletes the user and all their data (incl. Care data and photos, registered phones, credit requests) and
-  signs out every browser and phone.
+  `app_devices` (phones running the app, without push tokens), signed-in sessions with `kind` web/mobile and device name, credit requests, `ai_reports` (with
+  the snapshot, no review fields); never password/token hashes); `DELETE /api/account {confirm:"DELETE"}` → deletes the user and all their data (incl. Care data
+  and photos, registered phones, credit requests, AI reports) and signs out every browser and phone.
 - `POST /api/account/password {current_password, new_password (8–128, must differ)}` (any signed-in user, members and admins) → `{ok:true}`; wrong current password →
   401 `{error: "Current password is incorrect", code: "wrong_password"}` (an expired session's 401 has code `unauthorized`), 429 `rate_limited` after 5 wrong tries
   in 15 min per account. Saves a new hash and revokes every other session, browsers and phone apps (the session making the request, cookie or app Bearer token, stays signed in). `api` skips its `/login` redirect for a 401 with code
@@ -196,12 +210,17 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
   them to onboarding; `AdminShell` replaces any non-console route with `/dashboard/admin` without rendering the member page. `/onboarding`, `/login` and sign-in (no console
   `?next=`; `destinationFor` in `src/components/auth/safe-next.ts`) send admins to `/dashboard/admin`; `src/app/dashboard/admin/layout.tsx` sends members back to `/dashboard`. No credits pill, member nav or `AlarmWatcher`.
 - **Pages** (nav in `src/components/admin/routes.ts`): Overview `/dashboard/admin` (member stats, AI/DB status, shortcuts) · Members `/dashboard/admin/members` (search +
-  credit adjust) · Credit requests `/dashboard/admin/requests` · Team `/dashboard/admin/team` (super only; hidden from sub-admins) · My account `/dashboard/admin/account`
-  (profile, change password, sign out / everywhere).
+  credit adjust) · Credit requests `/dashboard/admin/requests` · AI reports `/dashboard/admin/reports` (`AiReportsCard`: To review / Reviewed / All, newest first; kind,
+  reason, note, the reported text, date, app or website, the member's name and email, a Reviewed switch) · Team `/dashboard/admin/team` (super only; hidden from
+  sub-admins) · My account `/dashboard/admin/account` (profile, change password, sign out / everywhere).
 - **APIs** (all `requireAdmin()`; member numbers and lists exclude admin accounts): `GET /api/admin/stats` → `{users, new_users_7d, meals_today, meals_total, scans_total,
-  chat_messages_total, credits_spent_total, open_requests, ai_enabled, database}` (members' activity only); `GET /api/admin/users?q=&limit=` → `{users, total}` (members only);
+  chat_messages_total, credits_spent_total, open_requests, open_ai_reports, ai_enabled, database}` (members' activity only; `open_ai_reports` = AI reports to review);
+  `GET /api/admin/users?q=&limit=` → `{users, total}` (members only);
   `POST /api/admin/credits/[userId]/adjust {amount, reason}` → `{balance, transaction, requests_closed}` (members only — 400 for an admin; a grant closes the member's open
-  credit requests); `GET /api/admin/credit-requests` → `{requests}` (open, oldest first); `PATCH /api/admin/credit-requests/[id] {status: "open"|"done"}` → `{ok}`.
+  credit requests); `GET /api/admin/credit-requests` → `{requests}` (open, oldest first); `PATCH /api/admin/credit-requests/[id] {status: "open"|"done"}` → `{ok}`;
+  `GET /api/admin/ai-reports?status=open|reviewed|all&limit=1–200` (default all, 100) → `{reports, open}` (newest first by `updated_at`; each row `{id, kind, ref_id,
+  reason, note, text, ai, client, made_at, created_at, updated_at, reviewed, reviewed_at, member: {id, name, email} | null}`, the member read from `users`);
+  `PATCH /api/admin/ai-reports/[id] {reviewed}` → `{ok}` (true records `reviewed_at` / `reviewed_by`, false clears them; 404 when unknown).
 - **Team APIs** (`requireSuperAdmin()`): `GET /api/admin/team` → `{admins:[{id, name, email, admin_role, created_at, last_sign_in?}]}` (super first; `last_sign_in` = newest
   session start); `POST /api/admin/team {name (1–60), email, password? (8–128)}` → 201 `{admin, password, generated}` — a NEW staff account (409 if the email exists):
   `is_admin`, `admin_role:"sub"`, `onboarding_complete:true`, `credits:0`, default profile/targets/preferences (reminders and weekly report off), `memory:[]`; without a password

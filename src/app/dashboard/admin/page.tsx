@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { ArrowUpRight, Inbox, RotateCw, ShieldCheck, UsersRound, type LucideIcon } from "lucide-react";
+import { ArrowUpRight, Flag, Inbox, RotateCw, ShieldCheck, UsersRound, type LucideIcon } from "lucide-react";
 import { useUser } from "@/components/app/UserProvider";
 import { PageHeader } from "@/components/app/ui";
 import { Reveal } from "@/components/orza/Reveal";
@@ -80,6 +80,7 @@ export default function AdminOverviewPage() {
 
   const first = user.name?.trim().split(/\s+/)[0];
   const open = stats?.open_requests ?? 0;
+  const reports = stats?.open_ai_reports ?? 0;
 
   return (
     <div>
@@ -116,6 +117,25 @@ export default function AdminOverviewPage() {
                 open > 0 ? (
                   <Tag tone="warning" size="sm">
                     {plural(open, "open")}
+                  </Tag>
+                ) : (
+                  <Tag tone="success" size="sm">
+                    All caught up
+                  </Tag>
+                )
+              ) : undefined
+            }
+          />
+          <ShortcutCard
+            href={`${ADMIN_HOME}/reports`}
+            icon={Flag}
+            title="AI reports"
+            body="AI replies, recipes and plans members flagged as offensive, unsafe or wrong."
+            badge={
+              stats ? (
+                reports > 0 ? (
+                  <Tag tone="warning" size="sm">
+                    {formatNumber(reports)} to review
                   </Tag>
                 ) : (
                   <Tag tone="success" size="sm">

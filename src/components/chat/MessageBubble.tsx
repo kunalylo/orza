@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { AlertCircle, ArrowUpRight, BookmarkCheck, Check, Info, RotateCcw } from "lucide-react";
+import { ReportAiAction } from "@/components/ai/ReportAiAction";
 import { IconTile, Tag } from "@/components/orza/primitives";
 import { cn, formatNumber } from "@/lib/utils";
 import type { Meal } from "@/lib/types";
@@ -95,6 +96,8 @@ export function AssistantBubble({ message }: { message: UIMessage }) {
           {message.notice}
         </p>
       )}
+      {/* On every ÖRZA reply, as the built-in coach's look like the AI's (Google Play: report AI output in the app). */}
+      <ReportAiAction kind="chat" refId={message.id} className="-ml-2 mt-0.5" />
     </Appear>
   );
 }

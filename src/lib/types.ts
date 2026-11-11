@@ -3,6 +3,7 @@
  * Mongo's internal `_id` is never exposed. Dates are ISO strings.
  * `date` fields are local calendar days in the user's timezone: "YYYY-MM-DD".
  */
+import type { AiReportKind, AiReportReason } from "@/lib/ai-report-shared";
 
 export type Sex = "male" | "female" | "other";
 export type ActivityLevel = "sedentary" | "light" | "moderate" | "active" | "very_active";
@@ -277,6 +278,35 @@ export interface Lead {
   source: string;
   message?: string;
   created_at: string;
+}
+
+/**
+ * A member's report of an AI output they were shown (collection `ai_reports`; POST /api/ai/reports, src/lib/ai-reports.ts).
+ * One per member per item (`user_id` + `kind` + `ref_id`): reporting again replaces `reason`, `note` and `text` and sends it
+ * back to review. `text` is a plain-text snapshot of what was shown, so the team can read it after the item is gone.
+ */
+export interface AiReport {
+  id: string;
+  user_id: string;
+  kind: AiReportKind;
+  /** The reported document's id (a chat message, recipe, plan, scan or meal of this member). */
+  ref_id: string;
+  reason: AiReportReason;
+  note: string | null;
+  text: string;
+  /** The AI wrote it (false: the built-in coach, a curated recipe, the built-in plan, the food list). */
+  ai: boolean;
+  /** When the reported item was made. */
+  made_at: string;
+  client: "app" | "web";
+  reviewed: boolean;
+  reviewed_at?: string;
+  /** The admin who ticked it. */
+  reviewed_by?: string;
+  /** First report. */
+  created_at: string;
+  /** The member's latest change. */
+  updated_at: string;
 }
 
 /* ─────────────────────────── Care: medicines, reminders, health ─────────────────────────── */

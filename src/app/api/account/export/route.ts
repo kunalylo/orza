@@ -1,3 +1,4 @@
+import { aiReports, toExportView } from "@/lib/ai-reports";
 import { requireUser, toPublicUser } from "@/lib/auth";
 import { col, type CollectionName } from "@/lib/db";
 import { dateInTz } from "@/lib/dates";
@@ -71,7 +72,7 @@ function sessionEntry(s: Session) {
 /**
  * GET /api/account/export → JSON attachment with everything ÖRZA stores about the signed-in user
  * (the public user record plus all their meals, scans, tracking, chats, goals, plans, recipes,
- * credit history, credit requests, onboarding answers, medicines, prescriptions, dose history,
+ * credit history, credit requests, AI reports, onboarding answers, medicines, prescriptions, dose history,
  * reminders, sent alerts, health data, photo list, notification devices, phones running the ÖRZA app
  * and signed-in sessions). Never includes the password hash, the health-sync token hash or other
  * integration secrets (see toPublicUser), image bytes, push encryption keys, app push tokens or session ids.
@@ -85,7 +86,7 @@ export const GET = route(async () => {
       return [key, rows] as const;
     })
   );
-  const [photos, devices, appDevices, sessions, requests, legacyRequests] = await Promise.all([
+  const [photos, devices, appDevices, sessions, requests, legacyRequests, reports] = await Promise.all([
     col<Media>("media").find({ user_id: user.id }, { sort: { created_at: 1 } }),
     col<PushSubscriptionDoc>("push_subscriptions").find({ user_id: user.id }, { sort: { created_at: 1 } }),
     col<AppDevice>("devices").find({ user_id: user.id }, { sort: { created_at: 1 } }),
@@ -97,6 +98,8 @@ export const GET = route(async () => {
       { email: (user.email || "").toLowerCase(), source: LEGACY_CREDIT_REQUEST_SOURCE },
       { sort: { created_at: 1 } }
     ),
+    // Reports of AI output, with the snapshot each keeps (no review details).
+    aiReports().find({ user_id: user.id }, { sort: { created_at: 1 } }),
   ]);
   const all: (readonly [string, unknown[]])[] = [
     ...entries,
@@ -109,6 +112,7 @@ export const GET = route(async () => {
       "credit_requests_by_email",
       legacyRequests.map((l) => ({ id: l.id, message: l.message ?? "", created_at: l.created_at, updated_at: l.updated_at ?? null })),
     ],
+    ["ai_reports", reports.map(toExportView)],
   ];
   const data = Object.fromEntries(all);
 

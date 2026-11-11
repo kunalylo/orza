@@ -33,11 +33,13 @@ const USER_DATA: CollectionName[] = [
   "media",
   // Phones running the ÖRZA app (their app sessions are revoked below).
   "devices",
+  // Reports of AI output the member sent (with the snapshot of what they were shown).
+  "ai_reports",
 ];
 
 /**
  * DELETE /api/account {confirm:"DELETE"} → {ok:true}
- * Permanently deletes the signed-in user and all of their data (including credit requests they sent,
+ * Permanently deletes the signed-in user and all of their data (including credit requests and AI reports they sent,
  * registered phones and every signed-in session on other browsers and phones), then ends this session.
  * Data goes first and the user record last, so a failure part-way can simply be retried.
  */

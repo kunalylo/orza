@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import { Bookmark, BookmarkCheck, Check, Clock, Plus, Trash2, Users } from "lucide-react";
+import { ReportAiAction } from "@/components/ai/ReportAiAction";
 import { Eyebrow, Tag } from "@/components/orza/primitives";
 import { Button } from "@/components/ui/button";
 import { WellnessNote } from "@/components/app/ui";
@@ -83,6 +84,8 @@ export function RecipeDetail({
   const Title = headingLevel;
   const Sub = headingLevel === "h2" ? "h3" : "h4";
   const tags = displayTags(recipe.tags);
+  // AI recipes only (Google Play: report AI output in the app); curated ones are ÖRZA's own collection.
+  const reportable = recipe.source === "ai";
 
   React.useEffect(() => {
     setChecked(new Set());
@@ -191,7 +194,7 @@ export function RecipeDetail({
         </section>
       </div>
 
-      {(onToggleSave || onLog || onDelete) && (
+      {(onToggleSave || onLog || onDelete || reportable) && (
         <div className="mt-7 flex flex-wrap items-center gap-2 border-t border-[rgba(20,20,20,0.08)] pt-5">
           {onToggleSave && (
             <Button variant={recipe.saved ? "secondary" : "primary"} onClick={onToggleSave} loading={saving} aria-pressed={recipe.saved}>
@@ -205,6 +208,7 @@ export function RecipeDetail({
               Log 1 serving
             </Button>
           )}
+          {reportable && <ReportAiAction kind="recipe" refId={recipe.id} look="button" />}
           {onDelete &&
             (confirmDelete ? (
               <span className="ml-auto flex items-center gap-2">

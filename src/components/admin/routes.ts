@@ -1,5 +1,5 @@
 /** Admin console routes (pure data — safe to import from any client component). */
-import { Inbox, LayoutDashboard, ShieldCheck, UserRound, UsersRound, type LucideIcon } from "lucide-react";
+import { Flag, Inbox, LayoutDashboard, ShieldCheck, UserRound, UsersRound, type LucideIcon } from "lucide-react";
 
 export const ADMIN_HOME = "/dashboard/admin";
 
@@ -15,6 +15,7 @@ export const ADMIN_NAV: readonly AdminNavItem[] = [
   { href: ADMIN_HOME, label: "Overview", icon: LayoutDashboard },
   { href: `${ADMIN_HOME}/members`, label: "Members", icon: UsersRound },
   { href: `${ADMIN_HOME}/requests`, label: "Credit requests", icon: Inbox },
+  { href: `${ADMIN_HOME}/reports`, label: "AI reports", icon: Flag },
   { href: `${ADMIN_HOME}/team`, label: "Team", icon: ShieldCheck, superOnly: true },
   { href: `${ADMIN_HOME}/account`, label: "My account", icon: UserRound },
 ];

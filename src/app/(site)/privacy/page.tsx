@@ -83,6 +83,10 @@ const SECTIONS: LegalSection[] = [
           <LegalLi title="Messages to us:">
             if you email us, join our updates list or join a waitlist for a Premium plan, your email address and what you send us.
           </LegalLi>
+          <LegalLi title="Reports:">
+            if you report an AI answer, a copy of that answer with your reason and note, which the ÖRZA team reviews to make
+            ÖRZA safer.
+          </LegalLi>
         </LegalList>
 
         <LegalH3>Information created as you use the Service</LegalH3>

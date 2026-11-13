@@ -5,3 +5,5 @@ export const LEGAL_UPDATED = { label: "25 September 2026", iso: "2026-09-25" };
  * answer reports, then "Help improve ÖRZA's AI" as an opt-in, service providers, location and who is responsible).
  */
 export const PRIVACY_UPDATED = { label: "13 November 2026", iso: "2026-11-13" };
+/** The account deletion page's stamp (`/delete-account`, the page Google Play's Data safety form links to). */
+export const DELETE_ACCOUNT_UPDATED = { label: "13 November 2026", iso: "2026-11-13" };

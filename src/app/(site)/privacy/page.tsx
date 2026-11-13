@@ -417,7 +417,9 @@ const SECTIONS: LegalSection[] = [
             update your profile, targets and preferences in Settings, and edit or remove anything ÖRZA remembers about you.
           </LegalLi>
           <LegalLi title="Deletion:">
-            delete your account from Settings. This permanently deletes your data and can&apos;t be undone.
+            delete your account from Settings. This permanently deletes your data and can&apos;t be undone.{" "}
+            <InlineLink href="/delete-account">How to delete your account</InlineLink> shows every way, including by email if
+            you can&apos;t sign in.
           </LegalLi>
           <LegalLi title="Sharing:">grant or revoke household sharing permissions at any time.</LegalLi>
           <LegalLi title="Communications:">

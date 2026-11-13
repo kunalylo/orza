@@ -75,6 +75,7 @@ export function LegalPage({
   sections,
   related,
   contactSubject,
+  contactTitle,
   updated = LEGAL_UPDATED,
 }: {
   /** Lower-case document name used in copy, e.g. "privacy policy". */
@@ -87,6 +88,8 @@ export function LegalPage({
   sections: LegalSection[];
   related: { label: string; href: string }[];
   contactSubject: string;
+  /** Heading of the contact card; defaults to "Questions about this {docName}?". */
+  contactTitle?: React.ReactNode;
   /** "Last updated" stamp; defaults to the shared `LEGAL_UPDATED`. */
   updated?: { label: string; iso: string };
 }) {
@@ -179,7 +182,7 @@ export function LegalPage({
                       <Mail size={18} strokeWidth={1.75} aria-hidden />
                     </IconTile>
                     <h2 className="mt-4 font-editorial text-[24px] font-semibold leading-tight tracking-[-0.02em] text-orza-strong sm:text-[28px]">
-                      Questions about this {docName}?
+                      {contactTitle ?? <>Questions about this {docName}?</>}
                     </h2>
                     <p className="mt-2 text-[15px] leading-relaxed text-orza-muted">
                       Write to us at <SupportEmail subject={contactSubject} /> and we&apos;ll get back to you.

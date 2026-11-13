@@ -18,6 +18,7 @@
  * *.localhost / *.test unless ORZA_CHECK_ALLOW_REMOTE=1 (never point it at production). Exit code 1 when a check fails.
  */
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const BASE = (process.env.ORZA_BASE_URL || "http://localhost:3100").replace(/\/+$/, "");
@@ -66,6 +67,19 @@ try {
   check("ai improvement: stored false (the member's own switch) stays on", aiImprovementAllowed({ ...base, ai_training_opt_out: false }) && publicPreferences({ ...base, ai_training_opt_out: false }).ai_training_opt_out === false);
   check("ai improvement: missing preferences are off", publicPreferences(undefined).ai_training_opt_out === true && !aiImprovementAllowed(null));
   check("publicPreferences keeps the other preferences", JSON.stringify(publicPreferences({ ...base, ai_training_chosen_at: "x" })) === JSON.stringify({ ...base, ai_training_chosen_at: "x", ai_training_opt_out: true }));
+}
+
+// Signing out or deleting the account in a tab opened from the app lands on the sign-in page, never the home page
+// (marketing with a way to Pricing). Client code, so read from the source.
+{
+  const src = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
+  const leaving = /export const pathAfterLeaving = \(\): "\/" \| "\/login" => \(markedNow\(\) \? "\/login" : "\/"\);/;
+  check("D5 pathAfterLeaving: /login in a tab opened from the app, / otherwise", leaving.test(src("src/components/orza/FromApp.tsx")));
+  const leavers = src("src/components/app/useSignOut.ts") + src("src/components/account/settings/PrivacySection.tsx");
+  check(
+    "D5 sign-out and account deletion use pathAfterLeaving",
+    leavers.split("router.replace(pathAfterLeaving())").length === 3 && !/router\.(replace|push)\("\/"\)/.test(leavers)
+  );
 }
 
 /* ───────────────────────────── HTTP helpers ───────────────────────────── */

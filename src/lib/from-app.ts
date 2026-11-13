@@ -14,6 +14,7 @@
  * - `FromAppWatcher` (src/components/orza/FromApp.tsx) re-applies it after in-site navigation, takes `from=app` out of
  *   the address (a shared link opens the normal site) and stops links to `blockedFromApp` paths.
  * - The middleware keeps `from=app` through the sign-in redirect, and `FROM_APP_HEADER` lets server redirects keep it.
+ * - Signing out or deleting the account there lands on /login, not the home page (`pathAfterLeaving`, FromApp.tsx).
  *
  * Pure (no imports): safe in the browser, the middleware and server components.
  */

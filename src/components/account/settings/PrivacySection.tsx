@@ -6,6 +6,7 @@ import { ArrowUpRight, Download, LogOut, MonitorSmartphone, ShieldCheck, Triangl
 import { toast } from "sonner";
 import { useUser } from "@/components/app/UserProvider";
 import { useSignOut } from "@/components/app/useSignOut";
+import { pathAfterLeaving } from "@/components/orza/FromApp";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/form";
@@ -57,7 +58,7 @@ function DeleteAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     try {
       await deleteAccount();
       toast.success("Your account has been deleted", { description: "Thank you for trying ÖRZA. Take care." });
-      router.replace("/");
+      router.replace(pathAfterLeaving());
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

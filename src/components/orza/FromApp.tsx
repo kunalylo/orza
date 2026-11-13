@@ -14,6 +14,12 @@ import { cn } from "@/lib/utils";
 const markedNow = () => document.documentElement.hasAttribute(FROM_APP_ATTR);
 
 /**
+ * Where the site sends someone who just signed out or deleted their account: the home page, or the sign-in page in a tab
+ * opened from the app (the home page is marketing with a way to Pricing, `blockedFromApp`). Call it from an event handler.
+ */
+export const pathAfterLeaving = (): "/" | "/login" => (markedNow() ? "/login" : "/");
+
+/**
  * Marks the tab when the address has `from=app` (like the <head> script, for addresses reached without a page load) and
  * returns the path of the page the app opened, or null when this tab didn't come from the app.
  */

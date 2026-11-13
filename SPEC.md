@@ -82,8 +82,8 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
   app's sidebar, menu, tab bar and credits pill (a top bar with the logo, Back and Sign out instead); logos are plain marks. Back (`AppBackButton`) shows
   once the tab moved on from the page the app opened. `FromAppWatcher` (root layout) re-marks the tab after in-site navigation, takes `from=app` out of
   the address, and stops clicks on links to `/`, `/#…` and `/pricing` (`blockedFromApp`). The middleware keeps `from=app` on the sign-in redirect and
-  sets `x-orza-from-app` so the dashboard / admin / onboarding redirects keep it (`keepFromAppRedirect`). The admin console keeps its own navigation.
-  Visits without `from=app` never change.
+  sets `x-orza-from-app` so the dashboard / admin / onboarding redirects keep it (`keepFromAppRedirect`). Signing out or deleting the account there
+  lands on `/login`, not the home page (`pathAfterLeaving`). The admin console keeps its own navigation. Visits without `from=app` never change.
 - `POST /api/leads {email, source, message?}` → `{ok:true}` (store in `leads`, dedupe by email+source — a repeat never overwrites the stored message;
   10/min per `clientIp`). `source` must be `footer|newsletter|contact|waitlist|plan:<slug>` (else 400 "Unknown sign-up source") — add new public forms to `PUBLIC_SOURCE`.
 
@@ -393,7 +393,8 @@ cookie flow is unchanged.
   `PUT /api/settings/ai-consent {version}` (see "AI consent" under Account); a `version` older than the server's gets 409 `ai_consent_outdated`.
   `user.ai_consent` (object or null) is in every `{user}` answer; an older server sends no such field.
 - **Website pages**: add `from=app` to every website address the app opens (privacy, terms, trust, support, account pages; `?from=app` before any `#…`,
-  `&from=app` after an existing query) so the page hides the site's menus and Pricing (see "Pages opened from the phone app" under Marketing).
+  `&from=app` after an existing query) so the page hides the site's menus and Pricing (see "Pages opened from the phone app" under Marketing). The app
+  never opens the home page or `/pricing` (`blockedFromApp`'s paths), including links to them in ÖRZA's replies.
 - **Minimum age 18** and **"Help improve ÖRZA's AI" off by default**: see Onboarding and "AI improvement" under Account.
 - **Photos**: `GET /api/media/[id]` accepts the Bearer token, so `<Image source={{ uri, headers: { Authorization: "Bearer " + token } }} />` works with the
   `photo_urls` the API returns (relative — prefix the API origin).

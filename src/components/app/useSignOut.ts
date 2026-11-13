@@ -2,6 +2,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { pathAfterLeaving } from "@/components/orza/FromApp";
 import { ApiError, api, errorMessage } from "@/lib/api-client";
 
 export type SignOutOptions = {
@@ -12,7 +13,8 @@ export type SignOutOptions = {
 /**
  * Signs out, then leaves the app. Only the server can clear the httpOnly session cookie and revoke
  * the session, so if that request fails the user stays put and is told — never shown the home page
- * while still signed in (shared / family phones). Use this everywhere a "Sign out" control exists.
+ * while still signed in (shared / family phones). Use this everywhere a "Sign out" control exists. In a tab opened from
+ * the phone app it lands on the sign-in page instead of the home page (`pathAfterLeaving`, src/lib/from-app.ts).
  */
 export function useSignOut() {
   const router = useRouter();
@@ -36,7 +38,7 @@ export function useSignOut() {
         return;
       }
       if (opts.everywhere) toast.success("Signed out on every device");
-      router.replace("/");
+      router.replace(pathAfterLeaving());
       router.refresh();
     },
     [router]

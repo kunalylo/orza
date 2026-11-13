@@ -86,9 +86,9 @@ const YOUR_DATA = [
 ];
 
 const AI_TRAINING = [
-  "Your conversations improve ÖRZA's AI",
+  "Off unless you turn it on",
   "Data is anonymized before training",
-  "Opt-out available in Settings",
+  "Turn it on or off anytime in Settings",
   "No personal health data sold",
 ];
 
@@ -182,7 +182,7 @@ export default function TrustPage() {
         lead="Built with medical boundaries, data security, and transparent practices at the core."
       >
         <div className="flex flex-wrap gap-3">
-          <ButtonLink href="/login?mode=signup" size="lg" className="px-7">
+          <ButtonLink href="/login?mode=signup" size="lg" className="px-7 app:hidden">
             Get Started <ArrowUpRight size={14} strokeWidth={1.75} aria-hidden />
           </ButtonLink>
           <ButtonLink href="#privacy-security" variant="secondary" size="lg">

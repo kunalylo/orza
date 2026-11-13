@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, isAdmin, toPublicUser } from "@/lib/auth";
+import { keepFromAppRedirect } from "@/lib/from-app-server";
 import { UserProvider } from "@/components/app/UserProvider";
 import { AppShell } from "@/components/app/AppShell";
 import { AdminShell } from "@/components/admin/AdminShell";
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
-  if (!user) redirect("/login?next=/dashboard");
+  if (!user) redirect(await keepFromAppRedirect("/login?next=/dashboard"));
 
   if (isAdmin(user)) {
     return (
@@ -25,7 +26,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     );
   }
 
-  if (!user.onboarding_complete) redirect("/onboarding");
+  if (!user.onboarding_complete) redirect(await keepFromAppRedirect("/onboarding"));
   return (
     <UserProvider initialUser={toPublicUser(user)}>
       <AiConsentProvider>

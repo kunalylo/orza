@@ -48,10 +48,14 @@ export interface Preferences {
   weekly_report: boolean;
   tone: "gentle" | "direct";
   /**
-   * When true, the user's data is excluded from any future model-improvement use (see the Trust page). Whatever this is,
-   * steps and health-app data (including step counts inside chat messages) are never used for it: SPEC "AI improvement".
+   * "Help improve ÖRZA's AI", stored inverted: `false` = on (the member turned it on), `true` or absent = off, the default
+   * (opt-in; `aiImprovementAllowed` in src/lib/ai-improvement.ts). `{user}` answers always carry the effective boolean.
+   * Whatever this is, steps and health-app data (including step counts inside chat messages) are never used for it:
+   * SPEC "AI improvement".
    */
   ai_training_opt_out?: boolean;
+  /** When the member last set "Help improve ÖRZA's AI" themselves (ISO, server time); absent = never. */
+  ai_training_chosen_at?: string;
 }
 
 /**

@@ -26,6 +26,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useUser } from "@/components/app/UserProvider";
 import { useSignOut } from "@/components/app/useSignOut";
 import { AlarmWatcher } from "@/components/care/AlarmWatcher";
+import { AppBackButton, BrandHome } from "@/components/orza/FromApp";
 
 export const APP_NAV = [
   { href: "/dashboard", label: "Today", icon: Sun },
@@ -95,6 +96,10 @@ function CreditsPill({ className }: { className?: string }) {
   );
 }
 
+/**
+ * The member app's frame. Opened from the phone app (src/lib/from-app.ts, e.g. Health sync from the app) it keeps just a
+ * top bar at every width (logo, Back after moving on, Sign out): no sidebar, menu, tab bar or credits link.
+ */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user } = useUser();
   const pathname = usePathname();
@@ -105,7 +110,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-orza-bg-0 orza-canvas-grain">
       {/* Desktop sidebar */}
-      <aside className="print:hidden fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col border-r border-[rgba(20,20,20,0.08)] bg-orza-bg-1/80 backdrop-blur-orza lg:flex">
+      <aside className="print:hidden fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col border-r border-[rgba(20,20,20,0.08)] bg-orza-bg-1/80 backdrop-blur-orza lg:flex app:hidden">
         <div className="flex h-16 items-center px-5">
           <Link href="/dashboard" aria-label="ÖRZA home">
             <BrandMark className="text-orza-strong" />
@@ -138,11 +143,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Mobile top bar */}
-      <header className="print:hidden sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[rgba(20,20,20,0.08)] bg-[rgba(251,247,241,0.85)] px-4 backdrop-blur-orza lg:hidden">
-        <Link href="/dashboard" aria-label="ÖRZA home">
+      <header className="print:hidden sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[rgba(20,20,20,0.08)] bg-[rgba(251,247,241,0.85)] px-4 backdrop-blur-orza lg:hidden app:lg:flex">
+        <BrandHome href="/dashboard" label="ÖRZA home" display="app:inline-flex">
           <BrandMark className="text-orza-strong" showPronunciation={false} />
-        </Link>
-        <div className="flex items-center gap-2">
+        </BrandHome>
+        <div className="hidden items-center gap-2 app:flex">
+          <AppBackButton className="h-9 px-3.5" />
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            disabled={signingOut}
+            aria-label={signingOut ? "Signing out" : "Sign out"}
+            aria-busy={signingOut}
+            title="Sign out"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(20,20,20,0.12)] bg-white/70 text-orza-muted hover:text-orza-strong disabled:cursor-wait disabled:opacity-60"
+          >
+            <LogOut size={16} strokeWidth={1.75} aria-hidden />
+          </button>
+        </div>
+        <div className="flex items-center gap-2 app:hidden">
           <CreditsPill />
           <button
             type="button"
@@ -171,15 +190,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <AlarmWatcher />
 
-      <main className="lg:pl-[248px] print:pl-0">
-        <div className="mx-auto w-full max-w-[1120px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-10">{children}</div>
+      <main className="lg:pl-[248px] print:pl-0 app:lg:pl-0">
+        <div className="mx-auto w-full max-w-[1120px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-10 app:pb-12">{children}</div>
       </main>
 
       {/* Mobile bottom tabs */}
       <nav
         aria-label="Quick"
         data-orza-tabbar=""
-        className="print:hidden fixed inset-x-0 bottom-0 z-30 border-t border-[rgba(20,20,20,0.08)] bg-[rgba(251,247,241,0.92)] pb-[env(safe-area-inset-bottom)] backdrop-blur-orza lg:hidden"
+        className="print:hidden fixed inset-x-0 bottom-0 z-30 border-t border-[rgba(20,20,20,0.08)] bg-[rgba(251,247,241,0.92)] pb-[env(safe-area-inset-bottom)] backdrop-blur-orza lg:hidden app:hidden"
       >
         <div className="grid grid-cols-5">
           {MOBILE_TABS.map((href) => {

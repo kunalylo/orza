@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import plugin from "tailwindcss/plugin";
 
 /**
  * ÖRZA design tokens — ported from the ÖRZA ecosystem site
@@ -80,7 +81,11 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // `app:` — a page opened from the ÖRZA phone app (`data-from-app` on <html>, src/lib/from-app.ts): `app:hidden` hides,
+    // `hidden app:flex` shows only there.
+    plugin(({ addVariant }) => addVariant("app", "html[data-from-app] &")),
+  ],
 };
 
 export default config;

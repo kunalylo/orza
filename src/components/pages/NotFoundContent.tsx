@@ -4,6 +4,7 @@ import { GlassCard, IconTile, Section } from "@/components/orza/primitives";
 import { Reveal } from "@/components/orza/Reveal";
 import { ButtonLink } from "@/components/ui/button";
 import { Accent, PageHero } from "@/components/pages/PageHero";
+import { blockedFromApp } from "@/lib/from-app";
 
 const DESTINATIONS: { href: string; icon: LucideIcon; title: string; desc: string }[] = [
   { href: "/", icon: Home, title: "Home", desc: "See how ÖRZA works — snap, chat and thrive." },
@@ -12,7 +13,10 @@ const DESTINATIONS: { href: string; icon: LucideIcon; title: string; desc: strin
   { href: "/trust", icon: ShieldCheck, title: "Trust & Safety", desc: "How your data stays private and in your control." },
 ];
 
-/** Branded "page not found" body for the marketing site (rendered inside the site nav + footer). */
+/**
+ * Branded "page not found" body for the marketing site (rendered inside the site nav + footer). In a tab opened from the
+ * phone app (src/lib/from-app.ts) the home page and Pricing aren't offered.
+ */
 export function NotFoundContent() {
   return (
     <>
@@ -27,7 +31,7 @@ export function NotFoundContent() {
         lead="The link may be old, or the address may have a typo. Everything else is right where you left it."
       >
         <div className="flex flex-wrap items-center gap-3">
-          <ButtonLink href="/" variant="primary" size="lg">
+          <ButtonLink href="/" variant="primary" size="lg" className="app:hidden">
             Back to home <ArrowUpRight size={14} strokeWidth={1.75} aria-hidden />
           </ButtonLink>
           <ButtonLink href="/dashboard" variant="secondary" size="lg">
@@ -41,7 +45,7 @@ export function NotFoundContent() {
           {DESTINATIONS.map((d, i) => {
             const Icon = d.icon;
             return (
-              <Reveal as="li" key={d.href} delay={0.05 * i} className="h-full">
+              <Reveal as="li" key={d.href} delay={0.05 * i} className={blockedFromApp(d.href) ? "h-full app:hidden" : "h-full"}>
                 <Link
                   href={d.href}
                   className="group block h-full rounded-orza-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orza-cyan/40"

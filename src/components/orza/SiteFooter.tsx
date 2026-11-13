@@ -37,6 +37,14 @@ const COLUMNS = [
   },
 ];
 
+/** The footer's links in a tab opened from the phone app (src/lib/from-app.ts): the legal pages only. */
+const APP_LINKS = [
+  { label: "Privacy Policy", href: "/privacy" },
+  { label: "Terms of Service", href: "/terms" },
+  { label: "Trust & Safety", href: "/trust" },
+];
+
+/** Site footer. Opened from the phone app it keeps only the legal links and the bottom line (no sign-up, product or Pricing links). */
 export function SiteFooter() {
   const [email, setEmail] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -61,8 +69,15 @@ export function SiteFooter() {
 
   return (
     <footer className="relative w-full border-t border-[rgba(20,20,20,0.08)] bg-orza-bg-2">
-      <div className="mx-auto max-w-[1200px] px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
-        <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr_1fr_1fr] lg:gap-16">
+      <div className="mx-auto max-w-[1200px] px-4 py-16 sm:px-6 lg:px-8 lg:py-20 app:py-10">
+        <nav aria-label="Legal" className="hidden flex-wrap gap-x-6 gap-y-3 app:flex">
+          {APP_LINKS.map((l) => (
+            <Link key={l.href} href={l.href} className="text-[15px] text-orza-muted transition-colors hover:text-orza-strong">
+              {l.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr_1fr_1fr] lg:gap-16 app:hidden">
           <div>
             <BrandMark showPronunciation={false} className="text-orza-strong [&>span:nth-child(2)]:text-[22px]" />
             <p className="mt-4 max-w-md text-[15px] leading-relaxed text-orza-muted">
@@ -100,7 +115,7 @@ export function SiteFooter() {
             </div>
           ))}
         </div>
-        <div className="mt-14 flex flex-col gap-3 border-t border-[rgba(20,20,20,0.08)] pt-6 text-[13px] text-orza-subtle sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-14 flex flex-col gap-3 border-t border-[rgba(20,20,20,0.08)] pt-6 text-[13px] text-orza-subtle sm:flex-row sm:items-center sm:justify-between app:mt-8">
           <span>© {new Date().getFullYear()} ÖRZA. All rights reserved.</span>
           <span className="italic">General wellness guidance, not medical advice. Always consult a doctor for medical concerns.</span>
         </div>

@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { BrandHome } from "@/components/orza/FromApp";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, Loader2, RefreshCw, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
@@ -272,9 +272,9 @@ export function OnboardingChat({ name }: { name: string }) {
       {/* Header */}
       <header className="relative z-20 shrink-0 border-b border-[rgba(20,20,20,0.08)] bg-[rgba(251,247,241,0.72)] backdrop-blur-orza">
         <div className="mx-auto flex h-16 w-full max-w-[1120px] items-center justify-between gap-3 px-4 sm:px-6">
-          <Link href="/" aria-label="ÖRZA home" className="rounded-full text-orza-strong">
+          <BrandHome href="/" label="ÖRZA home" className="rounded-full text-orza-strong" display="app:inline-flex">
             <BrandMark />
-          </Link>
+          </BrandHome>
 
           <div className="flex items-center gap-2 sm:gap-3">
             {status === "ready" && started && (

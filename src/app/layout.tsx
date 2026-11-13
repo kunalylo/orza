@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Figtree, Playfair_Display, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
+import { FromAppWatcher } from "@/components/orza/FromApp";
+import { FROM_APP_SCRIPT } from "@/lib/from-app";
 import { SITE, siteOrigin } from "@/lib/site";
 import "./globals.css";
 
@@ -51,10 +53,18 @@ export const viewport: Viewport = {
  */
 const TOAST_OFFSET = { bottom: "var(--orza-toast-bottom)" };
 
+/*
+ * Pages opened from the phone app (`?from=app`, src/lib/from-app.ts): the inline script marks <html> before the first
+ * paint (hence suppressHydrationWarning: the attribute isn't in the server HTML), and FromAppWatcher keeps it.
+ */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${figtree.variable} ${playfair.variable} ${jetbrains.variable}`}>
+    <html lang="en" className={`${figtree.variable} ${playfair.variable} ${jetbrains.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: FROM_APP_SCRIPT }} />
+      </head>
       <body className="min-h-screen bg-orza-bg-0 font-sans text-orza antialiased">
+        <FromAppWatcher />
         {children}
         <Toaster
           position="bottom-center"

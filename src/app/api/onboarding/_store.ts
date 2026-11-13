@@ -8,6 +8,7 @@ import { col, newId, nowISO } from "@/lib/db";
 import { setTracking } from "@/lib/domain/tracking";
 import {
   OUTSIDE_INDIA,
+  ageNeedsAskingAgain,
   buildProfile,
   conversationFor,
   memoryFacts,
@@ -34,11 +35,17 @@ export async function loadState(user: User): Promise<OnboardingState> {
     answers: {},
     updated_at: "",
   };
-  const answers = s.answers || {};
+  let answers = s.answers || {};
   let step = s.step;
   // Completion was interrupted (state saved, user not updated): ask to confirm again.
   if (step === "complete" && !user.onboarding_complete) step = "summary";
   if (step !== "complete" && !sequenceFor(answers).includes(step)) step = "goal";
+  // An unfinished onboarding holding an age from before the minimum rose to 18: ask it again (nothing is saved with it).
+  if (step !== "complete" && ageNeedsAskingAgain(answers)) {
+    answers = { ...answers };
+    delete answers.age;
+    step = "age";
+  }
   return { ...s, step, answers };
 }
 
@@ -117,7 +124,9 @@ export async function completeOnboarding(user: User, answers: OnboardingAnswers,
   profile.goal = goal;
   if (plan.target != null) profile.target_weight_kg = plan.target;
   else delete profile.target_weight_kg;
+  // Keeps every other stored preference: "Help improve ÖRZA's AI" stays as the member set it (finishing never changes it).
   const preferences: Preferences = {
+    ...user.preferences,
     units: answers.weight_unit === "lb" ? "imperial" : user.preferences?.units ?? "metric",
     reminders: user.preferences?.reminders ?? true,
     weekly_report: user.preferences?.weekly_report ?? true,

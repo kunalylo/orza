@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
+import { keepFromAppRedirect } from "@/lib/from-app-server";
 import { OnboardingChat } from "@/components/auth/onboarding/OnboardingChat";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +18,9 @@ export const metadata: Metadata = {
  */
 export default async function OnboardingPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login?next=%2Fonboarding");
-  if (isAdmin(user)) redirect("/dashboard/admin");
-  if (user.onboarding_complete) redirect("/dashboard");
+  if (!user) redirect(await keepFromAppRedirect("/login?next=%2Fonboarding"));
+  if (isAdmin(user)) redirect(await keepFromAppRedirect("/dashboard/admin"));
+  if (user.onboarding_complete) redirect(await keepFromAppRedirect("/dashboard"));
 
   return (
     <main>

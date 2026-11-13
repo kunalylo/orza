@@ -43,7 +43,8 @@ export const POST = route(async (req: Request) => {
     credits: INITIAL_CREDITS,
     profile: { timezone: DEFAULT_TZ },
     targets: { ...DEFAULT_TARGETS },
-    preferences: { units: "metric", reminders: true, weekly_report: true, tone: "gentle" },
+    // "Help improve ÖRZA's AI" starts off (opt-in): only the member's own switch turns it on.
+    preferences: { units: "metric", reminders: true, weekly_report: true, tone: "gentle", ai_training_opt_out: true },
     memory: [],
   };
 

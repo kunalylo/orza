@@ -3,7 +3,7 @@ import { pageMetadata } from "@/lib/site";
 import { Check, Coins, FileText, Stethoscope, Trash2, X, XCircle } from "lucide-react";
 import { INITIAL_CREDITS } from "@/lib/credits";
 import { LegalPage, type LegalHighlight, type LegalSection } from "@/components/pages/legal/LegalPage";
-import { B, InlineLink, LegalCallout, LegalLi, LegalList, LegalP, SupportEmail } from "@/components/pages/legal/prose";
+import { B, InlineLink, InlineLinkNotFromApp, LegalCallout, LegalLi, LegalList, LegalP, SupportEmail } from "@/components/pages/legal/prose";
 import { Accent } from "@/components/pages/PageHero";
 import { creditActionRows, creditsLabel } from "@/components/pages/pricing/credit-actions";
 
@@ -208,7 +208,7 @@ const SECTIONS: LegalSection[] = [
         <LegalList>
           <LegalLi title="Free Forever:">
             manual tracking, a basic dashboard and goal setting stay free, and every new account gets {INITIAL_CREDITS} AI
-            credits. See <InlineLink href="/pricing">Pricing</InlineLink> for what each plan includes.
+            credits. See <InlineLinkNotFromApp href="/pricing">Pricing</InlineLinkNotFromApp> for what each plan includes.
           </LegalLi>
           <LegalLi title="Premium plans are launching soon:">
             the Individual, Couple, Caregiver and Family plans and AI top-up packs on our Pricing page are a preview. They

@@ -84,7 +84,7 @@ export const POST = route(async (req: Request) => {
     credits: 0,
     profile: { timezone: DEFAULT_TZ },
     targets: { ...DEFAULT_TARGETS },
-    preferences: { units: "metric", reminders: false, weekly_report: false, tone: "gentle" },
+    preferences: { units: "metric", reminders: false, weekly_report: false, tone: "gentle", ai_training_opt_out: true },
     memory: [],
   };
 

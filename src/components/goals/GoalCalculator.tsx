@@ -32,6 +32,7 @@ import {
   weightUnit,
 } from "@/components/goals/goal-math";
 import type { GoalCalculateResponse } from "@/components/goals/types";
+import { PROFILE_LIMITS } from "@/components/account/options";
 
 const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string; hint: string }[] = [
   { value: "sedentary", label: "Sedentary", hint: "Mostly sitting — desk work, little exercise" },
@@ -49,6 +50,8 @@ const PACE_NOTES: Record<number, string> = {
 
 const num = (s: string) => (s.trim() === "" ? NaN : Number(s));
 const valid = (n: number, lo: number, hi: number) => Number.isFinite(n) && n >= lo && n <= hi;
+/** ÖRZA's age range (18–100), the same as onboarding and Settings. */
+const AGE = PROFILE_LIMITS.age;
 
 /** Closest offered pace to a stored weekly rate. */
 function nearestPace(goal: GoalType, rate?: number | null): number {
@@ -235,14 +238,14 @@ export function GoalCalculator({
   const tgtOk = valid(tgt, MIN_WEIGHT_KG, MAX_WEIGHT_KG);
   const hOk = valid(h, MIN_HEIGHT_CM, MAX_HEIGHT_CM);
   const heightTyped = imperial ? heightFt.trim() !== "" || heightIn.trim() !== "" : height.trim() !== "";
-  const aOk = valid(a, 13, 100) && Number.isInteger(a);
+  const aOk = valid(a, AGE.min, AGE.max) && Number.isInteger(a);
   const rate = signedRate(goal, pace);
 
   const fieldErrors = {
     current: current && !curOk ? `Enter a weight between ${range.min} and ${range.max} ${unit}.` : null,
     target: goal !== "maintain" && target && !tgtOk ? `Enter a target between ${range.min} and ${range.max} ${unit}.` : null,
     height: heightTyped && !hOk ? (imperial ? "Enter a height between 3 ft 4 in and 8 ft 2 in." : "Height between 100 and 250 cm.") : null,
-    age: age && !aOk ? "ÖRZA goal planning is for ages 13–100." : null,
+    age: age && !aOk ? `ÖRZA goal planning is for ages ${AGE.min}–${AGE.max}.` : null,
   };
 
   const ready = curOk && tgtOk && hOk && aOk;
@@ -435,8 +438,8 @@ export function GoalCalculator({
               unit="yrs"
               type="number"
               inputMode="numeric"
-              min={13}
-              max={100}
+              min={AGE.min}
+              max={AGE.max}
               step={1}
               placeholder="e.g. 30"
               value={age}

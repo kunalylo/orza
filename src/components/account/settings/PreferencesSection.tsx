@@ -204,9 +204,9 @@ export function PreferencesSection() {
           title="Help improve ÖRZA’s AI"
           description={
             <>
-              Lets your conversations and logs, anonymized first, help make ÖRZA’s AI better. Steps and anything read from Apple
-              Health, Health Connect or your phone’s motion sensor are never used for this. Turning this off doesn’t change how AI
-              features work for you.{" "}
+              Lets your conversations and logs, anonymized first, help make ÖRZA’s AI better. It’s off unless you turn it on.
+              Steps and anything read from Apple Health, Health Connect or your phone’s motion sensor are never used for this. AI
+              features work the same whether it’s on or off.{" "}
               <Link
                 href="/privacy#ai-processing"
                 className="rounded-sm text-orza-strong underline decoration-[rgba(20,20,20,0.25)] underline-offset-2 hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orza-cyan/40"

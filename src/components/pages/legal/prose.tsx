@@ -47,12 +47,27 @@ export function InlineLink({ href, children }: { href: string; children: React.R
   );
 }
 
-/** mailto link to the support inbox (SITE.supportEmail). */
-export function SupportEmail({ subject }: { subject?: string }) {
-  const href = `mailto:${SITE.supportEmail}${subject ? `?subject=${encodeURIComponent(subject)}` : ""}`;
+/**
+ * An InlineLink that is plain text in a tab opened from the phone app (src/lib/from-app.ts), for links to Pricing: the
+ * sentence stays, the way to prices doesn't.
+ */
+export function InlineLinkNotFromApp({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <>
+      <Link href={href} className={cn(linkClass, "app:hidden")}>
+        {children}
+      </Link>
+      <span className="hidden app:inline">{children}</span>
+    </>
+  );
+}
+
+/** mailto link to the support inbox (SITE.supportEmail), or to `email` (e.g. the privacy grievance contact). */
+export function SupportEmail({ subject, email = SITE.supportEmail }: { subject?: string; email?: string }) {
+  const href = `mailto:${email}${subject ? `?subject=${encodeURIComponent(subject)}` : ""}`;
   return (
     <a href={href} className={cn(linkClass, "break-all")}>
-      {SITE.supportEmail}
+      {email}
     </a>
   );
 }

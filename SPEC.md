@@ -74,11 +74,21 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 ### Marketing (public)
 - `/` — `src/app/(site)/page.tsx` composes `src/components/home/*` sections.
 - `/pricing`, `/faq`, `/trust`, `/privacy`, `/terms` — `src/app/(site)/<name>/page.tsx`.
+- **Pages opened from the phone app** (`?from=app`, `src/lib/from-app.ts`): the app adds `from=app` to every website address it opens (before any `#…`).
+  For the rest of that browser tab's visit (sessionStorage `orza.fromApp`, one tab only: no cookie, since Android Custom Tabs share Chrome's cookies)
+  `<html data-from-app>` is set before the first paint (inline script in the root layout) and the Tailwind variant `app:` hides the site menu, sign-in /
+  Get Started, the footer's product / Pricing / sign-up links and form (only Privacy Policy · Terms of Service · Trust & Safety stay), the trust page's
+  Get Started, the Terms' Pricing link (plain text), the 404's Home / Pricing, the sign-in page's Back to home, the credits page's plans, and the member
+  app's sidebar, menu, tab bar and credits pill (a top bar with the logo, Back and Sign out instead); logos are plain marks. Back (`AppBackButton`) shows
+  once the tab moved on from the page the app opened. `FromAppWatcher` (root layout) re-marks the tab after in-site navigation, takes `from=app` out of
+  the address, and stops clicks on links to `/`, `/#…` and `/pricing` (`blockedFromApp`). The middleware keeps `from=app` on the sign-in redirect and
+  sets `x-orza-from-app` so the dashboard / admin / onboarding redirects keep it (`keepFromAppRedirect`). The admin console keeps its own navigation.
+  Visits without `from=app` never change.
 - `POST /api/leads {email, source, message?}` → `{ok:true}` (store in `leads`, dedupe by email+source — a repeat never overwrites the stored message;
   10/min per `clientIp`). `source` must be `footer|newsletter|contact|waitlist|plan:<slug>` (else 400 "Unknown sign-up source") — add new public forms to `PUBLIC_SOURCE`.
 
 ### Auth — `/login` (`src/app/login/page.tsx`, own full-screen layout, `?mode=signup` shows sign-up, `?next=` respected)
-- `POST /api/auth/register {name, email, password(≥8)}` → `{user}` + session cookie. 409 if email exists. New user: `credits: INITIAL_CREDITS` (+ transaction "Welcome credits"), `targets: DEFAULT_TARGETS`, `profile: {timezone:"Asia/Kolkata"}`, `preferences: {units:"metric", reminders:true, weekly_report:true, tone:"gentle"}`, `memory: []`, `onboarding_complete:false`.
+- `POST /api/auth/register {name, email, password(≥8)}` → `{user}` + session cookie. 409 if email exists. New user: `credits: INITIAL_CREDITS` (+ transaction "Welcome credits"), `targets: DEFAULT_TARGETS`, `profile: {timezone:"Asia/Kolkata"}`, `preferences: {units:"metric", reminders:true, weekly_report:true, tone:"gentle", ai_training_opt_out:true}`, `memory: []`, `onboarding_complete:false`.
 - `POST /api/auth/login {email, password}` → `{user}`; 401 "Incorrect email or password". Emails are stored lowercase/trimmed.
 - `POST /api/auth/logout {everywhere?}` → `{ok:true}` (`everywhere: true` revokes every session of the account); `GET /api/auth/me` → `{user}` | 401.
 - Phone app: `X-ORZA-Client: mobile` on register/login → `{user, token}` and no cookies; every route accepts `Authorization: Bearer <token>` (see "Mobile app").
@@ -87,6 +97,10 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 ### Onboarding — `/onboarding` (`src/app/onboarding/page.tsx`, full-screen conversational UI)
 - `GET /api/onboarding` → `{step, answers, done, prompt, history, progress}`; `POST /api/onboarding/step {answer: string | number | string[] , step, timezone?}` → `{reply, step, options?, input: "text"|"number"|"choice"|"multi"|"none", done, user?, prompt, progress, valid}`
   (an invalid answer keeps the step with `valid:false`; `timezone` = the browser's IANA zone, saved on completion); `POST /api/onboarding/restart` → the GET shape + `reply, input, options`.
+- **Minimum age 18** (`PROFILE_LIMITS.age` = 18–100 in `src/components/account/options.ts`, the Terms' minimum): the onboarding age step
+  (`AGE_LIMITS`; under 18 → "ÖRZA is for people aged 18 and over. If you mistyped, please enter your age again.", `prompt.min` 18), `PUT /api/profile`
+  (400 "ÖRZA is for ages 18 and up"), `POST /api/goals/calculate` and the website's Settings / goal planner. An unfinished onboarding holding an age
+  saved before the minimum rose (13) is asked that age again (`ageNeedsAskingAgain`, `loadState`). Saved profiles are never changed.
 - Scripted steps (deterministic, <2 min): goal → sex → age → height → weight → target weight (lose/gain only) → activity → diet → allergies → region → language → household mode → lifestyle (optional) → summary/confirm → complete (saves `profile`, `targets = computeTargets(profile)`, `onboarding_complete:true`). Free-text parsing for numbers/units (e.g. `5'8"`, `172 cm`, `70kg`, `154 lb`), "skip" allowed on optional steps.
 
 ### Today — `/dashboard`
@@ -129,7 +143,7 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
   `memory` + `remembered` when something new was learned; `allergies` = the updated `profile.allergies` when a food allergy was learned; `notice` when the built-in coach answered (AI down, over the AI budget, or an unusable AI answer). AI consent applies (R1, R2: see Account).
 
 ### Goals & Rebalance — `/dashboard/goals`, `/dashboard/compensation`
-- `GET /api/goals/active` → `{goal, weights:[{date, weight_kg}], targets, profile}`; `POST /api/goals/calculate {goal, current_weight_kg, target_weight_kg, weekly_rate_kg?, height_cm?, age?, sex?, activity_level?}` → `{goal, user}`.
+- `GET /api/goals/active` → `{goal, weights:[{date, weight_kg}], targets, profile}`; `POST /api/goals/calculate {goal, current_weight_kg, target_weight_kg, weekly_rate_kg?, height_cm?, age? (18–100), sex?, activity_level?}` → `{goal, user}`.
 - `POST /api/compensation/plan {occasion, description?, extra_calories?, days?(2–5)}` → `{plan, credits?, estimate?, notice?}`; `GET /api/compensation` → `{plans}`; `DELETE /api/compensation/[id]`.
   Meal ideas respect `avoidList(profile.allergies, memory)` and `effectiveDiet(profile.diet, memory)` (diets learned in chat).
 
@@ -145,8 +159,15 @@ Accessible: labels on inputs, `aria-label` on icon buttons, keyboard-usable. Aft
 - `GET/PUT /api/profile` → `{user}` (PUT also returns `targets_recomputed`; memory facts derived from profile fields are refreshed with a conditional write,
   so memory saved concurrently by chat/Settings is never overwritten); `PUT /api/settings/preferences {units?, reminders?, weekly_report?, tone?, ai_training_opt_out?}`,
   `PUT /api/settings/targets`, `PUT /api/settings/memory {memory}` → `{user}`.
-- **AI improvement** (`preferences.ai_training_opt_out`, "Help improve ÖRZA's AI"): nothing uses member data to improve the AI yet. When something
-  does, it must skip opted-out members **and**, for everyone, leave out steps and anything read from Apple Health, Health Connect or the phone's motion
+- **AI improvement** (`preferences.ai_training_opt_out`, "Help improve ÖRZA's AI"; `src/lib/ai-improvement.ts`): **opt-in** since 13 Nov 2026, off
+  until the member turns it on. Stored inverted: `false` = on, `true` or absent = off. Only the member's own switch may write it (`PUT
+  /api/settings/preferences {ai_training_opt_out}`, which also stores `preferences.ai_training_chosen_at` = now); new accounts store `true`; finishing
+  onboarding keeps it. A stored `false` was always such a choice (no code ever stored the old on-by-default), so it stays on; accounts that never
+  chose had nothing stored and are off. Every `{user}` answer (`toPublicUser` → `publicPreferences`) carries `preferences.ai_training_opt_out` as the
+  effective boolean (always present: `true` unless the member turned it on) and `ai_training_chosen_at` when there is one. **Clients** (website, phone):
+  show the switch as `!ai_training_opt_out`, treat a missing value as `true` (off), and PUT it only when the member flips the switch, never with other
+  preferences. Nothing uses member data to improve the AI yet. When something does, it must use only members for whom `aiImprovementAllowed` is true
+  **and**, for everyone, leave out steps and anything read from Apple Health, Health Connect or the phone's motion
   sensor — the privacy page (`#ai-processing`, `#phone-app`) and the Settings toggle promise that whatever the setting. That means no `tracking.steps`,
   no `health_days` values, no tracking weights (a weight the health-sync mirror copied in can't be told from a typed one), and no step counts in
   `chat_messages`: the coach's own activity replies ("Steps today: **4,200 / 8,000**", `coach.ts` `activityReply`), AI replies that repeat the step count
@@ -371,6 +392,9 @@ cookie flow is unchanged.
 - **AI consent**: requests to the six AI routes (the app's and the website's) get 403 `ai_consent_required` until the account allows the AI features with
   `PUT /api/settings/ai-consent {version}` (see "AI consent" under Account); a `version` older than the server's gets 409 `ai_consent_outdated`.
   `user.ai_consent` (object or null) is in every `{user}` answer; an older server sends no such field.
+- **Website pages**: add `from=app` to every website address the app opens (privacy, terms, trust, support, account pages; `?from=app` before any `#…`,
+  `&from=app` after an existing query) so the page hides the site's menus and Pricing (see "Pages opened from the phone app" under Marketing).
+- **Minimum age 18** and **"Help improve ÖRZA's AI" off by default**: see Onboarding and "AI improvement" under Account.
 - **Photos**: `GET /api/media/[id]` accepts the Bearer token, so `<Image source={{ uri, headers: { Authorization: "Bearer " + token } }} />` works with the
   `photo_urls` the API returns (relative — prefix the API origin).
 - **Devices** (`devices` collection, `AppDevice` in `src/lib/types.ts`: `id, user_id, session_id, platform, label, push_token?, app_version, timezone,

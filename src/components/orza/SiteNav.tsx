@@ -6,6 +6,7 @@ import { ArrowUpRight, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/orza/primitives";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { AppBackButton, BrandHome } from "@/components/orza/FromApp";
 import { SIGNED_IN_HINT_COOKIE } from "@/lib/cookie-names";
 
 export const NAV_LINKS = [
@@ -19,7 +20,8 @@ export const NAV_LINKS = [
 
 /**
  * Floating glass pill nav. On the home page it starts transparent over the dark hero
- * and turns into frosted glass after 24px of scroll.
+ * and turns into frosted glass after 24px of scroll. Opened from the phone app (src/lib/from-app.ts) it shows only the
+ * logo (not a link) and, after moving on to another page, Back: no menu, sign-in or marketing links.
  */
 export function SiteNav() {
   const pathname = usePathname();
@@ -59,11 +61,11 @@ export function SiteNav() {
         )}
       >
         <div className="flex h-14 items-center justify-between px-4 sm:h-16 sm:px-5">
-          <Link href="/" aria-label="ÖRZA home" className="flex items-center">
+          <BrandHome href="/" label="ÖRZA home" className="flex items-center" display="app:flex">
             <BrandMark tone={dark ? "dark" : "light"} />
-          </Link>
+          </BrandHome>
 
-          <nav aria-label="Primary" className="hidden items-center gap-6 lg:flex">
+          <nav aria-label="Primary" className="hidden items-center gap-6 lg:flex app:hidden">
             {NAV_LINKS.map((l) => {
               const active = !l.href.includes("#") && pathname === l.href;
               return (
@@ -82,7 +84,8 @@ export function SiteNav() {
             })}
           </nav>
 
-          <div className="flex items-center gap-2">
+          <AppBackButton dark={dark} />
+          <div className="flex items-center gap-2 app:hidden">
             {signedIn ? (
               <Link
                 href="/dashboard"

@@ -55,6 +55,8 @@
   }
   @media (max-width: 1023.98px) {
     body:has([data-orza-tabbar]) { --orza-toast-bottom: calc(72px + env(safe-area-inset-bottom)); }
+    /* Opened from the phone app the tab bar is hidden (src/lib/from-app.ts): the normal gap. */
+    html[data-from-app] body:has([data-orza-tabbar]) { --orza-toast-bottom: inherit; }
   }
 
   * { border-color: var(--orza-border); }

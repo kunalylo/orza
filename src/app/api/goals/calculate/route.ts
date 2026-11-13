@@ -7,6 +7,9 @@ import { badRequest, json, parseBody, route } from "@/lib/http";
 import type { Goal, Profile, User } from "@/lib/types";
 import { round } from "@/lib/utils";
 import { formatPace, goalInputError, isImperial, planGoal, signedRate } from "@/components/goals/goal-math";
+import { PROFILE_LIMITS } from "@/components/account/options";
+
+const AGE = PROFILE_LIMITS.age;
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +23,7 @@ const Body = z.object({
   target_weight_kg: optional(z.coerce.number().min(25, "Target must be at least 25 kg").max(350, "Target must be at most 350 kg")),
   weekly_rate_kg: optional(z.coerce.number().min(-1, "Weight loss is capped at 1 kg a week").max(0.5, "Weight gain is capped at 0.5 kg a week")),
   height_cm: optional(z.coerce.number().min(100, "Height must be at least 100 cm").max(250, "Height must be at most 250 cm")),
-  age: optional(z.coerce.number().int("Age must be a whole number").min(13, "ÖRZA goal planning is for ages 13 and up").max(100, "Age must be 100 or below")),
+  age: optional(z.coerce.number().int("Age must be a whole number").min(AGE.min, `ÖRZA goal planning is for ages ${AGE.min} and up`).max(AGE.max, `Age must be ${AGE.max} or below`)),
   sex: optional(z.enum(["male", "female", "other"])),
   activity_level: optional(z.enum(["sedentary", "light", "moderate", "active", "very_active"])),
 });

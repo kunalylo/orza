@@ -11,6 +11,7 @@
  */
 import bcrypt from "bcryptjs";
 import { cookies, headers } from "next/headers";
+import { publicPreferences } from "@/lib/ai-improvement";
 import { col, newId } from "@/lib/db";
 import { forbidden, unauthorized } from "@/lib/http";
 import {
@@ -207,8 +208,10 @@ export function toPublicUser(u: User): PublicUser {
   const { health_token_hash, calendar_token, external_ical_url, ...integrations } = u.integrations || {};
   // `admin_role` is only sent for admins (a stray role on a member record means nothing). `ai_consent` is always
   // present (null = none): the phone app reads its presence as "this server asks for AI consent".
+  // `preferences.ai_training_opt_out` is always the effective boolean (true = off unless the member turned it on).
   return {
     ...rest,
+    preferences: publicPreferences(u.preferences),
     ...(u.integrations ? { integrations } : {}),
     is_admin: isAdmin(u),
     admin_role: adminRoleOf(u) ?? undefined,

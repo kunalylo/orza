@@ -75,7 +75,8 @@ const PLANS: Plan[] = [
 
 export function PlansPreview({ requested, onRequest, className }: { requested: boolean; onRequest: () => void; className?: string }) {
   return (
-    <section aria-labelledby="plans-title" className={className}>
+    // Prices never show in a tab opened from the phone app (src/lib/from-app.ts; App Store 3.1.1).
+    <section aria-labelledby="plans-title" className={cn(className, "app:hidden")}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <Eyebrow>Plans</Eyebrow>

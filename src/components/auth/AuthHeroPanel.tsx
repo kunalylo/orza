@@ -4,6 +4,7 @@ import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowLeft, Brain, Camera, Mic, Sparkles, type LucideIcon } from "lucide-react";
 import { BrandMark, IconTile } from "@/components/orza/primitives";
+import { BrandHome } from "@/components/orza/FromApp";
 import { cn } from "@/lib/utils";
 import { AuthOrb } from "./AuthOrb";
 
@@ -80,12 +81,13 @@ export function AuthHeroPanel({ className }: { className?: string }) {
       <div className="relative z-10 flex flex-col px-4 pb-12 pt-5 sm:px-6 lg:flex-1 lg:px-10 lg:py-8 xl:px-14 xl:py-10">
         {/* Top row */}
         <div className="flex items-center justify-between gap-3">
-          <Link href="/" aria-label="ÖRZA home" className="rounded-full text-white">
+          {/* Signing in from a page the phone app opened (src/lib/from-app.ts): no way to the home page. */}
+          <BrandHome href="/" label="ÖRZA home" className="rounded-full text-white" display="app:inline-flex">
             <BrandMark tone="dark" />
-          </Link>
+          </BrandHome>
           <Link
             href="/"
-            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/20 px-3.5 text-[13px] text-white/80 transition-colors duration-150 ease-orza hover:border-white/40 hover:text-white"
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/20 px-3.5 text-[13px] text-white/80 transition-colors duration-150 ease-orza hover:border-white/40 hover:text-white app:hidden"
           >
             <ArrowLeft size={14} strokeWidth={1.75} aria-hidden />
             Back to home

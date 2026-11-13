@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { pageMetadata } from "@/lib/site";
 import { Ban, Download, Eye, Lock, ShieldCheck } from "lucide-react";
 import { LegalPage, type LegalHighlight, type LegalSection } from "@/components/pages/legal/LegalPage";
+import { PRIVACY_CONTROLLER_NAME, PRIVACY_GRIEVANCE_EMAIL } from "@/components/pages/legal/responsible";
 import { PRIVACY_UPDATED } from "@/components/pages/legal/updated";
 import { B, InlineLink, LegalCallout, LegalH3, LegalLi, LegalList, LegalP, SupportEmail } from "@/components/pages/legal/prose";
 import { Accent } from "@/components/pages/PageHero";
@@ -130,9 +131,9 @@ const SECTIONS: LegalSection[] = [
             change reminder and report preferences in Settings.
           </LegalLi>
           <LegalLi title="To improve ÖRZA:">
-            using information that has been anonymized so it no longer identifies you — unless you opt out (see{" "}
-            <InlineLink href="#ai-processing">AI processing</InlineLink>). Steps, and anything read from Apple Health, Health
-            Connect or your phone&apos;s motion sensor, are never used for this.
+            using information that has been anonymized so it no longer identifies you, and only if you turn on{" "}
+            <B>Help improve ÖRZA&apos;s AI</B> (see <InlineLink href="#ai-processing">AI processing</InlineLink>). Steps, and
+            anything read from Apple Health, Health Connect or your phone&apos;s motion sensor, are never used for this.
           </LegalLi>
         </LegalList>
         <LegalP>
@@ -177,12 +178,13 @@ const SECTIONS: LegalSection[] = [
           </LegalLi>
         </LegalList>
         <LegalP>
-          As described on our <InlineLink href="/trust">Trust &amp; Safety</InlineLink> page, conversations may help improve
-          ÖRZA&apos;s AI only after they are anonymized, and no personal health data is ever sold. You can opt out at any time by
-          turning off <B>Help improve ÖRZA&apos;s AI</B> in <B>Settings → Preferences</B>, or by writing to <SupportEmail subject="AI training opt-out" />. Your choice is saved
-          to your account and keeps your conversations and logs out of any work to improve ÖRZA&apos;s AI. Opting out
-          doesn&apos;t change how AI features work for you. Whatever this setting, your steps and anything ÖRZA reads from Apple
-          Health, Health Connect or your phone&apos;s motion sensor are never used to improve ÖRZA&apos;s AI.
+          As described on our <InlineLink href="/trust">Trust &amp; Safety</InlineLink> page, your conversations and logs help
+          improve ÖRZA&apos;s AI only if you turn on <B>Help improve ÖRZA&apos;s AI</B> in <B>Settings → Preferences</B>, and only
+          after they are anonymized; no personal health data is ever sold. It&apos;s off unless you turn it on, and you can turn
+          it off again at any time there, or by writing to <SupportEmail subject="Help improve ÖRZA's AI" />. Your choice is
+          saved to your account; while it&apos;s off, your conversations and logs stay out of any work to improve ÖRZA&apos;s AI.
+          AI features work the same whether it&apos;s on or off. Whatever this setting, your steps and anything ÖRZA reads from
+          Apple Health, Health Connect or your phone&apos;s motion sensor are never used to improve ÖRZA&apos;s AI.
         </LegalP>
       </>
     ),
@@ -238,7 +240,7 @@ const SECTIONS: LegalSection[] = [
           <LegalLi title="Daily totals only.">
             Only one number per day for each kind of data — the day&apos;s step total, sleep time, resting heart rate and weight —
             is sent to your ÖRZA account, over an encrypted connection. The individual readings and the times you moved stay on
-            your phone, and ÖRZA never collects your location.
+            your phone, and ÖRZA never reads your phone&apos;s location.
           </LegalLi>
           <LegalLi title="In your account:">
             these totals are stored with the rest of your ÖRZA data, protected as described in{" "}
@@ -310,7 +312,8 @@ const SECTIONS: LegalSection[] = [
           </LegalLi>
           <LegalLi title="With service providers">
             who help us run ÖRZA — such as cloud hosting and database providers, AI model providers and email delivery — who
-            process information on our behalf and only for that purpose.
+            process information on our behalf and only for that purpose. They may use it only to provide their service to ÖRZA
+            and must protect it at least as well as this policy does.
           </LegalLi>
           <LegalLi title="To deliver the reminders you turn on.">
             Push notifications travel through your browser&apos;s notification service, and WhatsApp reminders through
@@ -427,12 +430,14 @@ const SECTIONS: LegalSection[] = [
             <InlineLink href="#phone-app">Phone app: steps and health data</InlineLink>).
           </LegalLi>
           <LegalLi title="AI improvement:">
-            opt out of your anonymized data being used to improve ÖRZA&apos;s AI in Settings → Preferences, or by email.
+            your anonymized data is used to improve ÖRZA&apos;s AI only if you turn on <B>Help improve ÖRZA&apos;s AI</B> in
+            Settings → Preferences. You can turn it off there, or by email, at any time.
           </LegalLi>
         </LegalList>
         <LegalP>
           You may have further rights under applicable data protection law, including India&apos;s Digital Personal Data
-          Protection Act, 2023 — such as the right to withdraw consent, to have a grievance addressed, or to nominate someone to
+          Protection Act, 2023 — such as the right to withdraw consent, to have a grievance addressed (see{" "}
+          <InlineLink href="#responsible">Who is responsible for your information</InlineLink>), or to nominate someone to
           exercise your rights. To make a request, email <SupportEmail subject="Privacy request" />. We may need to verify your
           identity before acting on it.
         </LegalP>
@@ -488,6 +493,26 @@ const SECTIONS: LegalSection[] = [
         We will update this policy as ÖRZA evolves. The date at the top of this page shows when it last changed. If we make
         material changes, we will tell you in the app or by email before they take effect.
       </LegalP>
+    ),
+  },
+  {
+    id: "responsible",
+    title: "Who is responsible for your information",
+    content: (
+      <>
+        <LegalP>
+          ÖRZA is run by <B>{PRIVACY_CONTROLLER_NAME}</B>, who decides why and how your personal information is processed (the
+          &ldquo;Data Fiduciary&rdquo; under India&apos;s Digital Personal Data Protection Act, 2023) and is responsible for it as
+          this policy describes.
+        </LegalP>
+        <LegalP>
+          <B>Grievances:</B> if you have a concern about how ÖRZA handles your personal information, or a request about your
+          rights that hasn&apos;t been resolved, write to our grievance contact at{" "}
+          <SupportEmail email={PRIVACY_GRIEVANCE_EMAIL} subject="Privacy grievance" />. We will acknowledge it and respond within
+          the time the law requires. If you&apos;re not satisfied with our response, you can then complain to the Data Protection
+          Board of India.
+        </LegalP>
+      </>
     ),
   },
   {

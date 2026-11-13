@@ -6,6 +6,7 @@
  * short acknowledgement in ÖRZA's voice (`ackFor`). The API routes persist
  * `{ step, answers }` in the `onboarding` collection and call into this module.
  */
+import { PROFILE_LIMITS } from "@/components/account/options";
 import {
   KG_PER_LB,
   MAX_HEIGHT_CM,
@@ -444,6 +445,15 @@ export function parseAge(raw: Raw): number | null {
   return n == null ? null : Math.floor(n);
 }
 
+/** ÖRZA's age range (18–100, the Terms' minimum age): the same limits as Settings. */
+export const AGE_LIMITS = PROFILE_LIMITS.age;
+
+/**
+ * An age the onboarding saved before the minimum rose from 13 to 18 that is out of range now (onboarding not finished
+ * yet). `loadState` asks it again, so a plan is never saved with it.
+ */
+export const ageNeedsAskingAgain = (a: OnboardingAnswers) => a.age != null && (a.age < AGE_LIMITS.min || a.age > AGE_LIMITS.max);
+
 export function parseRegion(raw: Raw): string | null {
   const s = words(norm(raw));
   if (!s) return null;
@@ -697,7 +707,7 @@ export function promptFor(step: StepId, answers: OnboardingAnswers, opts: { name
     case "sex":
       return { ...base, input: "choice", options: SEX_OPTIONS };
     case "age":
-      return { ...base, input: "number", unit_hint: "years", min: 13, max: 100, placeholder: "e.g. 32" };
+      return { ...base, input: "number", unit_hint: "years", min: AGE_LIMITS.min, max: AGE_LIMITS.max, placeholder: "e.g. 32" };
     case "height":
       return { ...base, input: "number", units: ["cm", "ft"], min: MIN_HEIGHT_CM, max: MAX_HEIGHT_CM, placeholder: "e.g. 165 cm or 5'6\"" };
     case "weight":
@@ -782,8 +792,9 @@ export function applyAnswer(step: QuestionStep, raw: Raw, prev: OnboardingAnswer
     case "age": {
       const age = parseAge(raw);
       if (age == null) return err("Just the number works — for example 32.");
-      if (age < 13) return err("ÖRZA is designed for people aged 13 and over. If you mistyped, please enter your age again.");
-      if (age > 100) return err("Please enter an age between 13 and 100.");
+      if (age < AGE_LIMITS.min)
+        return err(`ÖRZA is for people aged ${AGE_LIMITS.min} and over. If you mistyped, please enter your age again.`);
+      if (age > AGE_LIMITS.max) return err(`Please enter an age between ${AGE_LIMITS.min} and ${AGE_LIMITS.max}.`);
       a.age = age;
       return { ok: true, answers: a };
     }

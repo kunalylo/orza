@@ -75,9 +75,12 @@ export const GOAL_LABELS: Record<(typeof GOAL_TYPES)[number], string> = {
 export const labelOf = <T extends string>(options: Option<T>[], value?: T | null) =>
   options.find((o) => o.value === value)?.label ?? "";
 
-/** Server-side validation ranges for profile numbers (metric). */
+/**
+ * Server-side validation ranges for profile numbers (metric). `age.min` is ÖRZA's minimum age (18, as in the Terms and the
+ * privacy policy) for onboarding, Settings and the goal planner alike. Ages saved before it rose from 13 are left as they are.
+ */
 export const PROFILE_LIMITS = {
-  age: { min: 13, max: 100 },
+  age: { min: 18, max: 100 },
   height_cm: { min: 100, max: 250 },
   weight_kg: { min: 25, max: 350 },
   allergies: { maxItems: 20, maxLength: 40 },
@@ -109,12 +112,13 @@ export const TARGET_FIELDS: { key: TargetKey; label: string; unit: string; min: 
 export const UNITS = ["metric", "imperial"] as const satisfies readonly Preferences["units"][];
 export const TONES = ["gentle", "direct"] as const satisfies readonly Preferences["tone"][];
 
+/** `ai_training_opt_out: true`: "Help improve ÖRZA's AI" is off until the member turns it on (src/lib/ai-improvement.ts). */
 export const DEFAULT_PREFERENCES: Preferences = {
   units: "metric",
   reminders: true,
   weekly_report: true,
   tone: "gentle",
-  ai_training_opt_out: false,
+  ai_training_opt_out: true,
 };
 
 /* ───────────────────────────── Credit requests ───────────────────────────── */
